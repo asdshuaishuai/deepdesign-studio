@@ -459,9 +459,9 @@ body:not(.design-active) .flow-wires{display:none}
 body[data-mode="dark"]{--panel:var(--base);--line:var(--bd)}
 /* Mac Dark — macOS 暗色 */
 body[data-mode="dark"][data-theme="mac"]{
-  --base:#1e1e22;--cvs:#232327;--ink:#e5e5ea;
-  --tx:#e5e5ea;--tx2:#98989f;--tx3:#63636b;
-  --acc:#0a84ff;--acc-h:#409cff;--bd:1px solid #323234;
+  --base:#212125;--cvs:#26262b;--ink:#e8e8ec;
+  --tx:#e8e8ec;--tx2:#9a9aa2;--tx3:#68686f;
+  --acc:#0a84ff;--acc-h:#409cff;--bd:1px solid #34343a;
 }
 body[data-mode="dark"][data-theme="mac"] .topbar,body[data-mode="dark"][data-theme="mac"] .left,body[data-mode="dark"][data-theme="mac"] .right,body[data-mode="dark"][data-theme="mac"] .statusbar{background:rgba(30,30,34,.94)}
 body[data-mode="dark"][data-theme="mac"] .mac-glass{background:rgba(30,30,34,.86)}
@@ -469,16 +469,16 @@ body[data-mode="dark"][data-theme="mac"] .compcell,body[data-mode="dark"][data-t
 body[data-mode="dark"][data-theme="mac"] .tbtn:hover,body[data-mode="dark"][data-theme="mac"] .ctool:hover,body[data-mode="dark"][data-theme="mac"] .layerrow:hover{background:rgba(255,255,255,.07)}
 body[data-mode="dark"][data-theme="mac"] .frow input,body[data-mode="dark"][data-theme="mac"] .pmain,body[data-mode="dark"][data-theme="mac"] .compsearch{background:#232327;border-color:#3a3a3f;color:var(--tx)}
 body[data-mode="dark"][data-theme="mac"] .frame-chrome{background:#28282d;border-color:#3a3a3f}
-/* Deep Dark — 更纯黑（OLED 风） */
+/* Deep Dark — 深炭灰（降黑白对冲，保留层次） */
 body[data-mode="dark"][data-theme="deep"]{
-  --base:#0c0d10;--cvs:#08090b;
-  --tx:#e8eaef;--tx2:#8b929d;--tx3:#4d535e;
-  --acc:#5a7cff;--bd:1px solid #1d2128;
+  --base:#16171c;--cvs:#111217;
+  --tx:#e6e8ef;--tx2:#98a0ad;--tx3:#5c6370;
+  --acc:#6a86ff;--acc-h:#7d95ff;--bd:1px solid #262a33;
 }
-body[data-mode="dark"][data-theme="deep"] .topbar,body[data-mode="dark"][data-theme="deep"] .left,body[data-mode="dark"][data-theme="deep"] .right,body[data-mode="dark"][data-theme="deep"] .statusbar{background:rgba(12,13,16,.96)}
-body[data-mode="dark"][data-theme="deep"] .compcell,body[data-mode="dark"][data-theme="deep"] .trk,body[data-mode="dark"][data-theme="deep"] .flowrow,body[data-mode="dark"][data-theme="deep"] .tpl-card,body[data-mode="dark"][data-theme="deep"] .declview{background:#131519;border-color:#1d2128}
-body[data-mode="dark"][data-theme="deep"] .frow input,body[data-mode="dark"][data-theme="deep"] .pmain,body[data-mode="dark"][data-theme="deep"] .compsearch{background:#0f1013;border-color:#1d2128;color:var(--tx)}
-body[data-mode="dark"][data-theme="deep"] .frame-chrome{background:#131519;border-color:#1d2128}
+body[data-mode="dark"][data-theme="deep"] .topbar,body[data-mode="dark"][data-theme="deep"] .left,body[data-mode="dark"][data-theme="deep"] .right,body[data-mode="dark"][data-theme="deep"] .statusbar{background:rgba(22,23,28,.96)}
+body[data-mode="dark"][data-theme="deep"] .compcell,body[data-mode="dark"][data-theme="deep"] .trk,body[data-mode="dark"][data-theme="deep"] .flowrow,body[data-mode="dark"][data-theme="deep"] .tpl-card,body[data-mode="dark"][data-theme="deep"] .declview{background:#1e2027;border-color:#2a2e38;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03)}
+body[data-mode="dark"][data-theme="deep"] .frow input,body[data-mode="dark"][data-theme="deep"] .pmain,body[data-mode="dark"][data-theme="deep"] .compsearch{background:#191b21;border-color:#2a2e38;color:var(--tx)}
+body[data-mode="dark"][data-theme="deep"] .frame-chrome{background:#1e2027;border-color:#2a2e38}
 /* Neu Dark — 深色软拟物（阴影反转） */
 body[data-mode="dark"][data-theme="neu"]{
   --base:#262932;--cvs:#262932;--ink:#e6e9f0;
@@ -501,6 +501,16 @@ body[data-mode="dark"] .pmain .kbd{background:rgba(255,255,255,.08);border-color
 body[data-mode="dark"] .ctools,body[data-mode="dark"] .czoom{background:rgba(28,29,34,.92);border-color:rgba(255,255,255,.1)}
 body[data-mode="dark"] .layerrow:hover,body[data-mode="dark"] .abrow:hover{background:rgba(255,255,255,.05)}
 body[data-mode="dark"] #theme-menu{background:#242428;border-color:#3a3a3f;color:var(--tx)}
+/* 画板窗口：圆润 14px + 柔投影浮层，active 以品牌色描边光晕（打破黑白单调） */
+body[data-mode="dark"] .frame-chrome{border-radius:14px 14px 0 0}
+body[data-mode="dark"] .frame-body{border-radius:0 0 14px 14px;border-width:1.5px;box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04)}
+body[data-mode="dark"] .frame-wrap.active .frame-body{border:2px solid var(--acc);box-shadow:0 14px 36px rgba(0,0,0,.55),0 0 0 4px color-mix(in srgb,var(--acc) 18%,transparent),0 0 0 1px color-mix(in srgb,var(--acc) 55%,transparent)}
+body[data-mode="dark"] .frame-wrap:not(.active):hover .frame-body{box-shadow:0 12px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08)}
+/* 提示条 pill 化 + 内辉光 */
+body[data-mode="dark"] .canvas-tail,body[data-mode="dark"] .toast{border-radius:999px}
+body[data-mode="dark"] .frow input,body[data-mode="dark"] .compsearch,body[data-mode="dark"] .pmain{box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+body[data-mode="dark"] .tpl-card{border-radius:14px}
+body[data-mode="dark"] .compcell{border-radius:10px}
 body[data-mode="dark"] #theme-menu .tmenu:hover{background:rgba(255,255,255,.08)}
 /* Glass Dark — 夜空玻璃 */
 body[data-mode="dark"][data-theme="glass"]{
