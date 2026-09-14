@@ -424,31 +424,18 @@ body[data-theme="glass"] .pmain input{color:#f4f2ff}
 body[data-theme="glass"] .canvas-scroll{background-image:radial-gradient(circle,rgba(255,255,255,.08) 1px,transparent 1px)}
 
 /* Aero */
-body[data-theme="aero"]{
   --base:#e8f4fd;--cvs:#e8f4fd;--ink:#124a63;
   --tx:#124a63;--tx2:#3a7d9c;--tx3:#8ab4c8;
   --acc:#0a8f3c;--acc-h:#087a33;--ok:#2fae52;--purple:#0a7bd4;
   --bd:1px solid rgba(255,255,255,.85);
 }
-body[data-theme="aero"]::before{content:'';position:fixed;inset:0;z-index:-2;background:radial-gradient(ellipse 90% 55% at 75% -8%,rgba(255,255,255,.85),rgba(255,255,255,0) 55%),linear-gradient(180deg,#5db9ee 0%,#a5dcf7 34%,#d8f1fd 58%,#c9eca5 72%,#8fd05f 86%,#5faf3d 100%)}
-body[data-theme="aero"]::after{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle 46px at 12% 24%,rgba(255,255,255,.5),rgba(255,255,255,0) 70%),radial-gradient(circle 30px at 84% 15%,rgba(255,255,255,.42),rgba(255,255,255,0) 70%),radial-gradient(circle 66px at 68% 78%,rgba(255,255,255,.3),rgba(255,255,255,0) 70%)}
-body[data-theme="aero"] .topbar,body[data-theme="aero"] .left,body[data-theme="aero"] .right,body[data-theme="aero"] .statusbar,body[data-theme="aero"] .canvas-tail{background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(224,244,255,.82));backdrop-filter:blur(8px)}
-body[data-theme="aero"] .ctools,body[data-theme="aero"] .promptbar,body[data-theme="aero"] #agent-pop,body[data-theme="aero"] .empty-card{background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(224,244,255,.85));backdrop-filter:blur(8px)}
-body[data-theme="aero"] .compcell,body[data-theme="aero"] .tpl-card{background:linear-gradient(180deg,#fff,#e8f6ff);border-color:rgba(255,255,255,.9);box-shadow:0 3px 10px rgba(18,74,99,.15),inset 0 1px 0 #fff}
 
 /* Flat */
-body[data-theme="flat"]{
   --base:#f4f4f5;--cvs:#f4f4f5;--ink:#18181b;
   --tx:#18181b;--tx2:#52525b;--tx3:#a1a1aa;
   --acc:#2563eb;--acc-h:#1d4fd8;--ok:#16a34a;--purple:#7c3aed;
   --bd:0;
 }
-body[data-theme="flat"] *{border-radius:0!important;box-shadow:none!important}
-body[data-theme="flat"] .topbar,body[data-theme="flat"] .left,body[data-theme="flat"] .right,body[data-theme="flat"] .statusbar,body[data-theme="flat"] .canvas-tail{background:#fff;border-color:#e4e4e7}
-body[data-theme="flat"] .mode-seg,body[data-theme="flat"] .ctools,body[data-theme="flat"] .promptbar{background:#e4e4e7;border:none}
-body[data-theme="flat"] .compcell,body[data-theme="flat"] .trk,body[data-theme="flat"] .tpl-card,body[data-theme="flat"] .frame-chrome{background:#fff;border:1px solid #e4e4e7}
-body[data-theme="flat"] .canvas-scroll{background-image:none;background:#27272a}
-body[data-theme="flat"] .ghost-new{border-color:#52525b;color:#a1a1aa}
 
 /* 模式隔离：聊天只存在于设计画布；Map/Prototype 是纯阅读/播放空间 */
 body:not(.design-active) .promptbar,body:not(.design-active) #agent-pop{display:none!important}
@@ -467,6 +454,64 @@ body:not(.design-active) .flow-wires{display:none}
 #stage .frame-wrap.active g.sel-hint{outline:1.5px solid var(--acc);outline-offset:2px}
 #stage .frame-wrap.active g.sel-hint rect{vector-effect:non-scaling-stroke}
 #toast{display:none;position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:600;max-width:80vw;padding:10px 16px;border-radius:9px;background:#20252d;color:#fff;box-shadow:0 6px 24px #0003;font-size:12px;pointer-events:none}
+
+/* ===== Dark Mode（与主题正交：四主题各自的深色变体） ===== */
+body[data-mode="dark"]{--panel:var(--base);--line:var(--bd)}
+/* Mac Dark — macOS 暗色 */
+body[data-mode="dark"][data-theme="mac"]{
+  --base:#1e1e22;--cvs:#232327;--ink:#e5e5ea;
+  --tx:#e5e5ea;--tx2:#98989f;--tx3:#63636b;
+  --acc:#0a84ff;--acc-h:#409cff;--bd:1px solid #323234;
+}
+body[data-mode="dark"][data-theme="mac"] .topbar,body[data-mode="dark"][data-theme="mac"] .left,body[data-mode="dark"][data-theme="mac"] .right,body[data-mode="dark"][data-theme="mac"] .statusbar{background:rgba(30,30,34,.94)}
+body[data-mode="dark"][data-theme="mac"] .mac-glass{background:rgba(30,30,34,.86)}
+body[data-mode="dark"][data-theme="mac"] .compcell,body[data-mode="dark"][data-theme="mac"] .trk,body[data-mode="dark"][data-theme="mac"] .flowrow,body[data-mode="dark"][data-theme="mac"] .tpl-card,body[data-mode="dark"][data-theme="mac"] .declview,body[data-mode="dark"][data-theme="mac"] #ctxmenu,body[data-mode="dark"][data-theme="mac"] #inline-edit{background:#28282d;border-color:#3a3a3f;color:var(--tx)}
+body[data-mode="dark"][data-theme="mac"] .tbtn:hover,body[data-mode="dark"][data-theme="mac"] .ctool:hover,body[data-mode="dark"][data-theme="mac"] .layerrow:hover{background:rgba(255,255,255,.07)}
+body[data-mode="dark"][data-theme="mac"] .frow input,body[data-mode="dark"][data-theme="mac"] .pmain,body[data-mode="dark"][data-theme="mac"] .compsearch{background:#232327;border-color:#3a3a3f;color:var(--tx)}
+body[data-mode="dark"][data-theme="mac"] .frame-chrome{background:#28282d;border-color:#3a3a3f}
+/* Deep Dark — 更纯黑（OLED 风） */
+body[data-mode="dark"][data-theme="deep"]{
+  --base:#0c0d10;--cvs:#08090b;
+  --tx:#e8eaef;--tx2:#8b929d;--tx3:#4d535e;
+  --acc:#5a7cff;--bd:1px solid #1d2128;
+}
+body[data-mode="dark"][data-theme="deep"] .topbar,body[data-mode="dark"][data-theme="deep"] .left,body[data-mode="dark"][data-theme="deep"] .right,body[data-mode="dark"][data-theme="deep"] .statusbar{background:rgba(12,13,16,.96)}
+body[data-mode="dark"][data-theme="deep"] .compcell,body[data-mode="dark"][data-theme="deep"] .trk,body[data-mode="dark"][data-theme="deep"] .flowrow,body[data-mode="dark"][data-theme="deep"] .tpl-card,body[data-mode="dark"][data-theme="deep"] .declview{background:#131519;border-color:#1d2128}
+body[data-mode="dark"][data-theme="deep"] .frow input,body[data-mode="dark"][data-theme="deep"] .pmain,body[data-mode="dark"][data-theme="deep"] .compsearch{background:#0f1013;border-color:#1d2128;color:var(--tx)}
+body[data-mode="dark"][data-theme="deep"] .frame-chrome{background:#131519;border-color:#1d2128}
+/* Neu Dark — 深色软拟物（阴影反转） */
+body[data-mode="dark"][data-theme="neu"]{
+  --base:#262932;--cvs:#262932;--ink:#e6e9f0;
+  --tx:#e6e9f0;--tx2:#a8aeba;--tx3:#6d7482;
+  --acc:#6d8dff;
+}
+body[data-mode="dark"][data-theme="neu"] .topbar,body[data-mode="dark"][data-theme="neu"] .left,body[data-mode="dark"][data-theme="neu"] .right,body[data-mode="dark"][data-theme="neu"] .statusbar{background:#262932;border:none}
+body[data-mode="dark"][data-theme="neu"] .compcell,body[data-mode="dark"][data-theme="neu"] .trk,body[data-mode="dark"][data-theme="neu"] .flowrow,body[data-mode="dark"][data-theme="neu"] .tpl-card,body[data-mode="dark"][data-theme="neu"] .mode-btn.on,body[data-mode="dark"][data-theme="neu"] .nodecard,body[data-mode="dark"][data-theme="neu"] .pmain,body[data-mode="dark"][data-theme="neu"] .frame-chrome{background:#262932;box-shadow:-4px -4px 9px rgba(255,255,255,.05),5px 5px 12px rgba(0,0,0,.55);border:none;color:var(--tx)}
+body[data-mode="dark"][data-theme="neu"] .frow input,body[data-mode="dark"][data-theme="neu"] .pmain input,body[data-mode="dark"][data-theme="neu"] .colorpair input,body[data-mode="dark"][data-theme="neu"] .compsearch{background:#22252d;box-shadow:inset 3px 3px 6px rgba(0,0,0,.5),inset -2px -2px 5px rgba(255,255,255,.05);border:none;color:var(--tx)}
+body[data-mode="dark"][data-theme="neu"] .ctools,body[data-mode="dark"][data-theme="neu"] .czoom,body[data-mode="dark"][data-theme="neu"] .promptbar,body[data-mode="dark"][data-theme="neu"] #agent-pop,body[data-mode="dark"][data-theme="neu"] .ctool.on,body[data-mode="dark"][data-theme="neu"] .empty-card,body[data-mode="dark"][data-theme="neu"] .mac-glass,body[data-mode="dark"][data-theme="neu"] .mode-seg,body[data-mode="dark"][data-theme="neu"] .segshadow{background:#262932;box-shadow:-5px -5px 12px rgba(255,255,255,.05),6px 6px 14px rgba(0,0,0,.6);border:none;color:var(--tx)}
+body[data-mode="dark"][data-theme="neu"] .segshadow button,body[data-mode="dark"][data-theme="neu"] .ibtn,body[data-mode="dark"][data-theme="neu"] .ctool{background:#262932;color:var(--tx2);border:none}
+body[data-mode="dark"][data-theme="neu"] .pchip{background:rgba(255,255,255,.06);color:#b6bcc8;border-color:transparent}
+body[data-mode="dark"][data-theme="neu"] .pchip:hover{background:rgba(109,141,255,.16);color:var(--acc)}
+/* 通用深色适配（四主题共享的轻补丁） */
+body[data-mode="dark"] .pchip{background:rgba(255,255,255,.07);color:var(--tx2);border-color:rgba(255,255,255,.08)}
+body[data-mode="dark"] .pchip:hover{background:rgba(120,150,255,.14);color:var(--acc)}
+body[data-mode="dark"] .promptbar{background:rgba(24,25,30,.92);border-color:rgba(255,255,255,.12)}
+body[data-mode="dark"] .pmain{background:#242429;border-color:rgba(255,255,255,.12)}
+body[data-mode="dark"] .pmain .kbd{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1);color:var(--tx3)}
+body[data-mode="dark"] .ctools,body[data-mode="dark"] .czoom{background:rgba(28,29,34,.92);border-color:rgba(255,255,255,.1)}
+body[data-mode="dark"] .layerrow:hover,body[data-mode="dark"] .abrow:hover{background:rgba(255,255,255,.05)}
+body[data-mode="dark"] #theme-menu{background:#242428;border-color:#3a3a3f;color:var(--tx)}
+body[data-mode="dark"] #theme-menu .tmenu:hover{background:rgba(255,255,255,.08)}
+/* Glass Dark — 夜空玻璃 */
+body[data-mode="dark"][data-theme="glass"]{
+  --base:#0d0a20;--cvs:transparent;
+  --tx:#f0edff;--tx2:#bcb4e6;--tx3:#7d75a8;
+  --acc:#9a8bff;--bd:1px solid rgba(255,255,255,.18);
+}
+body[data-mode="dark"][data-theme="glass"]::before{background:linear-gradient(135deg,#0a0820 0%,#231a52 38%,#3d2a6e 70%,#51307a 100%)}
+body[data-mode="dark"][data-theme="glass"] .topbar,body[data-mode="dark"][data-theme="glass"] .left,body[data-mode="dark"][data-theme="glass"] .right,body[data-mode="dark"][data-theme="glass"] .statusbar{background:rgba(10,8,26,.66);backdrop-filter:blur(16px) saturate(1.25)}
+body[data-mode="dark"][data-theme="glass"] .compcell,body[data-mode="dark"][data-theme="glass"] .trk,body[data-mode="dark"][data-theme="glass"] .flowrow,body[data-mode="dark"][data-theme="glass"] .tpl-card,body[data-mode="dark"][data-theme="glass"] .frame-chrome{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16)}
+body[data-mode="dark"][data-theme="glass"] .frow input,body[data-mode="dark"][data-theme="glass"] .pmain,body[data-mode="dark"][data-theme="glass"] .compsearch{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:var(--tx)}
 </style>
 </head>
 <body data-theme="mac" class="mode-wireframe">
@@ -636,13 +681,13 @@ body:not(.design-active) .flow-wires{display:none}
         <svg class="ic" style="width:12px;height:12px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18c1.2 0 2-.9 2-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.9-.5-1.4 0-1.1.9-2 2-2h2.4A9 9 0 0 0 12 3z"/></svg>
         <span id="theme-cur">Mac</span>
       </button>
-      <div id="theme-menu" style="display:none;position:absolute;bottom:24px;right:0;background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:10px;box-shadow:var(--sh-pop);padding:4px;min-width:180px;z-index:400">
+      <div id="theme-menu" style="display:none;position:absolute;bottom:24px;right:0;background:var(--panel,#fff);border:1px solid var(--line,#d8d8dc);border-radius:10px;box-shadow:var(--sh-pop);padding:4px;min-width:180px;z-index:400;color:var(--tx)">
         <button class="tmenu" onclick="pickTheme('mac')">Mac · macOS Light</button>
         <button class="tmenu" onclick="pickTheme('deep')">Deep · 深色专业</button>
         <button class="tmenu" onclick="pickTheme('neu')">Neumorphism · 软拟物</button>
         <button class="tmenu" onclick="pickTheme('glass')">Glassmorphism · 玻璃</button>
-        <button class="tmenu" onclick="pickTheme('aero')">Frutiger Aero · 水感</button>
-        <button class="tmenu" onclick="pickTheme('flat')">Flat · 平面</button>
+        <div style="height:1px;background:rgba(0,0,0,.08);margin:4px 6px"></div>
+        <button class="tmenu" id="mode-toggle" onclick="toggleMode()">🌙 深色模式：关</button>
       </div>
     </span>
     <span><b id="sb-abs">0</b> 画板</span>
@@ -2155,7 +2200,7 @@ function toggleThemeMenu(e){
 }
 function pickTheme(t){
   setTheme(t);
-  $('theme-cur').textContent={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass',aero:'Aero',flat:'Flat'}[t]||t;
+  $('theme-cur').textContent={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[t]||t;
   $('theme-menu').style.display='none';
 }
 document.addEventListener('click',e=>{
@@ -2166,11 +2211,21 @@ function setTheme(t){
   document.body.dataset.theme=t;
   try{localStorage.setItem('dd-theme',t);}catch(_){}
 }
+function setMode(m){
+  document.body.dataset.mode=m;
+  try{localStorage.setItem('dd-mode',m);}catch(_){}
+  const t=$('mode-toggle');if(t)t.textContent=m==='dark'?'☀️ 深色模式：开':'🌙 深色模式：关';
+}
+function toggleMode(){setMode(document.body.dataset.mode==='dark'?'light':'dark');}
 (function initTheme(){
   let t='mac';
   try{t=localStorage.getItem('dd-theme')||'mac';}catch(_){}
+  if(!['mac','deep','neu','glass'].includes(t))t='mac'; // 限定四主题
   setTheme(t);
-  const names={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass',aero:'Aero',flat:'Flat'};
+  let m='light';
+  try{m=localStorage.getItem('dd-mode')||'light';}catch(_){}
+  setMode(m);
+  const names={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'};
   const c=$('theme-cur');if(c)c.textContent=names[t]||t;
 })();
 
