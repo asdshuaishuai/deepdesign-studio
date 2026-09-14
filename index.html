@@ -284,6 +284,8 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .empty-card p{color:var(--tx3);font-size:12px;margin-bottom:22px}
 .empty-card p kbd{background:rgba(0,0,0,.06);border-radius:5px;padding:1px 6px;font-family:ui-monospace;font-size:10.5px}
 .tpl-row{display:flex;gap:11px;justify-content:center}
+.compcell.uc{border-color:rgba(75,107,251,.45);background:linear-gradient(180deg,#fff,#f0f4ff)}
+body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .tpl-card{width:126px;padding:11px;background:#fff;border:1px solid rgba(0,0,0,.09);border-radius:12px;cursor:pointer;transition:all .15s;text-align:left;box-shadow:var(--sh-sm)}
 .tpl-card:hover{border-color:var(--acc);transform:translateY(-3px);box-shadow:var(--sh-md)}
 .tpl-card .th{height:70px;border-radius:7px;margin-bottom:9px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,.07)}
@@ -513,6 +515,11 @@ body:not(.design-active) .flow-wires{display:none}
     </div>
     <div class="lpanel" id="lp-comp" style="display:none">
       <input class="compsearch" id="comp-search" placeholder="搜索组件…" oninput="filterComps(this.value)">
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="tbtn" onclick="saveAsComponent()" title="把当前活动画板沉淀为可复用组件（人类路线）" style="flex:1;font-size:10.5px;padding:6px 8px">当前画板 → 组件</button>
+        <button class="tbtn" onclick="$('mcf-file').click()" title="导入 MCF 专有格式组件包" style="flex:1;font-size:10.5px;padding:6px 8px">导入 MCF</button>
+        <input type="file" id="mcf-file" accept=".mcf" style="display:none" onchange="importMcf(this)">
+      </div>
       <div id="comp-tree"><div class="hintbox">加载中…</div></div>
     </div>
     <div class="lpanel" id="lp-flow" style="display:none">
@@ -1698,7 +1705,7 @@ async function copyDeclSide(btn){
 }
 
 /* ---------- 组件库 ---------- */
-const COMP_META={actions:{label:'操作'},inputs:{label:'输入'},selection:{label:'选择'},display:{label:'展示'},layout:{label:'布局'},navigation:{label:'导航'},feedback:{label:'反馈'},overlay:{label:'浮层'}};
+const COMP_META={user:{label:'我的组件'},actions:{label:'操作'},inputs:{label:'输入'},selection:{label:'选择'},display:{label:'展示'},layout:{label:'布局'},navigation:{label:'导航'},feedback:{label:'反馈'},overlay:{label:'浮层'}};
 const COMP_PREV={button:'▸',fab:'＋',text_input:'▭',search_bar:'⌕',slider:'●─',checkbox:'☑',switch:'⊚',radio:'◉',avatar:'☺',progress:'▬',chip:'◍',image:'▣',card:'▢',app_bar:'▤',divider:'─',rect:'□',list_item:'☰',tab_bar:'≡',alert:'⚠',toast:'◉',dialog:'▢',drawer:'▤',menu:'☰',table:'▦',kbd:'⌨',rating:'★',stat:'№'};
 let allComps=[];
 async function loadComponents(){
@@ -1721,8 +1728,18 @@ function renderCompTree(filter){
     head.innerHTML=`<span class="arr">▶</span>${COMP_META[cat].label}<span class="n">${items.length}</span>`;
     const grid=document.createElement('div');grid.className='catgrid';
     items.forEach(c=>{
-      const cell=document.createElement('div');cell.className='compcell';cell.title=c.description||'';
-      cell.innerHTML=`<span class="prev">${COMP_PREV[c.id]||'◼'}</span><span class="nm">${c.id}</span>`;
+      const cell=document.createElement('div');cell.className='compcell'+(c.source==='user'?' uc':'');cell.title=c.description||'';
+      cell.innerHTML=`<span class="prev">${c.source==='user'?'◆':(COMP_PREV[c.id]||'◼')}</span><span class="nm">${c.id}</span>`;
+      if(c.source==='user'){
+        const ex=document.createElement('span');ex.textContent='⤓';ex.title='导出 MCF（专有格式）';
+        ex.style.cssText='position:absolute;top:3px;right:5px;font-size:10px;color:var(--acc);cursor:pointer;opacity:.75';
+        ex.onclick=ev=>{ev.stopPropagation();exportMcf(c.id);};
+        cell.style.position='relative';cell.appendChild(ex);
+        const del=document.createElement('span');del.textContent='✕';del.title='删除组件';
+        del.style.cssText='position:absolute;top:3px;right:20px;font-size:9px;color:#c34;cursor:pointer;opacity:.6';
+        del.onclick=async ev=>{ev.stopPropagation();if(await runOp(`component-delete ${c.id}`,'human')){toast('已删除 '+c.id);loadComponents();}};
+        cell.appendChild(del);
+      }
       cell.onclick=()=>{
         if(suppressComponentClick){suppressComponentClick=false;return;}
         if(!baseCmd){toast('先创建画板');return;}
@@ -1740,6 +1757,60 @@ function renderCompTree(filter){
   });
 }
 function filterComps(v){renderCompTree(v.trim());}
+
+/* ---------- 用户组件：画板沉淀（人类路线） / MCF 导入导出 ---------- */
+async function saveAsComponent(){
+  if(!baseCmd||!active){toast('先创建一个活动画板');return;}
+  const src=sessions[active]&&sessions[active].mbt;
+  if(!src){toast('当前画板没有源码');return;}
+  const cid=prompt('组件 id（英文标识符）：',active);
+  if(!cid)return;
+  if(!/^[a-z][a-z0-9_]*$/.test(cid)){toast('id 需为小写字母开头的标识符');return;}
+  const desc=prompt('组件描述：','由 deepDesign 画板沉淀')||'';
+  // 构造组件声明：单画板块 + component 元段（v1 固化当前内容为默认值）
+  const m=src.match(/<!-- moonviz:artboard '+active+' -->[\s\S]*?(```mbt[\s\S]*?```)/);
+  let body='';
+  if(m){body=m[1];}
+  else{const i=src.indexOf('```mbt');const j=src.indexOf('```',i+6);if(i<0||j<0){toast('画板块提取失败');return;}body=src.slice(i,j+3);}
+  const decl='---\n'
+    +'moonviz:\n  format: visual-document\n  revision: 1\n'
+    +'  title: '+cid+'\n  entry: '+cid+'\n  artboards:\n    - '+cid+'\n'
+    +'  component:\n    id: '+cid+'\n    description: '+desc+'\n'
+    +'    params: []\n    variants:\n      - name: default\n'
+    +'---\n\n# '+cid+'\n\n<!-- moonviz:artboard '+cid+' -->\n'
+    +body.replace('moonviz:artboard '+active,'moonviz:artboard '+cid)
+         .replace('moonviz:visual '+active,'moonviz:visual '+cid)
+         .replace('visual_'+active+'(','visual_'+cid+'(')
+         .replace('prototype(name="'+active+'"','prototype(name="'+cid+'"')
+    +'\n';
+  const b64=btoa(unescape(encodeURIComponent(decl)));
+  if(await runOp('component-compile-b64 '+b64,'human')){
+    toast('组件已注册：'+cid+'（本地库已持久化）');
+    loadComponents();
+  }
+}
+async function exportMcf(cid){
+  const rs=await execCli(['component-export '+cid]);
+  const r=rs.find(x=>x&&x.mcf_b64);
+  if(!r||!r.ok){toast('导出失败：'+(r&&r.error||'unknown'));return;}
+  const bytes=Uint8Array.from(atob(r.mcf_b64),c=>c.charCodeAt(0));
+  const blob=new Blob([bytes],{type:'application/octet-stream'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=cid+'.mcf';a.click();
+  URL.revokeObjectURL(a.href);
+  toast('已导出 '+cid+'.mcf（专有格式，仅引擎可解析）');
+}
+async function importMcf(input){
+  const f=input.files&&input.files[0];input.value='';
+  if(!f)return;
+  const buf=await f.arrayBuffer();
+  let bin='';const u=new Uint8Array(buf);
+  for(let i=0;i<u.length;i+=8192)bin+=String.fromCharCode(...u.subarray(i,i+8192));
+  const b64=btoa(bin);
+  const rs=await execCli(['component-import '+b64]);
+  const r=rs.find(x=>x&&(x.ok===true||x.error));
+  if(r&&r.ok){toast('已导入组件：'+r.component);loadComponents();}
+  else toast('导入失败：'+(r&&r.error||'invalid'));
+}
 
 /* ---------- 组件 Pointer 拖拽（真实预览 + 松手落点） ---------- */
 function startComponentPointerDrag(e,cid,cell){

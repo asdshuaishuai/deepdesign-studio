@@ -47,7 +47,102 @@ fn find_moonviz_dir() -> Result<PathBuf, String> {
 
 /// 执行 MoonViz CLI 命令序列（stdin → stdout JSON 行）
 #[tauri::command]
-fn exec_cli(commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
+/// 用户组件库（宿主持久化侧）：默认 ~/.moonviz/components，可用 MOONVIZ_USER_LIB 覆盖。
+fn user_lib_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("MOONVIZ_USER_LIB") {
+        return PathBuf::from(dir);
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    PathBuf::from(home).join(".moonviz").join("components")
+}
+
+fn user_lib_b64s() -> Vec<String> {
+    let dir = user_lib_dir();
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+        for p in paths {
+            if p.extension().and_then(|e| e.to_str()) == Some("md") {
+                if let Ok(bytes) = std::fs::read(&p) {
+                    out.push(BASE64.encode(bytes));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn is_lib_mutating(cmd: &str) -> bool {
+    let head = cmd.split_whitespace().next().unwrap_or("");
+    matches!(
+        head,
+        "component-compile-b64" | "component-import" | "component-delete"
+    )
+}
+
+/// 用同批 library-snapshot 结果全量重写本地库（幂等）。
+fn write_user_lib(snap: &serde_json::Value) {
+    let dir = user_lib_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let mut keep = std::collections::HashSet::new();
+    if let Some(items) = snap.get("components").and_then(|c| c.as_array()) {
+        for item in items {
+            let cid = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let src = item.get("source_b64").and_then(|v| v.as_str()).unwrap_or("");
+            if cid.is_empty() || src.is_empty() || cid.contains('/') || cid.contains("..") {
+                continue;
+            }
+            let name = format!("{cid}.mbt.md");
+            if let Ok(bytes) = BASE64.decode(src) {
+                if std::fs::write(dir.join(&name), bytes).is_ok() {
+                    keep.insert(name);
+                }
+            }
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("md")
+                && !keep.contains(&p.file_name().unwrap_or_default().to_string_lossy().to_string())
+            {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn exec_cli(mut commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
+    // snapshot 与变更命令同进程：跨进程注入的 restore 只读磁盘旧库，
+    // 首次注册会得到空快照（鸡生蛋）。
+    let mutating = commands.iter().any(|c| is_lib_mutating(c));
+    if mutating {
+        commands.push("library-snapshot".to_string());
+    }
+    let result = exec_cli_inner(commands)?;
+    if mutating {
+        if let Some(snap) = result
+            .iter()
+            .find(|r| r.get("op").and_then(|v| v.as_str()) == Some("library-snapshot"))
+        {
+            write_user_lib(snap);
+        }
+    }
+    Ok(result)
+}
+
+fn exec_cli_inner(mut commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
+    let lib = user_lib_b64s();
+    if !lib.is_empty() {
+        let mut restore = String::from("library-restore-b64");
+        for b in &lib {
+            restore.push(' ');
+            restore.push_str(b);
+        }
+        commands.insert(0, restore);
+    }
     let dir = find_moonviz_dir()?;
     let moon = {
         let m = which_moon();

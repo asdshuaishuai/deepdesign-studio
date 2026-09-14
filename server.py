@@ -16,6 +16,46 @@ CODEC_DIR = MOONVIZ_DIR / 'ddp'
 PORT = int(os.environ.get('MOONVIZ_PORT', '8901'))
 MAX_REQUEST_BYTES = 24 * 1024 * 1024
 MOON = shutil.which('moon') or str(Path.home() / '.moon/bin/moon')
+USER_LIB_DIR = ROOT / '.moonviz' / 'components'
+# 触发库同步的命令前缀（编译/导入/删除后把注册表快照落盘）
+LIB_MUTATING = ('component-compile-b64', 'component-import', 'component-delete')
+
+
+def user_lib_b64s():
+    """项目级用户组件库 → 声明 b64 列表（宿主持久化侧）。"""
+    if not USER_LIB_DIR.is_dir():
+        return []
+    out = []
+    for f in sorted(USER_LIB_DIR.glob('*.mbt.md')):
+        try:
+            out.append(base64.b64encode(f.read_bytes()).decode('ascii'))
+        except OSError:
+            continue
+    return out
+
+
+def sync_user_lib(snap):
+    """用同批命令尾部的 library-snapshot 结果全量重写本地库（幂等）。
+
+    注意 snapshot 必须与变更命令同进程：跨进程注入的 restore 读的是磁盘
+    旧库，首次注册时会得到空快照（鸡生蛋）。"""
+    USER_LIB_DIR.mkdir(parents=True, exist_ok=True)
+    keep = set()
+    for item in (snap or {}).get('components', []):
+        cid, src = item.get('id'), item.get('source_b64')
+        if not isinstance(cid, str) or not isinstance(src, str) or not cid or '/' in cid or '..' in cid:
+            continue
+        keep.add(cid + '.mbt.md')
+        try:
+            USER_LIB_DIR.joinpath(cid + '.mbt.md').write_bytes(base64.b64decode(src))
+        except (OSError, binascii.Error, ValueError):
+            continue
+    for f in USER_LIB_DIR.glob('*.mbt.md'):
+        if f.name not in keep:
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -69,7 +109,11 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
                 commands = data.get('commands')
                 if not isinstance(commands, list) or not all(isinstance(c, str) and '\n' not in c and '\r' not in c for c in commands):
                     raise ValueError('commands_invalid')
-                result = self.run_cli(commands)
+                if any(c.split(' ', 1)[0] in LIB_MUTATING for c in commands):
+                    commands = list(commands) + ['library-snapshot']
+                result = self.run_cli_static(commands)
+                if commands[-1] == 'library-snapshot':
+                    sync_user_lib(next((r for r in result if isinstance(r, dict) and r.get('op') == 'library-snapshot'), None))
             elif self.path in ('/api/ddp/encrypt', '/api/ddp/decrypt'):
                 result = self.run_ddp_codec(self.path.rsplit('/', 1)[1], data)
             elif self.path == '/api/fx/ask':
@@ -91,7 +135,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
                 source = base64.b64decode(payload, validate=True)
                 if len(source) > 8 * 1024 * 1024:
                     raise ValueError('mbt_request_too_large')
-                rendered = self.run_cli(['render-mbt-b64 ' + payload])
+                rendered = self.run_cli_static(['render-mbt-b64 ' + payload])
                 view = next((r for r in rendered if isinstance(r, dict) and r.get('ok') is True and 'artboards' in r), None)
                 if view is None:
                     error = next((r.get('error') for r in rendered if isinstance(r, dict) and r.get('error')), 'render_failed')
@@ -158,7 +202,11 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
         except (OSError, ValueError):
             return {'ok': False, 'error': 'fx_bridge_unavailable'}
 
-    def run_cli(self, commands):
+    @staticmethod
+    def run_cli_static(commands):
+        lib = user_lib_b64s()
+        if lib:
+            commands = ['library-restore-b64 ' + ' '.join(lib)] + list(commands)
         try:
             proc = subprocess.run(
                 [MOON, 'run', '--target', 'native', 'cli'],
