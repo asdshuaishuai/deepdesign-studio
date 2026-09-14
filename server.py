@@ -176,7 +176,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
             return {'ok': False, 'error': 'fx_api_key_invalid'}
         if not isinstance(base_url, str) or not base_url.strip():
             return {'ok': False, 'error': 'models_base_url_required'}
-        bridge = ROOT / 'agent' / 'fx-agent.mjs'
+        bridge = ROOT / 'agent' / 'agent-bridge.mjs'
         if not bridge.exists():
             return {'ok': False, 'error': 'fx_bridge_missing'}
         import shutil as _shutil
@@ -213,7 +213,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
             return {'ok': False, 'error': 'fx_api_key_invalid'}
         if model is not None and not isinstance(model, str):
             return {'ok': False, 'error': 'fx_model_invalid'}
-        bridge = ROOT / 'agent' / 'fx-agent.mjs'
+        bridge = ROOT / 'agent' / 'agent-bridge.mjs'
         if not bridge.exists():
             return {'ok': False, 'error': 'fx_bridge_missing'}
         import shutil as _shutil

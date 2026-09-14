@@ -194,23 +194,109 @@ function minimaxRequestBodyPatch(level) {
   return null;
 }
 
+// libfx WASM 发 Vercel AI SDK 格式（prompt[] + tools + toolChoice），
+// 厂商端点收 OpenAI chat/completions 格式（messages[] + functions）。
+// 此转发器做双向协议转换，支持多轮 tool-calling。
 async function startOpenAIForwarder(baseURL, bodyPatcher = null) {
   const server = http.createServer(async (req, res) => {
     try {
       const chunks = [];
       for await (const c of req) chunks.push(c);
       let body = Buffer.concat(chunks);
-      if (bodyPatcher && body.length && (req.headers['content-type'] || '').includes('json')) {
-        try {
-          const obj = JSON.parse(body.toString('utf8'));
-          bodyPatcher(obj);
-          body = Buffer.from(JSON.stringify(obj), 'utf8');
-        } catch { /* body 不是 JSON 则原样转发 */ }
+
+      if (process.env.FX_DEBUG) console.error('[forwarder]', req.method, req.url);
+      if (req.url.includes('/chat/completions') && body.length) {
+        const aiSdkReq = JSON.parse(body.toString('utf8'));
+
+        // ===== Vercel AI SDK → OpenAI 请求转换 =====
+        const messages = [];
+        const toolResultMap = new Map(); // tool_call_id → result content
+        for (const msg of (aiSdkReq.prompt || [])) {
+          if (msg.role === 'system') {
+            messages.push({ role: 'system', content: typeof msg.content === 'string' ? msg.content : msg.content?.map(c => c.text || '').join('') });
+          } else if (msg.role === 'user') {
+            const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.map(c => c.text || '').join('') : String(msg.content));
+            messages.push({ role: 'user', content: text });
+          } else if (msg.role === 'assistant') {
+            // 可能带 tool-calls
+            const m = { role: 'assistant', content: msg.content || null };
+            if (msg.toolCalls || msg.tool_calls) {
+              const tcs = msg.toolCalls || msg.tool_calls;
+              m.tool_calls = tcs.map(tc => ({
+                id: tc.toolCallId || tc.id || 'tc_' + Math.random().toString(36).slice(2),
+                type: 'function',
+                function: { name: tc.toolName || tc.function?.name, arguments: JSON.stringify(tc.args || tc.input || (tc.function ? JSON.parse(tc.function.arguments) : {})) },
+              }));
+            }
+            messages.push(m);
+          } else if (msg.role === 'tool') {
+            // Vercel AI SDK tool result → OpenAI tool message
+            const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || msg.result || {});
+            messages.push({ role: 'tool', tool_call_id: msg.toolCallId || 'tc_prev', content });
+          }
+        }
+
+        const openaiTools = (aiSdkReq.tools || []).map(t => ({
+          type: 'function',
+          function: {
+            name: t.name || t.function?.name,
+            description: t.description || t.function?.description || '',
+            parameters: t.inputSchema || t.parameters || t.function?.parameters || { type: 'object', properties: {} },
+          },
+        }));
+
+        const openaiReq = {
+          model: aiSdkReq.model || 'default',
+          messages,
+          ...(openaiTools.length > 0 ? { tools: openaiTools, tool_choice: 'auto' } : {}),
+        };
+        if (bodyPatcher) bodyPatcher(openaiReq);
+
+        // ===== 发给厂商 =====
+        const target = baseURL.replace(/\/$/, '') + '/chat/completions';
+        const headers = { 'Content-Type': 'application/json' };
+        const authHeader = req.headers['authorization'];
+        if (authHeader) headers['Authorization'] = authHeader;
+        const upstream = await fetch(target, {
+          method: 'POST', headers,
+          body: JSON.stringify(openaiReq),
+        });
+        const upstreamJson = await upstream.json();
+
+        // ===== OpenAI 响应 → Vercel AI SDK 响应转换 =====
+        const choice = upstreamJson.choices?.[0];
+        const msg = choice?.message || {};
+        const contentParts = [];
+        if (msg.content) contentParts.push({ type: 'text', text: msg.content });
+        const toolCalls = [];
+        if (msg.tool_calls) {
+          for (const tc of msg.tool_calls) {
+            toolCalls.push({
+              toolCallId: tc.id,
+              toolName: tc.function.name,
+              args: JSON.parse(tc.function.arguments || '{}'),
+            });
+          }
+        }
+        // Vercel AI SDK 的 generateText 响应格式
+        const aiSdkResp = {
+          text: msg.content || '',
+          toolCalls,
+          toolResults: [],
+          finishReason: choice?.finish_reason === 'tool_calls' ? 'tool-calls' : (choice?.finish_reason || 'stop'),
+          usage: upstreamJson.usage || { promptTokens: 0, completionTokens: 0 },
+          rawResponse: { headers: {} },
+          warnings: [],
+        };
+        res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(aiSdkResp));
+        return;
       }
+
+      // 非 chat/completions 请求原样转发
       const target = baseURL.replace(/\/$/, '') + req.url;
       const headers = { ...req.headers };
-      delete headers.host; delete headers.connection;
-      delete headers['content-length'];
+      delete headers.host; delete headers.connection; delete headers['content-length'];
       headers['content-length'] = body.length;
       const upstream = await fetch(target, {
         method: req.method, headers, body: body.length ? body : undefined,
@@ -230,14 +316,16 @@ async function startOpenAIForwarder(baseURL, bodyPatcher = null) {
     server.on('error', reject);
   });
   const port = server.address().port;
-  // fx 要求 chat 端点形式；转发到厂商的 /chat/completions 由 fx 请求路径决定
   return { server, gatewayChatUrl: `http://127.0.0.1:${port}/chat/completions` };
 }
 
 async function runWithFx({ instruction, mbt_b64, api_key, model, base_url, thinking_level, engine_dir }) {
+  if (process.env.FX_DEBUG) console.error('[bridge] runWithFx start');
+  if (process.env.FX_DEBUG) console.error('[bridge] importing libfx...');
   let libfx;
   try {
     libfx = await import('libfx');
+    if (process.env.FX_DEBUG) console.error('[bridge] libfx imported');
   } catch {
     return { ok: false, error: 'fxsdk_not_installed', detail: 'cd agent && npm install libfx' };
   }
@@ -299,9 +387,13 @@ async function runWithFx({ instruction, mbt_b64, api_key, model, base_url, think
   ];
 
   options.tools = tools;
+  if (process.env.FX_DEBUG) console.error('[bridge] creating agent, gatewayChatUrl:', options.gatewayChatUrl);
   const agent = await libfx.createFxAgent(options);
+  if (process.env.FX_DEBUG) console.error('[bridge] agent created');
+  if (process.env.FX_DEBUG) console.error('[bridge] prompting...');
   try {
     const turn = agent.prompt(instruction);
+    if (process.env.FX_DEBUG) console.error('[bridge] prompt sent, waiting...');
     for await (const ev of turn) {
       if (ev.type === 'tool_start') ex.log().push({ op: `tool:${ev.name}`, ok: true });
     }
