@@ -1,0 +1,7 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/schemas/
+tmp_icons/
+__pycache__/
+.DS_Store
+*.log

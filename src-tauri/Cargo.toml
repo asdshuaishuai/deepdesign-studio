@@ -1,0 +1,20 @@
+[package]
+name = "deepdesign-studio"
+version = "0.3.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+moonviz-ddp = { path = "../../moonviz/ddp" }
+tauri = { version = "2.0", features = [] }
+tauri-plugin-dialog = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22"
+zeroize = "1.8"
+
+[lib]
+name = "deepdesign_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
