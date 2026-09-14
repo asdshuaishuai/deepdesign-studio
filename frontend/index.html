@@ -699,6 +699,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <button class="pchip" onclick="usePrompt('生成 Web 登录页')">+ Web 登录页</button>
           <button class="pchip" onclick="usePrompt('生成手机登录页')">+ 手机登录</button>
           <button class="pchip" onclick="usePrompt('生成仪表盘页面')">+ 仪表盘</button>
+          <button class="pchip" onclick="usePrompt('做一个微信风格的社交应用原型：聊天列表、会话页、发现页、我的页面，相互可跳转')">💬 微信社交</button>
           <button class="pchip" onclick="usePrompt('一键修复')">⚡ 自动修复</button>
         </div>
         <div class="pmain">
@@ -1764,20 +1765,39 @@ async function runGlobalPrompt(){
   const mk=(tid,w,h,label)=>{
     showCmdBarless(tid,w,h);
   };
-  if(/登录/.test(t)&&!/手机|移动/.test(t)){quickStart('web_login',1280,800);trackAgent(t,[`template web_login <new> 1280 800`]);return;}
-  if(/手机|移动/.test(t)){quickStart('login',390,844);trackAgent(t,[`template login <new> 390 844`]);return;}
-  if(/仪表盘|dashboard/i.test(t)){quickStart('web_dashboard',1280,800);trackAgent(t,[`template web_dashboard <new> 1280 800`]);return;}
-  if(/落地|landing/i.test(t)){quickStart('adaptive_landing',1280,800);trackAgent(t,[`template adaptive_landing <new> 1280 800`]);return;}
-  if(/修复|fix|优化/.test(t)){if(baseCmd){await runOp(`fix ${active}`,'agent');trackAgent(t,[`fix ${active}`]);}else toast('先创建画板');return;}
+  if(/修复|fix|优化/.test(t)&&baseCmd){await runOp(`fix ${active}`,'agent');trackAgent(t,[`fix ${active}`]);return;}
   if(/深色|dark/i.test(t)){await runOp('theme dark','agent');trackAgent(t,['theme dark']);return;}
   if(/浅色|light|白/.test(t)){await runOp('theme light','agent');trackAgent(t,['theme light']);return;}
-  // 组件名直接匹配
+  // 组件名直接匹配（点击放置）
   const comps=($('comp-tree').textContent||'');
   if(baseCmd&&comps.includes(t)){placing++;await runOp(`place ${active} ${t} ${t}_${placing} - 60 120`,'agent');trackAgent(t,[`place ${active} ${t}`]);return;}
-  // 兜底：对选中元素跑行内 shim，或 fix
-  if(selected){$('ap-input').value=t;openAgentPop({clientX:window.innerWidth/2,clientY:window.innerHeight/2});sendAgent();return;}
-  if(baseCmd){await runOp(`fix ${active}`,'agent');trackAgent(t,[`fix ${active}（兜底）`]);}
-  else toast('未识别的意图 — 试试「生成 Web 登录页」');
+  // ===== 兜底：完整自然语言 → AI Agent（不再有"未识别意图"） =====
+  // 无画板时先自动建一个 390×844 画板承接（AI 在其上继续操作）
+  if(!baseCmd||!mbtText){
+    const boardId=newId();
+    const okBoard=await addBoard('create',boardId,390,844,'agent');
+    if(!okBoard){toast('自动创建画板失败，请检查引擎连接');return;}
+    trackAgent(t,[`create ${boardId} 390 844（自动承接）`]);
+  }
+  try{
+    loadAgentConfig();
+    setStatus('agent',t,true,'AI 处理中…');
+    const r=await askFxSdk(t);
+    if(!r.ops||!r.ops.length){
+      toast('AI 未生成操作 — 试试更具体的描述，如「做一个微信风格的聊天列表页」');
+      trackAgent(t,[],false);
+      return;
+    }
+    if(r.mbt_b64){
+      const src=b64ToUtf8(r.mbt_b64);
+      applyMbtResult({ok:true,mbt:src,entry:r.render&&r.render.entry,artboards:r.render&&r.render.artboards,flows:r.render&&r.render.flows,revision:r.render&&r.render.revision});
+    }
+    trackAgent(t,r.ops);
+    toast(`AI 已提交 ${r.ops.length} 条操作（AgentGate 校验）`);
+  }catch(err){
+    toast('AI 调用失败：'+String(err).slice(0,90));
+    trackAgent(t,[],false);
+  }
 }
 function usePrompt(t){$('gp-input').value=t;runGlobalPrompt();}
 

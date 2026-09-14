@@ -83,6 +83,23 @@ function makeExecutor(engineDir) {
     async moonvizOp(op) {
       if (typeof op !== 'string' || !op.trim()) return { ok: false, error: 'op_invalid' };
       if (/[\n\r]/.test(op)) return { ok: false, error: 'op_newline_forbidden' };
+      // 空项目起步：template/create 命令可在无 MBT 时直接引导出新文档
+      if (!mbt && /^(template|create) /.test(op.trim())) {
+        const rs0 = await runMoonCli(engineDir, [op.trim(), 'export-mbt-human']);
+        const boot = rs0.find(r => r && typeof r === 'object' && typeof r.mbt === 'string');
+        if (!boot || boot.ok !== true) {
+          const err = rs0.find(r => r && r.error);
+          return { ok: false, error: (err && err.error) || 'boot_failed' };
+        }
+        mbt = boot.mbt;
+        lastRender = boot;
+        ops.push(op);
+        log.push({ op, ok: true, revision: boot.revision ?? 0 });
+        return {
+          ok: true, op, revision: boot.revision ?? 0,
+          artboards: (boot.artboards || []).map(a => ({ id: a.id, name: a.name })),
+        };
+      }
       if (!mbt) return { ok: false, error: 'no_mbt_loaded' };
       const rs = await runMoonCli(engineDir, [
         `apply-agent-mbt-op-b64 ${b64encode(mbt)} ${b64encode(op)}`,
@@ -108,13 +125,29 @@ function makeExecutor(engineDir) {
   };
 }
 
+// 内置模板清单（与引擎 list-templates 同源；由 bridge 注入到指令）
+const ENGINE_TEMPLATES = `login(登录页 390x844) | signup(注册页 390x844) | dashboard(仪表盘 390x844)
+profile(个人主页 390x844) | settings(设置页 390x844) | list_detail(列表-详情 390x844)
+onboarding(引导页 390x844) | empty_state(空状态页 390x844) | web_landing(Web落地页 1280x800)
+web_login(Web登录 1280x800) | web_dashboard(Web仪表盘 1280x800) | pc_app(PC桌面应用 1440x900)
+adaptive_landing(自适应落地页 1280x800) | login_v2(登录页v2 390x844)`;
+
 const INSTRUCTIONS = `You are the embedded fx agent of deepDesign Studio, a visual prototyping editor.
 The project's single source of truth is one MoonBit literate .mbt.md document held by the host.
+You can build COMPLETE interactive prototypes: multiple artboards connected by tap-navigation flows.
 
-Rules:
+## Workflow for building a prototype from a natural-language request (e.g. "make a WeChat-style social app"):
+1. If the document has no artboards yet, call moonviz_op with "template <template_id> <name> <w> <h>" for EACH screen the app needs. Available templates:
+${ENGINE_TEMPLATES}
+2. Customize each artboard with ops like "update <artboard> <node> text=... fill=...".
+3. Connect screens with flows: "flow <from_artboard> <to_artboard> <trigger_node_id>".
+4. Run "fix <artboard>" if any op is rejected for layout violations.
+
+## Rules:
 - Mutate the design ONLY by calling the moonviz_op tool, one operation string per call.
 - Operation grammar (CLI-style):
-  move <artboard> <node> <x> <y> | update <artboard> <node> k=v [k=v ...]
+  template <template_id> <name> <w> <h> | create <name> <w> <h>
+  | move <artboard> <node> <x> <y> | update <artboard> <node> k=v [k=v ...]
   | delete <artboard> <node> | copy <artboard> <node> <new_id> [dx] [dy]
   | reorder <artboard> <node> front|back|up|down | flip <artboard> <node> h|v|both|none
   | place <artboard> <component> <instance_id> - <x> <y>
