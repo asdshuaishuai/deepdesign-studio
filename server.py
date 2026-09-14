@@ -97,7 +97,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
             return
         allowed = {'/api/ddp/view', '/api/mbt/render'}
         if not self.server.readonly:
-            allowed.update({'/api/exec', '/api/ddp/encrypt', '/api/ddp/decrypt', '/api/fx/ask', '/api/fx/agent'})
+            allowed.update({'/api/exec', '/api/ddp/encrypt', '/api/ddp/decrypt', '/api/fx/ask', '/api/fx/agent', '/api/fx/models'})
         if self.path not in allowed:
             self.send_json(403 if self.server.readonly else 404, {'ok': False, 'error': 'readonly' if self.server.readonly else 'not_found'})
             return
@@ -123,6 +123,8 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
                 result = self.run_fx(data)
             elif self.path == '/api/fx/agent':
                 result = self.run_fx_sdk(data)
+            elif self.path == '/api/fx/models':
+                result = self.run_fx_models(data)
             else:
                 if self.path == '/api/ddp/view':
                     decoded = self.run_ddp_codec('decrypt', data)
@@ -166,6 +168,36 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
         except (OSError, subprocess.TimeoutExpired):
             return {'ok': False, 'error': 'fx_unavailable'}
 
+    def run_fx_models(self, data):
+        # 模型列表：GET {base}/models（经 node 桥，鉴权同 run 路径）。
+        api_key = data.get('api_key')
+        base_url = data.get('base_url')
+        if api_key is not None and not isinstance(api_key, str):
+            return {'ok': False, 'error': 'fx_api_key_invalid'}
+        if not isinstance(base_url, str) or not base_url.strip():
+            return {'ok': False, 'error': 'models_base_url_required'}
+        bridge = ROOT / 'agent' / 'fx-agent.mjs'
+        if not bridge.exists():
+            return {'ok': False, 'error': 'fx_bridge_missing'}
+        import shutil as _shutil
+        node = _shutil.which('node')
+        if not node:
+            return {'ok': False, 'error': 'node_unavailable'}
+        env = dict(os.environ)
+        if api_key:
+            env['AI_GATEWAY_API_KEY'] = api_key
+        payload = {'mode': 'models', 'base_url': base_url.strip()}
+        try:
+            proc = subprocess.run([node, str(bridge)], input=json.dumps(payload), capture_output=True, text=True, cwd=str(ROOT), timeout=60, env=env)
+            if proc.returncode != 0:
+                return {'ok': False, 'error': 'fx_bridge_failed', 'detail': proc.stderr[-300:]}
+            result = json.loads(proc.stdout.strip() or '{}')
+            return result if isinstance(result, dict) else {'ok': False, 'error': 'fx_bridge_response_invalid'}
+        except subprocess.TimeoutExpired:
+            return {'ok': False, 'error': 'fx_timeout'}
+        except (OSError, ValueError):
+            return {'ok': False, 'error': 'fx_bridge_unavailable'}
+
     def run_fx_sdk(self, data):
         # Embedded fx agent via libfx: fx proposes ops through tools; every op is
         # executed by MoonViz (AgentGate) inside the bridge and returns canonical MBT.
@@ -194,6 +226,12 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
         payload = {'mode': 'run', 'instruction': instruction, 'mbt_b64': mbt_b64}
         if model:
             payload['model'] = model
+        base_url = data.get('base_url')
+        if isinstance(base_url, str) and base_url.strip():
+            payload['base_url'] = base_url.strip()
+        thinking_level = data.get('thinking_level')
+        if thinking_level in ('auto', 'adaptive', 'off'):
+            payload['thinking_level'] = thinking_level
         try:
             proc = subprocess.run([node, str(bridge)], input=json.dumps(payload), capture_output=True, text=True, cwd=str(ROOT), timeout=180, env=env)
             if proc.returncode != 0:

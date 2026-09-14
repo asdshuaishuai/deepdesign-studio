@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // deepDesign Studio × fx Agent SDK (libfx) bridge.
 //
-// stdin : { mode:'run'|'selftest', instruction, mbt_b64, api_key, model, base_url, engine_dir }
+// stdin : { mode:'run'|'selftest'|'models', instruction, mbt_b64, api_key, model, base_url,
+//           thinking_level:'auto'|'adaptive'|'off' (MiniMax M3), engine_dir }
 // stdout: { ok, mbt_b64, render, ops[], log[], error? }
 //
 // Contract: fx proposes operations via tools; every mutation executes through
@@ -128,18 +129,40 @@ Rules:
 // gatewayChatUrl，远程厂商端点（DeepSeek/Kimi/GLM/MiniMax 等均为 OpenAI chat
 // 格式）经此转发，鉴权头由厂商 baseURL 的 token 承担。
 const PROVIDER_PRESETS = {
-  deepseek: 'https://api.deepseek.com',
-  kimi:     'https://api.moonshot.cn/v1',
-  glm:      'https://open.bigmodel.cn/api/paas/v4',
-  minimax:  'https://api.minimax.chat/v1',
+  deepseek:     'https://api.deepseek.com',
+  kimi:         'https://api.moonshot.cn/v1',
+  glm:          'https://open.bigmodel.cn/api/paas/v4',
+  minimax:      'https://api.minimax.cn/v1',     // 国内站（OpenAI 兼容）
+  'minimax-intl': 'https://api.minimax.chat/v1', // 国际站
 };
 
-async function startOpenAIForwarder(baseURL) {
+// MiniMax 思考控制：thinking_level → chat/completions body 注入。
+//   auto/adaptive → {type:'adaptive'}（M3 默认；M2.x 恒开，字段被接受并忽略）
+//   off           → {type:'disabled'}（仅 M3 生效；M2.x 服务端仍保持开启）
+// reasoning_split:true 让 thinking 走 reasoning_content，避免混入 content。
+function minimaxRequestBodyPatch(level) {
+  if (!level || level === 'auto' || level === 'adaptive') {
+    return (obj) => { obj.thinking = { type: 'adaptive' }; obj.reasoning_split = true; };
+  }
+  if (level === 'off') {
+    return (obj) => { obj.thinking = { type: 'disabled' }; obj.reasoning_split = true; };
+  }
+  return null;
+}
+
+async function startOpenAIForwarder(baseURL, bodyPatcher = null) {
   const server = http.createServer(async (req, res) => {
     try {
       const chunks = [];
       for await (const c of req) chunks.push(c);
-      const body = Buffer.concat(chunks);
+      let body = Buffer.concat(chunks);
+      if (bodyPatcher && body.length && (req.headers['content-type'] || '').includes('json')) {
+        try {
+          const obj = JSON.parse(body.toString('utf8'));
+          bodyPatcher(obj);
+          body = Buffer.from(JSON.stringify(obj), 'utf8');
+        } catch { /* body 不是 JSON 则原样转发 */ }
+      }
       const target = baseURL.replace(/\/$/, '') + req.url;
       const headers = { ...req.headers };
       delete headers.host; delete headers.connection;
@@ -167,7 +190,7 @@ async function startOpenAIForwarder(baseURL) {
   return { server, gatewayChatUrl: `http://127.0.0.1:${port}/chat/completions` };
 }
 
-async function runWithFx({ instruction, mbt_b64, api_key, model, base_url, engine_dir }) {
+async function runWithFx({ instruction, mbt_b64, api_key, model, base_url, thinking_level, engine_dir }) {
   let libfx;
   try {
     libfx = await import('libfx');
@@ -181,8 +204,11 @@ async function runWithFx({ instruction, mbt_b64, api_key, model, base_url, engin
   let forwarder = null;
   const options = { apiKey, model: model || undefined, instructions: INSTRUCTIONS, tools: null };
   if (base_url) {
-    const target = PROVIDER_PRESETS[String(base_url).trim().toLowerCase()] || String(base_url).trim();
-    forwarder = await startOpenAIForwarder(target);
+    const key = String(base_url).trim().toLowerCase();
+    const target = PROVIDER_PRESETS[key] || String(base_url).trim();
+    // 思考等级仅对 MiniMax 系端点注入（其他 OpenAI 兼容厂商不识别该字段）
+    const patcher = /minimax/i.test(target) ? minimaxRequestBodyPatch(thinking_level) : null;
+    forwarder = await startOpenAIForwarder(target, patcher);
     options.gatewayChatUrl = forwarder.gatewayChatUrl;
   }
 
@@ -286,9 +312,36 @@ async function selftest({ mbt_b64, engine_dir }) {
   };
 }
 
+// 模型列表：GET {resolved_base}/models（OpenAI 标准）。
+// 返回 { ok, models:[{id}] }；端点不支持时由调用方回退静态清单。
+async function listModels({ api_key, base_url }) {
+  const apiKey = api_key || process.env.AI_GATEWAY_API_KEY;
+  if (!apiKey) return { ok: false, error: 'fxsdk_api_key_missing' };
+  const target = PROVIDER_PRESETS[String(base_url || '').trim().toLowerCase()] || String(base_url || '').trim();
+  if (!target) return { ok: false, error: 'models_base_url_required' };
+  try {
+    const res = await fetch(target.replace(/\/$/, '') + '/models', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { return { ok: false, error: 'models_response_invalid', detail: text.slice(0, 200) }; }
+    if (!res.ok) {
+      return { ok: false, error: 'models_http_' + res.status, detail: (json.error && json.error.message) || text.slice(0, 200) };
+    }
+    const arr = Array.isArray(json.data) ? json.data : (Array.isArray(json.models) ? json.models : []);
+    const models = arr.map(m => ({ id: m.id || m.model || String(m) })).filter(m => m.id);
+    return { ok: true, base: target, models };
+  } catch (e) {
+    return { ok: false, error: 'models_fetch_failed', detail: String(e && e.message).slice(0, 200) };
+  }
+}
+
 const input = JSON.parse(await readStdin());
 try {
-  const out = input.mode === 'selftest' ? await selftest(input) : await runWithFx(input);
+  const out = input.mode === 'selftest' ? await selftest(input)
+    : input.mode === 'models' ? await listModels(input)
+    : await runWithFx(input);
   process.stdout.write(JSON.stringify(out));
 } catch (e) {
   process.stdout.write(JSON.stringify({ ok: false, error: 'bridge_failed', detail: String(e && e.message).slice(0, 300) }));

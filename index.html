@@ -758,7 +758,20 @@ body:not(.design-active) .flow-wires{display:none}
       <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="vercel" onclick="applyProvider('vercel')">Vercel AI Gateway（默认）</button></label>
       <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = Vercel AI Gateway；或 https://api.deepseek.com 等OpenAI兼容端点"></label>
       <label class="wide">API Token<input id="agent-api-key" type="password" autocomplete="off" placeholder="仅本机保存；留空则用环境变量 AI_GATEWAY_API_KEY"></label>
-      <label class="wide">Model ID<input id="agent-model" placeholder="如 deepseek-chat / moonshotai/kimi-k2 / glm-4.7 / MiniMax-Text-01"></label>
+      <label class="wide">Model ID
+        <span style="display:flex;gap:6px">
+          <input id="agent-model" list="fx-model-list" placeholder="如 MiniMax-M3 / deepseek-chat / glm-4.7（MiniMax 可点右侧获取）">
+          <datalist id="fx-model-list"></datalist>
+          <button type="button" class="tbtn" onclick="fetchFxModels()" title="从当前 Base URL 拉取模型列表（OpenAI /models）" style="white-space:nowrap;font-size:11px;padding:0 10px">获取模型</button>
+        </span>
+      </label>
+      <label>思考等级（MiniMax）
+        <select id="agent-thinking">
+          <option value="auto">auto · 自适应思考（默认）</option>
+          <option value="off">off · 关闭思考（仅 M3 生效）</option>
+        </select>
+      </label>
+      <label style="font-size:10.5px;color:var(--tx3);align-self:end">M2.x 系列思考不可关闭；M3 可关。</label>
     </div>
     <div class="settings-actions"><button class="tbtn" onclick="closeSettings()">取消</button><button class="tbtn pri" onclick="saveSettings()">保存设置</button></div>
   </div>
@@ -2157,14 +2170,16 @@ function setTheme(t){
   const c=$('theme-cur');if(c)c.textContent=names[t]||t;
 })();
 
-let agentConfig={baseUrl:'',apiKey:'',model:''};
-function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};}catch(_){} }
-const PROVIDERS={deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-chat'},kimi:{baseUrl:'https://api.moonshot.cn/v1',model:'moonshotai/kimi-k2-instruct'},glm:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4.7'},minimax:{baseUrl:'https://api.minimax.chat/v1',model:'MiniMax-Text-01'},vercel:{baseUrl:'',model:''}};
+let agentConfig={baseUrl:'',apiKey:'',model:'',thinkingLevel:'auto'};
+function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};if(!['auto','off'].includes(agentConfig.thinkingLevel))agentConfig.thinkingLevel='auto';}catch(_){} }
+const PROVIDERS={deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-chat'},kimi:{baseUrl:'https://api.moonshot.cn/v1',model:'moonshotai/kimi-k2-instruct'},glm:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4.7'},minimax:{baseUrl:'https://api.minimax.cn/v1',model:'MiniMax-M3'},'minimax-intl':{baseUrl:'https://api.minimax.chat/v1',model:'MiniMax-M3'},vercel:{baseUrl:'',model:''}};
+/* MiniMax 思考能力等级：M3 支持 adaptive/disabled；M2.x 服务端不可关（UI 提示） */
+const MINIMAX_STATIC_MODELS=['MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed','MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2'];
 function applyProvider(p){const c=PROVIDERS[p];if(!c)return;$('agent-base-url').value=c.baseUrl;$('agent-model').value=c.model;toast('已填入 '+p+' 预设，补全 API Token 即可');}
-function openSettings(){loadAgentConfig();$('agent-base-url').value=agentConfig.baseUrl||'';$('agent-api-key').value=agentConfig.apiKey||'';$('agent-model').value=agentConfig.model;$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
+function openSettings(){loadAgentConfig();$('agent-base-url').value=agentConfig.baseUrl||'';$('agent-api-key').value=agentConfig.apiKey||'';$('agent-model').value=agentConfig.model;$('agent-thinking').value=agentConfig.thinkingLevel||'auto';$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
 async function askFxSdk(instruction){
-  const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined};
+  const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto'};
   
   let data;
   if(IS_TAURI){
@@ -2177,7 +2192,27 @@ async function askFxSdk(instruction){
   return data; // {ok, mbt_b64, render, ops[], log[]}
 }
 function agentRequestPrompt(instruction,n){return `You are the fx Agent inside deepDesign Studio. Current source of truth is the complete MoonBit .mbt.md document below. Return ONLY a JSON array of MoonViz CLI operations, no Markdown, no explanations. Allowed operations: move, update, delete, copy, reorder, flip, place, flow, theme, fix. Keep node/artboard ids stable. Instruction: ${instruction}\nSelected: ${n?.id||''}\nMBT source:\n${mbtText}`}
-function saveSettings(){agentConfig={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim()};localStorage.setItem('deepdesign-fx-config',JSON.stringify(agentConfig));closeSettings();toast('LLM 端点配置已保存');}
+function saveSettings(){agentConfig={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto'};localStorage.setItem('deepdesign-fx-config',JSON.stringify(agentConfig));closeSettings();toast('LLM 端点配置已保存');}
+async function fetchFxModels(){
+  const baseUrl=$('agent-base-url').value.trim(), apiKey=$('agent-api-key').value.trim();
+  const payload={mode:'models',api_key:apiKey||undefined,base_url:baseUrl};
+  if(!baseUrl){toast('先填 Base URL（MiniMax 预设可一键填入）');return;}
+  let data;
+  try{
+    if(IS_TAURI){data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:apiKey||''});}
+    else{const res=await fetch('/api/fx/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});data=await res.json();}
+  }catch(err){toast('获取失败：'+String(err).slice(0,80));return;}
+  let ids=(data&&data.models||[]).map(m=>m.id).filter(Boolean);
+  if(!data||data.ok!==true||!ids.length){
+    // 回退：MiniMax 端点用静态清单
+    if(/minimax/i.test(baseUrl)){ids=MINIMAX_STATIC_MODELS.slice();toast('/models 不可用，已填入 MiniMax 静态清单');}
+    else{toast('获取失败：'+((data&&data.error)||'empty'));return;}
+  }else{toast('已获取 '+ids.length+' 个模型');}
+  const dl=$('fx-model-list');dl.innerHTML='';
+  ids.forEach(id=>{const o=document.createElement('option');o.value=id;dl.appendChild(o);});
+  const cur=$('agent-model').value.trim();
+  if(!cur||!ids.includes(cur)){$('agent-model').value=ids.includes('MiniMax-M3')?'MiniMax-M3':ids[0];}
+}
 $('settings-modal').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeSettings();}});
 loadAgentConfig();
 
