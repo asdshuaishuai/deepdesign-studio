@@ -315,7 +315,7 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 #ddp-password .actions{display:flex;justify-content:flex-end;gap:7px;margin-top:14px}
 #ddp-password .actions button{height:28px;padding:0 12px;border:1px solid rgba(0,0,0,.12);border-radius:7px;background:#fff;font-size:11px;cursor:pointer}
 #settings-modal{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;background:rgba(20,24,32,.24);backdrop-filter:blur(6px)}
-.settings-box{width:min(560px,calc(100vw - 32px));padding:20px;background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:12px;box-shadow:var(--sh-pop)}
+.settings-box{width:min(560px,calc(100vw - 32px));padding:20px;background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.1));border-radius:14px;box-shadow:var(--sh-pop);color:var(--tx)}
 .settings-head{display:flex;align-items:center;justify-content:space-between}.settings-head h3{font-size:15px}.icon-close{border:0;background:transparent;color:var(--tx3);font-size:22px;cursor:pointer}.settings-note{margin:10px 0 16px;font-size:11px;color:var(--tx3);line-height:1.6}
 #decl-text-wrap{position:relative;flex:1;min-height:0;display:flex}
 #decl-stage #decl-text{flex:1;caret-color:#fff;position:relative;z-index:2;background:#0F1420;color:transparent;border-color:#232A38;border-radius:0 0 var(--r-lg) var(--r-lg)}
@@ -323,10 +323,10 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 #decl-stage #decl-text::placeholder{color:#5A6270}
 body[data-theme="deep"] #decl-stage #decl-text{background:#0F1420;border-color:#232A38}
 #decl-stage #decl-hl{background:#0F1420;border:1px solid #232A38;border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;margin-bottom:-1px}
-.prov-chip{display:inline-flex;align-items:center;border:1px solid rgba(0,122,255,.35);background:rgba(0,122,255,.05);color:var(--acc);font-size:11px;font-weight:500;padding:4px 12px;border-radius:99px;cursor:pointer;margin-right:6px}
-.prov-chip:hover{background:rgba(0,122,255,.12)}
+.prov-chip{display:inline-flex;align-items:center;border:1px solid color-mix(in srgb,var(--acc) 35%,transparent);background:color-mix(in srgb,var(--acc) 7%,var(--panel,#fff));color:var(--acc);font-size:11px;font-weight:500;padding:4px 12px;border-radius:99px;cursor:pointer;margin-right:6px}
+.prov-chip:hover{background:color-mix(in srgb,var(--acc) 14%,var(--panel,#fff))}
 .prov-chip:active{transform:scale(.97)}
-#agent-base-url,#agent-model{font-family:ui-monospace;font-size:11.5px}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--tx2)}.settings-grid label.wide{grid-column:1/3}.settings-grid input,.settings-grid select{height:32px;padding:0 9px;border:1px solid rgba(0,0,0,.14);border-radius:7px;background:#fff;font:12px ui-monospace;color:var(--tx)}.settings-grid input:focus,.settings-grid select:focus{outline:2px solid rgba(0,122,255,.25);border-color:var(--acc)}.settings-grid input:disabled{background:rgba(0,0,0,.04);color:var(--tx3)}.settings-sec{font-size:10.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 2px}
+#agent-base-url,#agent-model{font-family:ui-monospace;font-size:11.5px}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--tx2)}.settings-grid label.wide{grid-column:1/3}.settings-grid input,.settings-grid select{height:32px;padding:0 9px;border:1px solid var(--panel-line,rgba(0,0,0,.14));border-radius:8px;background:var(--panel-input,#fff);font:12px ui-monospace;color:var(--tx)}.settings-grid input:focus,.settings-grid select:focus{outline:2px solid rgba(0,122,255,.25);border-color:var(--acc)}.settings-grid input:disabled{background:rgba(0,0,0,.04);color:var(--tx3)}.settings-sec{font-size:10.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 2px}
 .settings-sec:first-of-type{margin-top:2px}
 .prov-chip[data-theme-chip].on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
@@ -364,12 +364,14 @@ canvas-hint-removed{}
    ================================================================ */
 /* Mac（默认）— macOS Light */
 body[data-theme="mac"]{
+  --panel:#ffffff;--panel-line:rgba(0,0,0,.1);--panel-input:#ffffff;
   --base:#f2f3f7;--cvs:#f2f3f7;--ink:#1c1c1e;
   --tx:#1c1c1e;--tx2:#636366;--tx3:#a1a1aa;
   --acc:#007aff;--acc-h:#0066d6;--ok:#28a745;--purple:#9d4edd;
 }
 /* Deep 深色专业 */
 body[data-theme="deep"]{
+  --panel:#1f2228;--panel-line:#2c313a;--panel-input:#17191e;
   --base:#17191e;--cvs:#121317;--ink:#e4e7ec;
   --tx:#e4e7ec;--tx2:#9aa1ab;--tx3:#5f6672;
   --acc:#4a6bfb;--acc-h:#3d5ce8;--ok:#34c07c;--purple:#8b5cf6;
@@ -396,6 +398,7 @@ body[data-theme="deep"] #decl-stage textarea{background:#1f2228;color:#dfe3ea;bo
 
 /* Neu */
 body[data-theme="neu"]{
+  --panel:#e6ebf2;--panel-line:rgba(163,177,198,.4);--panel-input:#e0e5ec;
   --base:#e0e5ec;--cvs:#e0e5ec;--ink:#3a4a5c;
   --tx:#3a4a5c;--tx2:#64748b;--tx3:#94a3b8;
   --acc:#5b5bf6;--acc-h:#4b4be0;--ok:#1e9e63;--purple:#8b5cf6;
@@ -410,6 +413,7 @@ body[data-theme="neu"] .mode-seg{background:#d8dee7;border:none}
 
 /* Glass */
 body[data-theme="glass"]{
+  --panel:rgba(30,24,66,.82);--panel-line:rgba(255,255,255,.22);--panel-input:rgba(255,255,255,.1);
   --base:#2a2350;--cvs:transparent;--ink:#f4f2ff;
   --tx:#f4f2ff;--tx2:#c9c2ef;--tx3:#948dba;
   --acc:#8b7bff;--acc-h:#7767f0;--ok:#4ade80;--purple:#a78bfa;
@@ -525,6 +529,13 @@ body[data-mode="dark"][data-theme="glass"]::before{background:linear-gradient(13
 body[data-mode="dark"][data-theme="glass"] .topbar,body[data-mode="dark"][data-theme="glass"] .left,body[data-mode="dark"][data-theme="glass"] .right,body[data-mode="dark"][data-theme="glass"] .statusbar{background:rgba(10,8,26,.66);backdrop-filter:blur(16px) saturate(1.25)}
 body[data-mode="dark"][data-theme="glass"] .compcell,body[data-mode="dark"][data-theme="glass"] .trk,body[data-mode="dark"][data-theme="glass"] .flowrow,body[data-mode="dark"][data-theme="glass"] .tpl-card,body[data-mode="dark"][data-theme="glass"] .frame-chrome{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16)}
 body[data-mode="dark"][data-theme="glass"] .frow input,body[data-mode="dark"][data-theme="glass"] .pmain,body[data-mode="dark"][data-theme="glass"] .compsearch{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:var(--tx)}
+
+/* 设置面板 dark 变量 */
+body[data-mode="dark"][data-theme="mac"]{--panel:#242429;--panel-line:#3a3a40;--panel-input:#1c1c20}
+body[data-mode="dark"][data-theme="deep"]{--panel:#1e2027;--panel-line:#2a2e38;--panel-input:#191b21}
+body[data-mode="dark"][data-theme="neu"]{--panel:#262932;--panel-line:rgba(255,255,255,.09);--panel-input:#22252d}
+body[data-mode="dark"][data-theme="glass"]{--panel:rgba(16,12,40,.88);--panel-line:rgba(255,255,255,.18);--panel-input:rgba(255,255,255,.08)}
+body[data-mode="dark"] .settings-box{box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05)}
 </style>
 </head>
 <body data-theme="mac" class="mode-wireframe">
@@ -822,7 +833,7 @@ body[data-mode="dark"][data-theme="glass"] .frow input,body[data-mode="dark"][da
         </span>
       </label>
       <label>深色模式
-        <select id="app-mode" onchange="setMode(this.value)">
+        <select id="app-mode" onchange="setAppMode(this.value)">
           <option value="light">🌙 关（浅色）</option>
           <option value="dark">☀️ 开（深色）</option>
         </select>
@@ -1537,6 +1548,9 @@ async function ctxDo(a){
   }
 }
 /* ---------- 原生菜单栏事件桥（macOS 菜单 → 前端动作） ---------- */
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key===','){e.preventDefault();openSettings();}
+});
 function nativeMenuAction(id){
   const map={
     'new-project':()=>newProject(),
@@ -1553,6 +1567,7 @@ function nativeMenuAction(id){
     'autofix':()=>runAutoFix(),
     'validate':()=>{setMode('decl');validateMbt();},
     'shortcuts':()=>openShortcuts(),
+    'settings':()=>openSettings(),
   };
   if(map[id])map[id]();
 }
@@ -2250,13 +2265,13 @@ function setTheme(t){
   document.body.dataset.theme=t;
   try{localStorage.setItem('dd-theme',t);}catch(_){}
 }
-function setMode(m){
+function setAppMode(m){
   document.body.dataset.mode=m;
   refreshAppearanceControls();
   try{localStorage.setItem('dd-mode',m);}catch(_){}
   const t=$('mode-toggle');if(t)t.textContent=m==='dark'?'☀️ 深色模式：开':'🌙 深色模式：关';
 }
-function toggleMode(){setMode(document.body.dataset.mode==='dark'?'light':'dark');}
+function toggleMode(){setAppMode(document.body.dataset.mode==='dark'?'light':'dark');}
 (function initTheme(){
   let t='mac';
   try{t=localStorage.getItem('dd-theme')||'mac';}catch(_){}
@@ -2264,7 +2279,7 @@ function toggleMode(){setMode(document.body.dataset.mode==='dark'?'light':'dark'
   setTheme(t);
   let m='light';
   try{m=localStorage.getItem('dd-mode')||'light';}catch(_){}
-  setMode(m);
+  setAppMode(m);
   refreshAppearanceControls();
   const names={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'};
   const c=$('theme-cur');if(c)c.textContent=names[t]||t;

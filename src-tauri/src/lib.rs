@@ -479,6 +479,14 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
             ..Default::default()
         }))
         .separator()
+        .item(&MenuItem::with_id(
+            app,
+            "settings",
+            "设置…",
+            true,
+            Some("CmdOrCtrl+Comma"),
+        )?)
+        .separator()
         .services()
         .separator()
         .hide()
