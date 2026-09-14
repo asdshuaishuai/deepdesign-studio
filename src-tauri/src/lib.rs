@@ -296,15 +296,33 @@ fn invoke_fx(prompt: String, fx_path: String, cwd: String) -> Result<String, Str
 /// Tauri 端 fx SDK 桥：与 server.py 的 /api/fx/agent 等价，通过 node 运行
 /// agent/fx-agent.mjs（libfx 嵌入），fx 的每次工具调用都在桥内经
 /// MoonViz AgentGate 并返回 canonical MBT。Rust 只传输 JSON 字节。
+/// 定位 fx-agent.mjs 所在的 agent 目录：
+/// 1) dev：编译清单目录的上一级（<deepDesign>/agent——CARGO_MANIFEST_DIR 是 src-tauri）
+/// 2) 打包回退：从可执行文件向上逐级找 agent/fx-agent.mjs（extraResources 布局）
+fn fx_agent_root() -> Result<PathBuf, String> {
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("agent");
+    if dev.join("fx-agent.mjs").exists() {
+        return Ok(dev);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent().map(|p| p.to_path_buf());
+        for _ in 0..4 {
+            if let Some(d) = dir {
+                let cand = d.join("agent");
+                if cand.join("fx-agent.mjs").exists() {
+                    return Ok(cand);
+                }
+                dir = d.parent().map(|p| p.to_path_buf());
+            }
+        }
+    }
+    Err("fxsdk_bridge_missing".into())
+}
+
 #[tauri::command]
 fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
-    let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("agent");
+    let app_root = fx_agent_root()?;
     let bridge = app_root.join("fx-agent.mjs");
-    if !bridge.exists() {
-        return Err("fxsdk_bridge_missing".into());
-    }
     let node = which_node().ok_or("node_unavailable")?;
     let mut env: Vec<(String, String)> = std::env::vars().collect();
     if !api_key.trim().is_empty() {
