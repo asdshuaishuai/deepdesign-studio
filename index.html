@@ -610,9 +610,16 @@ body[data-mode="dark"] .canvas-scroll{background-image:radial-gradient(circle,rg
     <div class="lpanel" id="lp-comp" style="display:none">
       <input class="compsearch" id="comp-search" placeholder="搜索组件…" oninput="filterComps(this.value)">
       <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button class="tbtn" onclick="saveAsComponent()" title="把当前活动画板沉淀为可复用组件（人类路线）" style="flex:1;font-size:10.5px;padding:6px 8px">当前画板 → 组件</button>
+        <button class="tbtn" onclick="saveAsComponent()" title="把当前活动画板沉淀为可复用组件（人类路线）" style="flex:1.2;font-size:10.5px;padding:6px 8px;border:1px solid color-mix(in srgb,var(--acc) 30%,transparent);background:color-mix(in srgb,var(--acc) 6%,transparent);color:var(--acc)">◆ 画板 → 组件</button>
         <button class="tbtn" onclick="$('mcf-file').click()" title="导入 MCF 专有格式组件包" style="flex:1;font-size:10.5px;padding:6px 8px">导入 MCF</button>
         <input type="file" id="mcf-file" accept=".mcf" style="display:none" onchange="importMcf(this)">
+      </div>
+      <div id="comp-guide" style="display:none;font-size:10.5px;line-height:1.7;color:var(--tx3);padding:8px 10px;margin-bottom:8px;border-radius:9px;border:1px dashed color-mix(in srgb,var(--acc) 25%,transparent);background:color-mix(in srgb,var(--acc) 3%,transparent)">
+        <b style="color:var(--acc)">如何自定义组件</b><br>
+        ① 在画布中设计好你的组件样式<br>
+        ② 点上方「画板 → 组件」保存到本地<br>
+        ③ 在下方「我的组件」分区拖入复用<br>
+        <span style="font-size:9.5px;opacity:.75">Agent 也能帮你生成：对 Prompt 说「做一个 XX 组件」</span>
       </div>
       <div id="comp-tree"><div class="hintbox">加载中…</div></div>
     </div>
@@ -1824,14 +1831,25 @@ async function copyDeclSide(btn){
 const COMP_META={user:{label:'我的组件'},actions:{label:'操作'},inputs:{label:'输入'},selection:{label:'选择'},display:{label:'展示'},layout:{label:'布局'},navigation:{label:'导航'},feedback:{label:'反馈'},overlay:{label:'浮层'}};
 const COMP_PREV={button:'▸',fab:'＋',text_input:'▭',search_bar:'⌕',slider:'●─',checkbox:'☑',switch:'⊚',radio:'◉',avatar:'☺',progress:'▬',chip:'◍',image:'▣',card:'▢',app_bar:'▤',divider:'─',rect:'□',list_item:'☰',tab_bar:'≡',alert:'⚠',toast:'◉',dialog:'▢',drawer:'▤',menu:'☰',table:'▦',kbd:'⌨',rating:'★',stat:'№'};
 let allComps=[];
+function toggleCompGuide(){
+  const hasUser=allComps.some(c=>c.source==='user');
+  const g=$('comp-guide');
+  if(g)g.style.display=hasUser?'none':'block';
+}
 async function loadComponents(){
   let rs;
   try{rs=await execCli(['list-components']);}
-  catch(err){$('comp-tree').innerHTML='<div class="hintbox">加载失败：'+String(err).slice(0,60)+'</div>';return;}
+  catch(err){
+    const msg=String(err);
+    const hint=msg.includes('fetch')||msg.includes('Failed')?'引擎未启动或网络不可达':'加载失败';
+    $('comp-tree').innerHTML='<div class="hintbox">'+hint+' — 请确认 MoonViz 引擎已就绪<br><span style="font-size:9.5px;opacity:.6">'+msg.slice(0,80)+'</span></div>';
+    return;
+  }
   const comps=fArr(rs);
   if(!comps){$('comp-tree').innerHTML='<div class="hintbox">组件列表解析失败</div>';return;}
   allComps=comps;
   renderCompTree('');
+  toggleCompGuide();
 }
 function renderCompTree(filter){
   const tree=$('comp-tree');tree.innerHTML='';
@@ -2234,17 +2252,18 @@ async function openProject(){
     applyMbtResult(result,{reset:true});filePath=r.path;$('file-label').textContent=r.path.split('/').pop();toast('已打开 DDP，并从 MBT 重新渲染');});
   }catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));}
 }
-function newProject(){return serializeProject(async()=>{
-  const id=newId(),cmd=`create ${id} 1280 800`; // 自由画板默认 Web 尺寸
-  try{
-    const rs=await execCli([cmd,'export-mbt-human']),result=mbtResult(rs);
-    if(!result||result.ok!==true)throw Error((rs.find(r=>r.error)||{}).error||'创建失败');
-    applyMbtResult(result,{reset:true});closeAgentPop();cancelInline();
-    filePath='';placing=0;linkSource=null;placeMode=null;playStack=[];
+function newProject(){
+  // 真正空白项目：无画板，显示 welcome 空态（模板卡 + Prompt 引导）
+  serializeProject(async()=>{
+    mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];
+    opCmds=[];filePath='';placing=0;linkSource=null;placeMode=null;playStack=[];
+    closeAgentPop();cancelInline();
     $('ap-input').value='';$('gp-input').value='';$('tl-body').replaceChildren();
-    $('file-label').textContent='未命名项目';setStatus('human',cmd,true,'空白画布');
-  }catch(err){toast('创建失败：'+String(err));}
-});}
+    $('file-label').textContent='新项目';$('proj-name').textContent='未命名项目';
+    renderStage();renderAbs();renderFlows();renderInspector();
+    setStatus('human','new',true,'空白项目');
+  });
+}
 
 /* ---------- 主题 ---------- */
 function openThemeMenuAt(anchor){
@@ -2350,9 +2369,11 @@ document.body.classList.add('mode-wireframe','design-active');
   for(const[tid,elId,w,h]of defs){
     try{
       const rs=await execCli([`template ${tid} __t_${tid} ${w} ${h}`,`export-svg __t_${tid}`]);
-      const svgR=fObj(rs,'svg');
-      if(svgR&&svgR.svg){const el=$(elId);if(el)el.innerHTML=svgR.svg;}
-    }catch(_){}
+      // 健壮提取：遍历结果找含 svg 字段的对象
+      const svgR=rs.find(r=>r&&typeof r==='object'&&typeof r.svg==='string'&&r.svg.length>50);
+      if(svgR){const el=$(elId);if(el)el.innerHTML=svgR.svg;}
+      else{console.warn('thumb miss',tid,JSON.stringify(rs).slice(0,200));}
+    }catch(err){console.warn('thumb err',tid,String(err).slice(0,100));}
   }
 })();
 </script>

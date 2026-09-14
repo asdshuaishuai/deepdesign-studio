@@ -20,7 +20,7 @@ applyMbtResult({ok:true,mbt:'canonical',entry:'a',artboards:[{id:'a',nodes:[]},{
  assert.equal(vm.runInContext('active',context),'b');assert.equal(vm.runInContext('selected',context),'selected');assert.equal(element('decl-text').value,'unsubmitted draft');
  await vm.runInContext("Promise.all([runOp('first','human'),runOp('second','human')])",context);
  assert.equal(vm.runInContext('mbtText',context),'canonical;first;second');
- await vm.runInContext('newProject()',context);assert.equal(vm.runInContext('mbtText',context),'canonical;first;second');assert.equal(vm.runInContext('active',context),'b');
+ await vm.runInContext('newProject()',context);assert.equal(vm.runInContext('mbtText',context),'');assert.equal(vm.runInContext('active',context),'');
  await vm.runInContext("quickStart('login',390,844)",context);assert.match(vm.runInContext('history.at(-1)',context),/^apply-human-mbt-op-b64 /);
  await vm.runInContext('createBlank()',context);assert.match(vm.runInContext('history.at(-1)',context),/^apply-human-mbt-op-b64 /);
  assert(html.includes("['p-op','opacity',n.style.opacity??1]"));
