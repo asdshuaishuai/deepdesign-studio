@@ -326,7 +326,10 @@ body[data-theme="deep"] #decl-stage #decl-text{background:#0F1420;border-color:#
 .prov-chip{display:inline-flex;align-items:center;border:1px solid rgba(0,122,255,.35);background:rgba(0,122,255,.05);color:var(--acc);font-size:11px;font-weight:500;padding:4px 12px;border-radius:99px;cursor:pointer;margin-right:6px}
 .prov-chip:hover{background:rgba(0,122,255,.12)}
 .prov-chip:active{transform:scale(.97)}
-#agent-base-url,#agent-model{font-family:ui-monospace;font-size:11.5px}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--tx2)}.settings-grid label.wide{grid-column:1/3}.settings-grid input,.settings-grid select{height:32px;padding:0 9px;border:1px solid rgba(0,0,0,.14);border-radius:7px;background:#fff;font:12px ui-monospace;color:var(--tx)}.settings-grid input:focus,.settings-grid select:focus{outline:2px solid rgba(0,122,255,.25);border-color:var(--acc)}.settings-grid input:disabled{background:rgba(0,0,0,.04);color:var(--tx3)}.settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+#agent-base-url,#agent-model{font-family:ui-monospace;font-size:11.5px}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--tx2)}.settings-grid label.wide{grid-column:1/3}.settings-grid input,.settings-grid select{height:32px;padding:0 9px;border:1px solid rgba(0,0,0,.14);border-radius:7px;background:#fff;font:12px ui-monospace;color:var(--tx)}.settings-grid input:focus,.settings-grid select:focus{outline:2px solid rgba(0,122,255,.25);border-color:var(--acc)}.settings-grid input:disabled{background:rgba(0,0,0,.04);color:var(--tx3)}.settings-sec{font-size:10.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 2px}
+.settings-sec:first-of-type{margin-top:2px}
+.prov-chip[data-theme-chip].on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 #decl-hl{position:absolute;inset:0;overflow:auto;white-space:pre-wrap;word-break:break-word;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;pointer-events:none;background:#0F1420;color:#D6DEEC;border-radius:0 0 12px 12px;display:none;z-index:1}
 .tok-comment{color:#6B7A93;font-style:italic}
 .tok-string{color:#9ECE6A}
@@ -547,8 +550,7 @@ body[data-mode="dark"][data-theme="glass"] .frow input,body[data-mode="dark"][da
   <button class="tbtn" onclick="newProject()" title="新建项目"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></button>
   <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）— 选择文件后按需输入密码解密"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
   <button class="tbtn" onclick="saveProject()" title="保存 / 导出 DDP（⌘S）— 可选择加密或免密"><svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
-  <button class="tbtn" onclick="openThemeMenuAt(this)" title="主题与深色模式" aria-label="主题"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18c1.2 0 2-.9 2-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.9-.5-1.4 0-1.1.9-2 2-2h2.4A9 9 0 0 0 12 3z"/></svg><span id="theme-badge" style="font-size:10.5px;font-weight:600"></span></button>
-      <button class="tbtn" onclick="openSettings()" title="Agent 设置" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg></button>
+  <button class="tbtn" onclick="openSettings()" title="设置（外观 / AI 端点）" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg></button>
   <span class="tsep"></span>
   <button class="tbtn" onclick="togglePlay()" title="演示模式（⌘4）· 工作区内禁编辑"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5z"/></svg>演示</button>
   <button class="tbtn pri" onclick="exportDdp()" title="导出加密 DDP 视觉文档"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>导出 DDP</button>
@@ -808,8 +810,26 @@ body[data-mode="dark"][data-theme="glass"] .frow input,body[data-mode="dark"][da
 
 <div id="settings-modal" aria-hidden="true">
   <div class="settings-box" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-    <div class="settings-head"><h3 id="settings-title">Agent 设置</h3><button class="icon-close" onclick="closeSettings()" aria-label="关闭设置">×</button></div>
-    <p class="settings-note">Agent 实现基于 fx-agent-sdk（libfx 嵌入），操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处只配置 LLM 驱动端点（OpenAI chat 兼容格式）。</p>
+    <div class="settings-head"><h3 id="settings-title">设置</h3><button class="icon-close" onclick="closeSettings()" aria-label="关闭设置">×</button></div>
+    <div class="settings-sec">外观</div>
+    <div class="settings-grid">
+      <label class="wide">主题
+        <span style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="prov-chip" data-theme-chip="mac" onclick="pickTheme('mac')">Mac · macOS Light</button>
+          <button type="button" class="prov-chip" data-theme-chip="deep" onclick="pickTheme('deep')">Deep · 深色专业</button>
+          <button type="button" class="prov-chip" data-theme-chip="neu" onclick="pickTheme('neu')">Neu · 软拟物</button>
+          <button type="button" class="prov-chip" data-theme-chip="glass" onclick="pickTheme('glass')">Glass · 玻璃</button>
+        </span>
+      </label>
+      <label>深色模式
+        <select id="app-mode" onchange="setMode(this.value)">
+          <option value="light">🌙 关（浅色）</option>
+          <option value="dark">☀️ 开（深色）</option>
+        </select>
+      </label>
+    </div>
+    <div class="settings-sec">AI 端点（Agent）</div>
+    <p class="settings-note">Agent 实现基于 fx-agent-sdk（libfx 嵌入），操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点（OpenAI chat 兼容格式）。</p>
     <div class="settings-grid">
       <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="vercel" onclick="applyProvider('vercel')">Vercel AI Gateway（默认）</button></label>
       <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = Vercel AI Gateway；或 https://api.deepseek.com 等OpenAI兼容端点"></label>
@@ -2212,10 +2232,6 @@ function openThemeMenuAt(anchor){
   m.style.left=Math.max(8,Math.min(window.innerWidth-m.offsetWidth-8,r.right-m.offsetWidth))+'px';
   m.style.top=(r.bottom+6+m.offsetHeight>window.innerHeight?r.top-m.offsetHeight-6:r.bottom+6)+'px';
 }
-function updateThemeBadge(){
-  const b=$('theme-badge');
-  if(b)b.textContent=({mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[document.body.dataset.theme]||'')+(document.body.dataset.mode==='dark'?' · 暗':'');
-}
 function toggleThemeMenu(e){
   e.stopPropagation();
   const m=$('theme-menu');
@@ -2223,9 +2239,7 @@ function toggleThemeMenu(e){
 }
 function pickTheme(t){
   setTheme(t);
-  $('theme-cur').textContent={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[t]||t;
-  $('theme-menu').style.display='none';
-  updateThemeBadge();
+  refreshAppearanceControls();
   const _m=$('theme-menu');if(_m)_m.style.display='none';
 }
 document.addEventListener('click',e=>{
@@ -2238,7 +2252,7 @@ function setTheme(t){
 }
 function setMode(m){
   document.body.dataset.mode=m;
-  updateThemeBadge&&updateThemeBadge();
+  refreshAppearanceControls();
   try{localStorage.setItem('dd-mode',m);}catch(_){}
   const t=$('mode-toggle');if(t)t.textContent=m==='dark'?'☀️ 深色模式：开':'🌙 深色模式：关';
 }
@@ -2251,7 +2265,7 @@ function toggleMode(){setMode(document.body.dataset.mode==='dark'?'light':'dark'
   let m='light';
   try{m=localStorage.getItem('dd-mode')||'light';}catch(_){}
   setMode(m);
-  updateThemeBadge();
+  refreshAppearanceControls();
   const names={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'};
   const c=$('theme-cur');if(c)c.textContent=names[t]||t;
 })();
@@ -2262,7 +2276,12 @@ const PROVIDERS={deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-ch
 /* MiniMax 思考能力等级：M3 支持 adaptive/disabled；M2.x 服务端不可关（UI 提示） */
 const MINIMAX_STATIC_MODELS=['MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed','MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2'];
 function applyProvider(p){const c=PROVIDERS[p];if(!c)return;$('agent-base-url').value=c.baseUrl;$('agent-model').value=c.model;toast('已填入 '+p+' 预设，补全 API Token 即可');}
-function openSettings(){loadAgentConfig();$('agent-base-url').value=agentConfig.baseUrl||'';$('agent-api-key').value=agentConfig.apiKey||'';$('agent-model').value=agentConfig.model;$('agent-thinking').value=agentConfig.thinkingLevel||'auto';$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
+function refreshAppearanceControls(){
+  document.querySelectorAll('[data-theme-chip]').forEach(b=>b.classList.toggle('on',document.body.dataset.theme===b.dataset.themeChip));
+  const m=$('app-mode');if(m)m.value=document.body.dataset.mode==='dark'?'dark':'light';
+  const c=$('theme-cur');if(c)c.textContent={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[document.body.dataset.theme]||'';
+}
+function openSettings(){loadAgentConfig();refreshAppearanceControls();$('agent-base-url').value=agentConfig.baseUrl||'';$('agent-api-key').value=agentConfig.apiKey||'';$('agent-model').value=agentConfig.model;$('agent-thinking').value=agentConfig.thinkingLevel||'auto';$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
 async function askFxSdk(instruction){
   const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto'};
