@@ -115,7 +115,7 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .canvas-tail{height:32px;display:flex;align-items:center;gap:8px;padding:0 12px;background:rgba(255,255,255,.9);border-bottom:var(--bd);font-size:11px;color:var(--tx3);font-family:ui-monospace;flex-shrink:0}
 .canvas-tail b{color:var(--tx2)}
 .canvas-scroll{flex:1;overflow:auto;position:relative;
-  background-image:radial-gradient(circle,rgba(0,0,0,.09) 1px,transparent 1px);background-size:20px 20px}
+  background-image:radial-gradient(circle,rgba(0,0,0,.065) 1px,transparent 1px);background-size:22px 22px}
 .ctools{position:sticky;top:12px;left:12px;z-index:20;display:inline-flex;align-items:center;gap:2px;padding:4px;border-radius:var(--r-lg);box-shadow:var(--sh-pop);margin:12px 0 0 12px;background:rgba(255,255,255,.9);backdrop-filter:blur(16px);border:1px solid rgba(0,0,0,.07);width:max-content}
 .ctool{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--tx2);border-radius:8px;cursor:pointer}
 .ctool:hover{background:rgba(0,0,0,.06);color:var(--tx)}
@@ -165,7 +165,7 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .pmain .go:hover{background:var(--acc-h)}
 
 /* ---------- 悬浮行内 Agent ---------- */
-#agent-pop{position:fixed;z-index:60;width:344px;background:#fff;border-radius:var(--r-xl);box-shadow:var(--sh-pop),0 0 0 1px rgba(157,78,221,.25);display:none;overflow:hidden;animation:popIn .16s cubic-bezier(.2,.9,.3,1.2)}
+#agent-pop{position:fixed;z-index:60;width:344px;background:var(--panel,#fff);border-radius:var(--r-xl);box-shadow:var(--sh-pop),0 0 0 1px rgba(157,78,221,.25);display:none;overflow:hidden;animation:popIn .16s cubic-bezier(.2,.9,.3,1.2)}
 @keyframes popIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
 .ap-head{display:flex;align-items:center;gap:8px;padding:10px 12px 6px}
 .ap-head .spark{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#9d4edd,#6d28d9);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
@@ -223,7 +223,12 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .ibtn.danger:hover{border-color:#e05252;color:#e05252}
 .apply{width:100%;height:31px;margin-top:8px;border:none;background:var(--acc);color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
 .apply:hover{background:var(--acc-h)}
-.empty-insp{color:var(--tx3);font-size:12px;line-height:1.7;padding:16px 6px;text-align:center}
+.empty-insp{color:var(--tx3);font-size:12px;line-height:1.75;padding:22px 10px;text-align:center;margin:10px;border-radius:12px;border:1px dashed rgba(0,0,0,.1);background:rgba(0,0,0,.015)}
+.empty-insp .kbd-group{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:10.5px}
+.empty-insp .kbd-row{display:flex;justify-content:space-between;align-items:center;gap:10px;color:var(--tx3)}
+.empty-insp kbd{font-family:ui-monospace;font-size:9.5px;background:rgba(0,0,0,.05);border:1px solid rgba(0,0,0,.08);border-radius:4px;padding:1px 5px;color:var(--tx2);flex-shrink:0}
+body[data-mode="dark"] .empty-insp{border-color:rgba(255,255,255,.17);background:rgba(255,255,255,.045)}
+body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.1)}
 .empty-insp svg{color:rgba(0,0,0,.18);margin-bottom:9px}
 /* 追踪卡（参考 diff 卡样式） */
 .trk{padding:9px 11px;border-radius:var(--r-lg);background:#fff;border:1px solid rgba(0,0,0,.08);margin-bottom:7px;box-shadow:var(--sh-sm)}
@@ -243,7 +248,7 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 #decl-stage .dhead{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content max-content;align-items:center;gap:10px;flex-shrink:0}
 #decl-stage .dhead h3{font-size:14px;white-space:nowrap}
 #decl-stage .dhead .sub{font-size:11px;color:var(--tx3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#decl-stage textarea{flex:1;border:1px solid rgba(0,0,0,.1);border-radius:var(--r-lg);padding:14px;font-family:ui-monospace;font-size:11.5px;line-height:1.65;color:#1c1c1e;background:#fff;resize:none;outline:none}
+#decl-stage textarea{flex:1;border:1px solid var(--panel-line,rgba(0,0,0,.1));border-radius:var(--r-lg);padding:14px;font-family:ui-monospace;font-size:11.5px;line-height:1.65;color:var(--tx);background:var(--panel-input,#fff);resize:none;outline:none}
 #decl-stage textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(0,122,255,.1)}
 
 /* ---------- 状态栏 ---------- */
@@ -260,19 +265,21 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .tmenu.cur{color:var(--acc);font-weight:700}
 
 /* 内联文本编辑 */
-#inline-edit{position:fixed;z-index:80;display:none;background:#fff;border-radius:9px;box-shadow:var(--sh-pop),0 0 0 1px rgba(0,122,255,.35);padding:4px}
+#inline-edit{position:fixed;z-index:80;display:none;background:var(--panel,#fff);border-radius:9px;box-shadow:var(--sh-pop),0 0 0 1px rgba(0,122,255,.35);padding:4px}
 #inline-edit input{border:none;outline:none;font-size:12px;padding:5px 8px;width:220px;font-family:ui-monospace}
 /* 右键菜单（动态构建：节点 / 画布空白 / 画板卡片 / MBT 编辑器共用） */
-#ctxmenu{display:none;position:fixed;z-index:120;background:#fff;border-radius:11px;box-shadow:var(--sh-pop);padding:5px;min-width:190px}
+#ctxmenu{display:none;position:fixed;z-index:120;background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.08));border-radius:11px;box-shadow:var(--sh-pop);padding:5px;min-width:190px;animation:popIn .13s cubic-bezier(.2,.9,.3,1.15)}
 #ctxmenu .ctx-title{padding:5px 10px 4px;font-size:10.5px;color:var(--tx3);border-bottom:1px solid rgba(0,0,0,.06);margin-bottom:3px;font-family:ui-monospace}
-#ctxmenu button{display:flex;align-items:center;gap:8px;width:100%;border:none;background:transparent;padding:6px 10px;border-radius:7px;font-size:12px;color:var(--tx2);cursor:pointer;text-align:left}
+#ctxmenu button{display:flex;align-items:center;gap:8px;width:100%;border:none;background:transparent;padding:6.5px 10px;border-radius:7px;font-size:12px;color:var(--tx2);cursor:pointer;text-align:left}
+#ctxmenu button{transition:all .15s cubic-bezier(.25,.1,.25,1)}
 #ctxmenu button:hover{background:rgba(0,122,255,.08);color:var(--acc)}
+#ctxmenu button:active{transform:scale(.98)}
 #ctxmenu button.danger:hover{background:rgba(224,82,82,.08);color:#e05252}
 #ctxmenu .ctx-sep{height:1px;background:rgba(0,0,0,.07);margin:4px 8px}
 #ctxmenu button .kbd-hint{margin-left:auto;color:var(--tx3);font-size:10px;font-family:ui-monospace}
 /* 快捷键说明弹窗 */
 #shortcuts-modal{display:none;position:fixed;inset:0;z-index:300;background:rgba(15,18,24,.45);backdrop-filter:blur(6px);align-items:center;justify-content:center}
-#shortcuts-modal .sc-card{background:#fff;border-radius:16px;box-shadow:var(--sh-win);width:640px;max-height:78vh;overflow:auto;padding:26px 30px}
+#shortcuts-modal .sc-card{background:var(--panel,#fff);color:var(--tx);border-radius:16px;box-shadow:var(--sh-win);width:640px;max-height:78vh;overflow:auto;padding:26px 30px}
 #shortcuts-modal h3{font-size:15px;margin-bottom:4px}
 #shortcuts-modal .sc-sub{font-size:11px;color:var(--tx3);margin-bottom:16px}
 #shortcuts-modal h4{font-size:12px;color:var(--acc);margin:14px 0 6px}
@@ -311,13 +318,13 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .ec-opt .ec-t{font-size:12.5px;font-weight:600;color:var(--tx)}
 .ec-opt .ec-d{font-size:10.5px;color:var(--tx3)}
 .ec-actions{display:flex;justify-content:flex-end;margin-top:12px}
-#ddp-password .box{width:min(360px,calc(100vw - 32px));padding:18px;background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:12px;box-shadow:var(--sh-pop)}
+#ddp-password .box{width:min(360px,calc(100vw - 32px));padding:18px;background:var(--panel,#fff);color:var(--tx);border:1px solid rgba(0,0,0,.1);border-radius:12px;box-shadow:var(--sh-pop)}
 #ddp-password h4{font-size:13px;margin-bottom:6px}
 #ddp-password p{font-size:11px;color:var(--tx3);line-height:1.5;margin-bottom:12px}
 #ddp-password input{width:100%;height:32px;padding:0 10px;border:1px solid rgba(0,0,0,.14);border-radius:7px;font-size:12px;outline:none}
 #ddp-password input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(0,122,255,.12)}
 #ddp-password .actions{display:flex;justify-content:flex-end;gap:7px;margin-top:14px}
-#ddp-password .actions button{height:28px;padding:0 12px;border:1px solid rgba(0,0,0,.12);border-radius:7px;background:#fff;font-size:11px;cursor:pointer}
+#ddp-password .actions button{height:28px;padding:0 12px;border:1px solid var(--panel-line,rgba(0,0,0,.12));border-radius:7px;background:var(--panel-input,#fff);color:var(--tx);font-size:11px;cursor:pointer}
 #settings-modal{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;background:rgba(20,24,32,.24);backdrop-filter:blur(6px)}
 .settings-box{width:min(560px,calc(100vw - 32px));padding:20px;background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.1));border-radius:14px;box-shadow:var(--sh-pop);color:var(--tx)}
 .settings-head{display:flex;align-items:center;justify-content:space-between}.settings-head h3{font-size:15px}.icon-close{border:0;background:transparent;color:var(--tx3);font-size:22px;cursor:pointer}.settings-note{margin:10px 0 16px;font-size:11px;color:var(--tx3);line-height:1.6}
@@ -464,7 +471,7 @@ body:not(.design-active) .flow-wires{display:none}
 .canvas-scroll.linking .frame-wrap:not(.active) .frame-chrome{outline:2px dashed var(--acc);outline-offset:2px}
 #stage .frame-wrap.active g.sel-hint{outline:1.5px solid var(--acc);outline-offset:2px}
 #stage .frame-wrap.active g.sel-hint rect{vector-effect:non-scaling-stroke}
-#toast{display:none;position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:600;max-width:80vw;padding:10px 16px;border-radius:9px;background:#20252d;color:#fff;box-shadow:0 6px 24px #0003;font-size:12px;pointer-events:none}
+#toast{display:none;position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:600;max-width:80vw;padding:9px 18px;border-radius:99px;background:#20252d;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:12px;pointer-events:none;animation:fadeUp .25s cubic-bezier(.25,.1,.25,1)}
 
 /* ===== Dark Mode（与主题正交：四主题各自的深色变体） ===== */
 body[data-mode="dark"]{--panel:var(--base);--line:var(--bd)}
@@ -540,6 +547,20 @@ body[data-mode="dark"][data-theme="deep"]{--panel:#1e2027;--panel-line:#2a2e38;-
 body[data-mode="dark"][data-theme="neu"]{--panel:#262932;--panel-line:rgba(255,255,255,.09);--panel-input:#22252d}
 body[data-mode="dark"][data-theme="glass"]{--panel:rgba(16,12,40,.88);--panel-line:rgba(255,255,255,.18);--panel-input:rgba(255,255,255,.08)}
 body[data-mode="dark"] .settings-box{box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05)}
+
+/* dark 浮层细节补漏 */
+body[data-mode="dark"] .compsearch,body[data-mode="dark"] #decl-stage textarea{background:var(--panel-input);border-color:var(--panel-line);color:var(--tx)}
+body[data-mode="dark"] #shortcuts-modal .sc-card,body[data-mode="dark"] #ddp-password .box{border-color:var(--panel-line)}
+body[data-mode="dark"] .compcell{background:#22242b;border-color:var(--panel-line)}
+body[data-mode="dark"] .flowrow{background:#22242b;border-color:var(--panel-line)}
+
+/* 深色计数/提示微调 */
+body[data-mode="dark"] .sec{color:rgba(255,255,255,.4)}
+body[data-mode="dark"] .sec span{color:rgba(255,255,255,.55)}
+body[data-mode="dark"] .hintbox{color:rgba(255,255,255,.42)}
+
+/* 画布点阵：浅色黑点 / 深色白点（黑点在深底不可见） */
+body[data-mode="dark"] .canvas-scroll{background-image:radial-gradient(circle,rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px}
 </style>
 </head>
 <body data-theme="mac" class="mode-wireframe">
@@ -683,7 +704,7 @@ body[data-mode="dark"] .settings-box{box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 
       <div id="insp-body">
         <div class="empty-insp">
           <svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M3.5 12.5l8-8a2.1 2.1 0 0 1 3 0l7 7a2.1 2.1 0 0 1 0 3l-8 8a2.1 2.1 0 0 1-3 0l-7-7a2.1 2.1 0 0 1 0-3z"/><path d="M9 9h.01M14.5 14.5L9 20"/></svg>
-          <div>选中画布元素查看属性<br>拖拽移动 · 四角手柄缩放 · 双击改文字 · Del 删除</div>
+          <div style="font-size:12.5px;color:var(--tx2);font-weight:600;margin-bottom:4px">未选中元素</div><div>在画布中点选任意元素<br>属性与约束将在此显示</div><div class="kbd-group"><span class="kbd-row"><span>删除元素</span><kbd>Del</kbd></span><span class="kbd-row"><span>改文字</span><kbd>双击</kbd></span></div>
         </div>
       </div>
     </div>
@@ -1937,7 +1958,7 @@ function startComponentPointerDrag(e,cid,cell){
   let moved=false;
   const ghost=document.createElement('div');
   ghost.textContent='＋ '+cid;
-  ghost.style.cssText='position:fixed;z-index:500;pointer-events:none;transform:translate(-50%,-50%);padding:8px 12px;border-radius:9px;background:#fff;color:var(--acc);font-size:11px;font-weight:600;box-shadow:0 12px 30px rgba(0,0,0,.2);border:1px solid rgba(0,122,255,.35);opacity:.94';
+  ghost.style.cssText='position:fixed;z-index:500;pointer-events:none;transform:translate(-50%,-50%);padding:8px 12px;border-radius:9px;background:var(--panel,#fff);color:var(--acc);font-size:11px;font-weight:600;box-shadow:0 12px 30px rgba(0,0,0,.2);border:1px solid rgba(0,122,255,.35);opacity:.94';
   document.body.appendChild(ghost);
   const move=ev=>{moved=true;ghost.style.left=ev.clientX+'px';ghost.style.top=ev.clientY+'px';};
   const up=async ev=>{
@@ -1983,7 +2004,7 @@ function renderInspector(){
   const n=selected&&nodeOf(selected);
   if(!n){
     body.dataset.node='';
-    body.innerHTML=`<div class="empty-insp"><svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M3.5 12.5l8-8a2.1 2.1 0 0 1 3 0l7 7a2.1 2.1 0 0 1 0 3l-8 8a2.1 2.1 0 0 1-3 0l-7-7a2.1 2.1 0 0 1 0-3z"/></svg><div>选中画布元素查看属性<br>拖拽移动 · 双击改文字 · Del 删除</div></div>`;
+    body.innerHTML=`<div class="empty-insp"><svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M3.5 12.5l8-8a2.1 2.1 0 0 1 3 0l7 7a2.1 2.1 0 0 1 0 3l-8 8a2.1 2.1 0 0 1-3 0l-7-7a2.1 2.1 0 0 1 0-3z"/></svg><div style="font-size:12.5px;color:var(--tx2);font-weight:600;margin-bottom:4px">未选中元素</div><div>在画布中点选任意元素<br>属性、约束与交互配置将在此显示</div><div class="kbd-group"><span class="kbd-row"><span>删除元素</span><kbd>Del</kbd></span><span class="kbd-row"><span>改文字</span><kbd>双击</kbd></span></div></div>`;
     return;
   }
   const sh=n.style.shadow||'none';
