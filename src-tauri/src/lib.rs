@@ -63,7 +63,7 @@ fn user_lib_b64s() -> Vec<String> {
         let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
         paths.sort();
         for p in paths {
-            if p.extension().and_then(|e| e.to_str()) == Some("md") {
+            if p.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.ends_with(".mbt.md")) {
                 if let Ok(bytes) = std::fs::read(&p) {
                     out.push(BASE64.encode(bytes));
                 }
@@ -94,17 +94,17 @@ fn write_user_lib(snap: &serde_json::Value) {
                 continue;
             }
             let name = format!("{cid}.mbt.md");
+            // keep 先于写：decode/写失败时保留既有文件（瞬时故障不得删数据）
+            keep.insert(name.clone());
             if let Ok(bytes) = BASE64.decode(src) {
-                if std::fs::write(dir.join(&name), bytes).is_ok() {
-                    keep.insert(name);
-                }
+                let _ = std::fs::write(dir.join(&name), bytes);
             }
         }
     }
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
             let p = e.path();
-            if p.extension().and_then(|x| x.to_str()) == Some("md")
+            if p.file_name().and_then(|x| x.to_str()).map_or(false, |n| n.ends_with(".mbt.md"))
                 && !keep.contains(&p.file_name().unwrap_or_default().to_string_lossy().to_string())
             {
                 let _ = std::fs::remove_file(p);

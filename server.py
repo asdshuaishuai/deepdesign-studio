@@ -112,7 +112,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
                 commands = data.get('commands')
                 if not isinstance(commands, list) or not all(isinstance(c, str) and '\n' not in c and '\r' not in c for c in commands):
                     raise ValueError('commands_invalid')
-                if any(c.split(' ', 1)[0] in LIB_MUTATING for c in commands):
+                if any(c.split()[:1] and c.split()[0] in LIB_MUTATING for c in commands):
                     commands = list(commands) + ['library-snapshot']
                 result = self.run_cli_static(commands)
                 if commands[-1] == 'library-snapshot':

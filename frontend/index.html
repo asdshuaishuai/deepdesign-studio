@@ -1169,7 +1169,7 @@ async function runOpNow(cmd,src){
     try{rs=await execCli([`${src==='agent'?'apply-agent-mbt-op-b64':'apply-human-mbt-op-b64'} ${utf8ToB64(mbtText)} ${utf8ToB64(cmd)}`]);}
     catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
     const result=mbtResult(rs);
-    if(!result||result.ok!==true){const last=rs[rs.length-1];setStatus(src,cmd,false,(last&&last.error)||'MBT 提交失败');return false;}
+    if(!result||result.ok!==true){const errRow=rs.find(x=>x&&x.error)||rs[rs.length-1];setStatus(src,cmd,false,(errRow&&errRow.error)||'MBT 提交失败');return false;}
     try{applyMbtResult(result);}catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
     setStatus(src,cmd,true,result.debt?`视觉债 ${result.debt} 条`:'已回写 MBT 并重新渲染');
     return true;
@@ -1729,7 +1729,9 @@ function renderCompTree(filter){
     const grid=document.createElement('div');grid.className='catgrid';
     items.forEach(c=>{
       const cell=document.createElement('div');cell.className='compcell'+(c.source==='user'?' uc':'');cell.title=c.description||'';
-      cell.innerHTML=`<span class="prev">${c.source==='user'?'◆':(COMP_PREV[c.id]||'◼')}</span><span class="nm">${c.id}</span>`;
+      // XSS 防线：id/description 只经 textContent（组件 id 来自外部 MCF，不可信）
+      cell.innerHTML=`<span class="prev">${c.source==='user'?'◆':(COMP_PREV[c.id]||'◼')}</span>`;
+      const nm=document.createElement('span');nm.className='nm';nm.textContent=c.id;cell.appendChild(nm);
       if(c.source==='user'){
         const ex=document.createElement('span');ex.textContent='⤓';ex.title='导出 MCF（专有格式）';
         ex.style.cssText='position:absolute;top:3px;right:5px;font-size:10px;color:var(--acc);cursor:pointer;opacity:.75';
@@ -1741,7 +1743,8 @@ function renderCompTree(filter){
           const rs=await execCli(['component-delete '+c.id]);
           const r=rs.find(x=>x&&x.op==='component-delete');
           if(r&&r.ok){toast('已删除 '+c.id);loadComponents();}
-          else{toast('删除失败：'+(r&&r.error||'unknown'));}};
+          else{const errRow=rs.find(x=>x&&x.error);
+            toast('删除失败：'+((r&&r.error)||(errRow&&errRow.error)||'unknown'));}};
         cell.appendChild(del);
       }
       cell.onclick=()=>{
@@ -1789,10 +1792,8 @@ async function saveAsComponent(){
     +'  component:\n    id: '+cid+'\n    description: '+desc+'\n'
     +'    params: []\n    variants:\n      - name: default\n'
     +'---\n\n# '+cid+'\n\n<!-- moonviz:artboard '+cid+' -->\n'
-    +body.replace('moonviz:artboard '+active,'moonviz:artboard '+cid)
-         .replace('moonviz:visual '+active,'moonviz:visual '+cid)
+    +body.replace('moonviz:visual '+active,'moonviz:visual '+cid)
          .replace('visual_'+active+'(','visual_'+cid+'(')
-         .replace('prototype(name="'+active+'"','prototype(name="'+cid+'"')
     +'\n';
   const b64=btoa(unescape(encodeURIComponent(decl)));
   // 组件库命令直连 CLI 顶层（apply-*-mbt-op 白名单不含 component-*）
@@ -1811,17 +1812,27 @@ async function exportMcf(cid){
   URL.revokeObjectURL(a.href);
   toast('已导出 '+cid+'.mcf（专有格式，仅引擎可解析）');
 }
+const COMP_ID_RE=/^[A-Za-z0-9_-]+$/;
 async function importMcf(input){
   const f=input.files&&input.files[0];input.value='';
   if(!f)return;
+  if(f.size>16*1024*1024){toast('文件过大（上限 16MB）');return;}
   const buf=await f.arrayBuffer();
   let bin='';const u=new Uint8Array(buf);
   for(let i=0;i<u.length;i+=8192)bin+=String.fromCharCode(...u.subarray(i,i+8192));
   const b64=btoa(bin);
   const rs=await execCli(['component-import '+b64]);
   const r=rs.find(x=>x&&x.op==='component-import');
-  if(r&&r.ok){toast('已导入组件：'+r.component);loadComponents();}
-  else{toast('导入失败：'+((r&&r.error)||rs.find(x=>x&&x.error&&x.error.startsWith('mcf'))?.error||'invalid'));}
+  if(r&&r.ok){
+    // 白名单防线：拒绝含异常字符的组件 id（阻断 XSS/路径逃逸载荷，并清理注册残留）
+    if(!COMP_ID_RE.test(r.component||'')){
+      await execCli(['component-delete '+(r.component||'')]);
+      toast('已拒绝：组件 id 含非法字符（仅允许字母/数字/_/-）');return;
+    }
+    toast('已导入组件：'+r.component);loadComponents();
+  }
+  else{const errRow=rs.find(x=>x&&x.error&&(x.error.startsWith('mcf')||x.error.startsWith('usercomp')||x.error.startsWith('mbt_transport')||x.error.startsWith('library')));
+    toast('导入失败：'+((r&&r.error)||(errRow&&errRow.error)||'invalid'));}
 }
 
 /* ---------- 组件 Pointer 拖拽（真实预览 + 松手落点） ---------- */
