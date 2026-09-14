@@ -870,7 +870,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <p class="settings-note">Agent 基于 @open-agent-loops/core（原生 OpenAI 兼容），操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点（OpenAI chat 兼容格式）。</p>
     <div class="settings-grid">
       <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="vercel" onclick="applyProvider('vercel')">Vercel AI Gateway（默认）</button></label>
-      <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = Vercel AI Gateway；或 https://api.deepseek.com 等OpenAI兼容端点"></label>
+      <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = https://api.deepseek.com（DeepSeek 默认）；支持任意 OpenAI 兼容端点，本地 http 仅限内网地址"></label>
       <label class="wide">API Token<input id="agent-api-key" type="password" autocomplete="off" placeholder="仅本机保存；留空则用环境变量 AI_GATEWAY_API_KEY"></label>
       <label class="wide">Model ID
         <span style="display:flex;gap:6px">
@@ -879,17 +879,14 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <button type="button" class="tbtn" onclick="fetchFxModels()" title="从当前 Base URL 拉取模型列表（OpenAI /models）" style="white-space:nowrap;font-size:11px;padding:0 10px">获取模型</button>
         </span>
       </label>
-      <label>思考等级（MiniMax）
+      <label>思考等级
         <select id="agent-thinking">
           <option value="auto">auto · 自适应（默认，按需思考）</option>
           <option value="on">on · 强制思考（每轮必思）</option>
-          <option value="low">low · 努力等级：低</option>
-          <option value="medium">medium · 努力等级：中</option>
-          <option value="high">high · 努力等级：深</option>
-          <option value="off">off · 关闭思考（仅 M3）</option>
+          <option value="off">off · 关闭思考</option>
         </select>
       </label>
-      <label style="font-size:10.5px;color:var(--tx3);align-self:end">M2.x 思考常开；effort 档经 reasoning_effort 下发。</label>
+      <label style="font-size:10.5px;color:var(--tx3);align-self:end">框架 ThinkingMode 仅支持 on/off/auto，按模型家族自动选择开关参数。</label>
     </div>
     <div class="settings-actions"><button title="closeSettings" class="tbtn" onclick="closeSettings()">取消</button><button class="tbtn pri" onclick="saveSettings()">保存设置</button></div>
   </div>
@@ -1654,14 +1651,17 @@ async function sendAgent(){
   const showSteps=steps=>{planEl.style.display='block';planEl.innerHTML=steps.map((s,i)=>`<div class="step" id="apstep${i}"><span class="n">${i+1}</span><span>${String(s).replace(/</g,'&lt;')}</span></div>`).join('');};
   try{
     loadAgentConfig();
-    // 唯一执行基座：fx-agent-sdk（桥内逐条调用 moonviz_op，每次已经过 AgentGate 并写回 MBT）
-    const r=await askFxSdk(text);
+    // 唯一执行基座：agent-bridge（@open-agent-loops/core，逐条 moonviz_op 经 AgentGate 写回 MBT）
+    // 注入选区上下文，让 agent 知道用户针对哪个节点/画板
+    const ctx=`Target: node "${n.id}" on artboard "${active}". Task: ${text}`;
+    const r=await askFxSdk(ctx);
     showSteps(r.ops.map(x=>'fx→ '+x));
     if(!r.ops.length){res.style.display='block';res.className='ap-result err';res.textContent='fx 未生成可执行操作';$('ap-send').disabled=false;return;}
     try{applyMbtResult(r.render);}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用 fx 结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;return;}
     document.querySelectorAll('#ap-plan .step').forEach(s=>s.classList.add('done'));
     res.style.display='block';res.className='ap-result ok';
-    res.textContent=`fx 已通过 MoonViz 提交 ${r.ops.length} 条变更（AgentGate）`;
+    const cut=r.stopReason==='max_turns'?'（已达步数上限）':'';
+    res.textContent=`fx 已通过 MoonViz 提交 ${r.ops.length} 条变更（AgentGate）${cut}${r.text?' — '+String(r.text).slice(0,120):''}`;
     trackAgent(text,r.ops);
     $('ap-send').disabled=false;$('ap-input').value='';
   }catch(err){
@@ -1774,10 +1774,10 @@ async function runGlobalPrompt(){
   // ===== 兜底：完整自然语言 → AI Agent（不再有"未识别意图"） =====
   // 无画板时先自动建一个 390×844 画板承接（AI 在其上继续操作）
   if(!baseCmd||!mbtText){
-    const boardId=newId();
-    const okBoard=await addBoard('create',boardId,390,844,'agent');
+    // addBoard(prefix,w,h,src) 自行生成画板 id
+    const okBoard=await addBoard('create',390,844,'agent');
     if(!okBoard){toast('自动创建画板失败，请检查引擎连接');return;}
-    trackAgent(t,[`create ${boardId} 390 844（自动承接）`]);
+    trackAgent(t,['create 390 844（自动承接）']);
   }
   try{
     loadAgentConfig();
@@ -1790,10 +1790,16 @@ async function runGlobalPrompt(){
     }
     if(r.mbt_b64){
       const src=b64ToUtf8(r.mbt_b64);
-      applyMbtResult({ok:true,mbt:src,entry:r.render&&r.render.entry,artboards:r.render&&r.render.artboards,flows:r.render&&r.render.flows,revision:r.render&&r.render.revision});
+      if(r.render){
+        applyMbtResult({ok:true,mbt:src,entry:r.render.entry,artboards:r.render.artboards,flows:r.render.flows,revision:r.render.revision});
+      }else{
+        // 桥异常未带 render 时，直接从 canonical 源重渲染兜底
+        mbtText=src;await renderMbtSource();
+      }
     }
     trackAgent(t,r.ops);
-    toast(`AI 已提交 ${r.ops.length} 条操作（AgentGate 校验）`);
+    const cut=r.stopReason==='max_turns'?'（已达步数上限，结果可能不完整）':'';
+    toast(`AI 已提交 ${r.ops.length} 条操作（AgentGate 校验）${cut}`);
   }catch(err){
     toast('AI 调用失败：'+String(err).slice(0,90));
     trackAgent(t,[],false);
@@ -2336,7 +2342,7 @@ function toggleMode(){setAppMode(document.body.dataset.mode==='dark'?'light':'da
 })();
 
 let agentConfig={baseUrl:'',apiKey:'',model:'',thinkingLevel:'auto'};
-function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};if(!['auto','off','on','low','medium','high'].includes(agentConfig.thinkingLevel))agentConfig.thinkingLevel='auto';}catch(_){} }
+function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};if(!['auto','off','on'].includes(agentConfig.thinkingLevel))agentConfig.thinkingLevel='auto';}catch(_){} }
 const PROVIDERS={deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-chat'},kimi:{baseUrl:'https://api.moonshot.cn/v1',model:'moonshotai/kimi-k2-instruct'},glm:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4.7'},minimax:{baseUrl:'https://api.minimax.cn/v1',model:'MiniMax-M3'},'minimax-intl':{baseUrl:'https://api.minimax.chat/v1',model:'MiniMax-M3'},vercel:{baseUrl:'',model:''}};
 /* MiniMax 思考能力等级：M3 支持 adaptive/disabled；M2.x 服务端不可关（UI 提示） */
 const MINIMAX_STATIC_MODELS=['MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed','MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2'];
@@ -2358,10 +2364,12 @@ async function askFxSdk(instruction){
     const res=await fetch('/api/fx/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     data=await res.json();
   }
-  if(!data||data.ok!==true)throw Error((data&&data.error)||'fxsdk_failed');
-  return data; // {ok, mbt_b64, render, ops[], log[]}
+  if(!data||data.ok!==true){
+    const d=(data&&(data.detail?data.error+': '+data.detail:data.error))||'fxsdk_failed';
+    throw Error(d);
+  }
+  return data; // {ok, mbt_b64, render, ops[], stopReason, text}
 }
-function agentRequestPrompt(instruction,n){return `You are the fx Agent inside deepDesign Studio. Current source of truth is the complete MoonBit .mbt.md document below. Return ONLY a JSON array of MoonViz CLI operations, no Markdown, no explanations. Allowed operations: move, update, delete, copy, reorder, flip, place, flow, theme, fix. Keep node/artboard ids stable. Instruction: ${instruction}\nSelected: ${n?.id||''}\nMBT source:\n${mbtText}`}
 function saveSettings(){agentConfig={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto'};localStorage.setItem('deepdesign-fx-config',JSON.stringify(agentConfig));closeSettings();toast('LLM 端点配置已保存');}
 async function fetchFxModels(){
   const baseUrl=$('agent-base-url').value.trim(), apiKey=$('agent-api-key').value.trim();

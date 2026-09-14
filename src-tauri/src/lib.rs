@@ -52,8 +52,7 @@ fn user_lib_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("MOONVIZ_USER_LIB") {
         return PathBuf::from(dir);
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".moonviz").join("components")
+    PathBuf::from(home_dir()).join(".moonviz").join("components")
 }
 
 fn user_lib_b64s() -> Vec<String> {
@@ -294,13 +293,17 @@ fn invoke_fx(prompt: String, fx_path: String, cwd: String) -> Result<String, Str
 }
 
 /// Tauri 端 fx SDK 桥：与 server.py 的 /api/fx/agent 等价，通过 node 运行
-/// agent/agent-bridge.mjs（libfx 嵌入），fx 的每次工具调用都在桥内经
-/// MoonViz AgentGate 并返回 canonical MBT。Rust 只传输 JSON 字节。
+/// agent/agent-bridge.mjs（@open-agent-loops/core 桥），fx 的每次工具调用都在桥内经
+/// MoonViz AgentGate 校验并写回 canonical MBT。Rust 只传输 JSON 字节。
 /// 定位 agent-bridge.mjs 所在的 agent 目录：
 /// 1) dev：编译清单目录的上一级（<deepDesign>/agent——CARGO_MANIFEST_DIR 是 src-tauri）
-/// 2) 打包回退：从可执行文件向上逐级找 agent/agent-bridge.mjs（extraResources 布局）
+/// 2) 打包回退：从可执行文件向上逐级找 agent/agent-bridge.mjs
+///    - Windows（NSIS）：resources 落在 exe 旁 → dir/agent 直接命中
+///    - macOS（.app）：resources 落在 Contents/Resources/agent → 补查 dir/Resources/agent
 fn fx_agent_root() -> Result<PathBuf, String> {
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("agent");
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("agent");
     if dev.join("agent-bridge.mjs").exists() {
         return Ok(dev);
     }
@@ -311,6 +314,10 @@ fn fx_agent_root() -> Result<PathBuf, String> {
                 let cand = d.join("agent");
                 if cand.join("agent-bridge.mjs").exists() {
                     return Ok(cand);
+                }
+                let res_cand = d.join("Resources").join("agent");
+                if res_cand.join("agent-bridge.mjs").exists() {
+                    return Ok(res_cand);
                 }
                 dir = d.parent().map(|p| p.to_path_buf());
             }
@@ -338,14 +345,14 @@ fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, 
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("fxsdk_spawn_failed:{e}"))?;
-    if let Some(stdin) = child.stdin.as_mut() {
+    if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(payload.as_bytes())
             .map_err(|e| format!("fxsdk_write_failed:{e}"))?;
+        // 显式关闭 stdin：桥的 readStdin() 依赖 EOF 才会开始执行
+        drop(stdin);
     }
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("fxsdk_wait_failed:{e}"))?;
+    let output = wait_child_output(child, std::time::Duration::from_secs(300))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     match serde_json::from_str::<serde_json::Value>(stdout.trim()) {
         Ok(value) if value.is_object() => Ok(value),
@@ -356,28 +363,110 @@ fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, 
     }
 }
 
-/// Locate a usable node binary for the fx SDK bridge.
-fn which_node() -> Option<String> {
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in path.split(':') {
-            let p = PathBuf::from(dir).join("node");
-            if p.exists() {
-                return Some(p.display().to_string());
+/// 带超时的 wait_with_output：管道由后台线程读取（避免子进程写满管道死锁），
+/// 主循环轮询 try_wait，超时 kill。原版 wait_with_output 无界等待，
+/// 桥内 maxSteps×每步 LLM+CLI 可能长时间运行。
+fn wait_child_output(
+    mut child: std::process::Child,
+    timeout: std::time::Duration,
+) -> Result<std::process::Output, String> {
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let out_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(p) = stdout_pipe.as_mut() {
+            let _ = p.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let err_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(p) = stderr_pipe.as_mut() {
+            let _ = p.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = out_handle.join().unwrap_or_default();
+                let stderr = err_handle.join().unwrap_or_default();
+                return Ok(std::process::Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
             }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = out_handle.join();
+                    let _ = err_handle.join();
+                    return Err("fxsdk_timeout".into());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(format!("fxsdk_wait_failed:{e}")),
         }
     }
-    let home = std::env::var("HOME").unwrap_or_default();
-    for p in [
-        format!("{home}/.volta/bin/node"),
-        "/opt/homebrew/bin/node".into(),
-        "/usr/local/bin/node".into(),
-    ] {
-        let p = PathBuf::from(p);
-        if p.exists() {
+}
+
+/// 跨平台 home 目录：Windows 用 USERPROFILE，Unix 用 HOME。
+fn home_dir() -> String {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default()
+}
+
+/// 在 PATH 中查找可执行文件（split_paths 处理 Unix ':' 与 Windows ';'，Windows 自动补 .exe）。
+fn find_in_path(name: &str) -> Option<String> {
+    let exe = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let p = dir.join(&exe);
+        if p.is_file() {
             return Some(p.display().to_string());
         }
     }
     None
+}
+
+/// Locate a usable node binary for the fx SDK bridge.
+fn which_node() -> Option<String> {
+    if let Some(p) = find_in_path("node") {
+        return Some(p);
+    }
+    // GUI 启动的 app 继承的 PATH 可能不含用户 shell 的 bin——探测常见安装位置
+    let home = home_dir();
+    #[cfg(windows)]
+    let candidates: Vec<PathBuf> = {
+        let program_files =
+            std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".into());
+        vec![
+            PathBuf::from(program_files).join("nodejs").join("node.exe"),
+            PathBuf::from(&home)
+                .join("scoop")
+                .join("apps")
+                .join("nodejs")
+                .join("current")
+                .join("node.exe"),
+        ]
+    };
+    #[cfg(not(windows))]
+    let candidates: Vec<PathBuf> = vec![
+        PathBuf::from(&home).join(".volta").join("bin").join("node"),
+        PathBuf::from("/opt/homebrew/bin/node"),
+        PathBuf::from("/usr/local/bin/node"),
+    ];
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .map(|p| p.display().to_string())
 }
 
 #[tauri::command]
@@ -394,28 +483,30 @@ fn diagnostics() -> serde_json::Value {
 }
 
 fn which_moon() -> String {
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in path.split(':') {
-            let p = PathBuf::from(dir).join("moon");
-            if p.exists() {
-                return p.display().to_string();
-            }
-        }
+    if let Some(p) = find_in_path("moon") {
+        return p;
     }
     // GUI 启动的 app 继承的 PATH 不含用户 shell 的 bin——探测常见位置
-    let home = std::env::var("HOME").unwrap_or_default();
-    for p in [
-        format!("{home}/.cargo/bin/moon"),
-        format!("{home}/.moon/bin/moon"),
-        "/opt/homebrew/bin/moon".into(),
-        "/usr/local/bin/moon".into(),
-    ] {
-        let p = PathBuf::from(p);
-        if p.exists() {
+    let home = home_dir();
+    #[cfg(windows)]
+    let candidates: Vec<PathBuf> = vec![
+        PathBuf::from(&home).join(".cargo").join("bin").join("moon.exe"),
+        PathBuf::from(&home).join(".moon").join("bin").join("moon.exe"),
+    ];
+    #[cfg(not(windows))]
+    let candidates: Vec<PathBuf> = vec![
+        PathBuf::from(&home).join(".cargo").join("bin").join("moon"),
+        PathBuf::from(&home).join(".moon").join("bin").join("moon"),
+        PathBuf::from("/opt/homebrew/bin/moon"),
+        PathBuf::from("/usr/local/bin/moon"),
+    ];
+    for p in candidates {
+        if p.is_file() {
             return p.display().to_string();
         }
     }
-    // login shell 取真实 PATH（兜底）
+    // login shell 取真实 PATH（兜底；Windows 无 sh，跳过）
+    #[cfg(not(windows))]
     if let Ok(out) = Command::new("sh")
         .args(["-lc", "which moon 2>/dev/null"])
         .output()

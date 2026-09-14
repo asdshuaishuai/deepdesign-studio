@@ -19,7 +19,7 @@ import { OpenAICompatibleModel } from '@open-agent-loops/core/providers/openai';
 import { z } from 'zod';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_ENGINE = join(here, '..', '..', 'moonviz');
+const DEFAULT_ENGINE = process.env.MOONVIZ_DIR || join(here, '..', '..', 'moonviz');
 const CLI_TIMEOUT_MS = 30000;
 
 function readStdin() {
@@ -47,6 +47,9 @@ function runMoonCli(engineDir, commands) {
     }, CLI_TIMEOUT_MS);
     child.stdout.on('data', c => (out += c));
     child.stderr.on('data', c => (err += c));
+    // 引擎早退（如 moon 不存在 / 编译失败）时 stdin 写入会 EPIPE；
+    // 不挂 error 监听会成为 uncaught exception，吞掉下面的错误返回。
+    child.stdin.on('error', () => {});
     child.on('error', e => { clearTimeout(timer); resolve([{ ok: false, error: 'moon_unavailable:' + e.message }]); });
     child.on('close', () => {
       clearTimeout(timer);
@@ -87,8 +90,12 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 
 ## Build loop (from empty document)
 1. PLAN: choose screens; map each to a template. Available: ${ENGINE_TEMPLATES}
-   Notes: template/create size args are optional; list_detail yields list AND detail screens;
+   Notes: template/create size args are optional; list_detail yields ONE artboard
+   (a list screen with a detail placeholder card — not two separate screens);
    adaptive templates pick structure by width.
+   Artboard names become ids after sanitization — use ASCII snake_case names
+   (e.g. chat_list); non-ASCII names collapse to "_" and collide. Chinese copy
+   belongs in node text values, never in artboard/node ids.
 2. CREATE: one "template <id> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
    node ids are only discoverable there. Artboard id = sanitized name.
 3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.
@@ -113,6 +120,9 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   | flow <from_artboard> <to_artboard> <node>
   | theme <name>  (light|dark|high_contrast|sepia|nord|sunset)
   | fix <artboard>
+- read-only inspection ops (no document change): lint <artboard>
+  | critique <artboard> | query <artboard> | infer <artboard>
+  | flows | tap <artboard> <x> <y>
 - update keys: w h text fill text_color stroke radius opacity font_size weight shadow rotate
   blur blend line tracking constraint. Quote values with spaces: text="Sign in".
   Unquoted words after a space are silently dropped — always quote multi-word text.
@@ -126,8 +136,11 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   if stuck run fix <artboard>. Never repeat an identical failing op.
 - debt = remaining tolerated violations; keep it 0. All changes go through moonviz_op only.`;
 
-// 只读命令（走 load-mbt-b64 管道而非 apply-op 路径）
-const READONLY_RE = /^(lint|critique|query|flows|tap|list-templates|list-components|infer|fix) /;
+// 只读命令（走 load-mbt-b64 管道而非 apply-op 路径）。
+// 注意：fix 不在此列——引擎在 apply-agent-mbt-op-b64 中为 fix 实现了
+// 「违规严格下降才提交」的还债语义，走只读管道会丢弃变更。
+// (\s|$) 允许无参命令（flows / list-templates / list-components）裸调用。
+const READONLY_RE = /^(lint|critique|query|flows|tap|list-templates|list-components|infer)(\s|$)/;
 
 function makeExecutor(engineDir) {
   let mbt = null;
@@ -136,6 +149,7 @@ function makeExecutor(engineDir) {
 
   return {
     setMbt(text) { mbt = text; },
+    setRender(r) { lastRender = r; },
     mbt: () => mbt,
     ops: () => ops,
     render: () => lastRender,
@@ -161,14 +175,19 @@ function makeExecutor(engineDir) {
 
       if (!mbt) return { ok: false, error: 'no_mbt_loaded' };
 
-      // 只读命令（lint/critique/query/flows/tap）：走 load + 命令管线
+      // 只读命令（lint/critique/query/flows/tap/…）：走 load + 命令管线。
+      // 引擎输出顺序：banner{moonviz} → load ack{ok,entry,revision} → 命令结果，
+      // 因此取「最后一个非 banner 对象」——load ack 永远排在命令结果之前。
       if (READONLY_RE.test(op.trim())) {
         const rs = await runMoonCli(engineDir, [
           `load-mbt-b64 ${b64encode(mbt)}`, op.trim(),
         ]);
-        const result = rs.find(r => r && typeof r === 'object' && !r.moonviz);
+        const nonBanner = rs.filter(r => r && typeof r === 'object' && !r.moonviz);
+        const result = nonBanner[nonBanner.length - 1];
+        if (!result) return { ok: false, error: 'readonly_no_output' };
+        if (result.error) return { ok: false, error: result.error };
         ops.push(op);
-        return result || { ok: false, error: 'readonly_no_output' };
+        return Array.isArray(result) ? { ok: true, result } : result;
       }
 
       // 变更操作：apply-agent-mbt-op-b64
@@ -229,12 +248,35 @@ function makeTools(ex) {
   ];
 }
 
+/// base_url 校验：https 任意主机；http 仅放行本机/内网（本地 LLM 如 Ollama/vLLM）。
+function safeBaseUrl(u) {
+  if (!u || !u.trim()) return 'https://api.deepseek.com';
+  let parsed;
+  try { parsed = new URL(u.trim()); } catch { return null; }
+  if (parsed.protocol === 'https:') return parsed.toString();
+  if (parsed.protocol === 'http:' &&
+      /^(localhost|127\.0\.0\.1|\[::1\]|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(parsed.hostname)) {
+    return parsed.toString();
+  }
+  return null;
+}
+
+/// 框架 ThinkingMode 仅支持 on|off|auto；兼容前端历史保存的 low/medium/high（映射为 on）。
+function mapThinking(level) {
+  if (level === 'off') return 'off';
+  if (level === 'on' || level === 'low' || level === 'medium' || level === 'high') return 'on';
+  return 'auto';
+}
+
 async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, thinking_level, engine_dir }) {
   const apiKey = api_key || process.env.AI_GATEWAY_API_KEY;
   if (!apiKey) return { ok: false, error: 'api_key_missing' };
 
   const engineDir = engine_dir || DEFAULT_ENGINE;
   if (!existsSync(join(engineDir, 'cli'))) return { ok: false, error: 'engine_dir_invalid' };
+
+  const baseUrl = safeBaseUrl(base_url);
+  if (!baseUrl) return { ok: false, error: 'base_url_invalid_https_or_local' };
 
   const ex = makeExecutor(engineDir);
   if (mbt_b64) {
@@ -243,9 +285,9 @@ async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, th
 
   const agentModel = new OpenAICompatibleModel({
     apiKey,
-    baseURL: base_url || 'https://api.deepseek.com',
+    baseURL: baseUrl,
     model: model || 'deepseek-chat',
-    thinking: thinking_level === 'off' ? 'off' : 'auto',
+    thinking: mapThinking(thinking_level),
   });
 
   const tools = makeTools(ex);
@@ -259,6 +301,8 @@ async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, th
     prompt: instruction,
     tools,
     maxSteps: 20,
+    // moonviz_op 读写共享的 mbt 闭包状态，并发执行会互相覆盖丢失更新。
+    toolExecution: 'sequential',
   });
 
   // 从 newMessages 提取 assistant 总结和错误信息
@@ -275,6 +319,14 @@ async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, th
       detail: hasError ? text.slice(0, 200) : 'LLM did not call any tools',
       ops: [], text,
     };
+  }
+
+  // 只读会话（如仅 lint/query）不会产生 apply 渲染——用 render-mbt-b64 兜底，
+  // 保证前端始终拿到含 artboards/svg 的终态 render，而不是 null。
+  if (ex.mbt() && !ex.render()) {
+    const rs = await runMoonCli(engineDir, [`render-mbt-b64 ${b64encode(ex.mbt())}`]);
+    const rendered = rs.find(r => r && typeof r === 'object' && typeof r.mbt === 'string');
+    if (rendered) ex.setRender(rendered);
   }
 
   return {
@@ -331,8 +383,8 @@ async function listModels({ base_url, api_key }) {
   }
 }
 
-const input = JSON.parse(await readStdin());
 try {
+  const input = JSON.parse(await readStdin());
   const out = input.mode === 'selftest' ? await selftest(input)
     : input.mode === 'models' ? await listModels(input)
     : await runWithAgent(input);
