@@ -547,7 +547,8 @@ body[data-mode="dark"][data-theme="glass"] .frow input,body[data-mode="dark"][da
   <button class="tbtn" onclick="newProject()" title="新建项目"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></button>
   <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）— 选择文件后按需输入密码解密"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
   <button class="tbtn" onclick="saveProject()" title="保存 / 导出 DDP（⌘S）— 可选择加密或免密"><svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
-  <button class="tbtn" onclick="openSettings()" title="Agent 设置" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg></button>
+  <button class="tbtn" onclick="openThemeMenuAt(this)" title="主题与深色模式" aria-label="主题"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18c1.2 0 2-.9 2-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.9-.5-1.4 0-1.1.9-2 2-2h2.4A9 9 0 0 0 12 3z"/></svg><span id="theme-badge" style="font-size:10.5px;font-weight:600"></span></button>
+      <button class="tbtn" onclick="openSettings()" title="Agent 设置" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg></button>
   <span class="tsep"></span>
   <button class="tbtn" onclick="togglePlay()" title="演示模式（⌘4）· 工作区内禁编辑"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5z"/></svg>演示</button>
   <button class="tbtn pri" onclick="exportDdp()" title="导出加密 DDP 视觉文档"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>导出 DDP</button>
@@ -691,7 +692,7 @@ body[data-mode="dark"][data-theme="glass"] .frow input,body[data-mode="dark"][da
         <svg class="ic" style="width:12px;height:12px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18c1.2 0 2-.9 2-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.9-.5-1.4 0-1.1.9-2 2-2h2.4A9 9 0 0 0 12 3z"/></svg>
         <span id="theme-cur">Mac</span>
       </button>
-      <div id="theme-menu" style="display:none;position:absolute;bottom:24px;right:0;background:var(--panel,#fff);border:1px solid var(--line,#d8d8dc);border-radius:10px;box-shadow:var(--sh-pop);padding:4px;min-width:180px;z-index:400;color:var(--tx)">
+      <div id="theme-menu" style="display:none;position:fixed;background:var(--panel,#fff);border:1px solid var(--line,#d8d8dc);border-radius:10px;box-shadow:var(--sh-pop);padding:4px;min-width:190px;z-index:900;color:var(--tx)">
         <button class="tmenu" onclick="pickTheme('mac')">Mac · macOS Light</button>
         <button class="tmenu" onclick="pickTheme('deep')">Deep · 深色专业</button>
         <button class="tmenu" onclick="pickTheme('neu')">Neumorphism · 软拟物</button>
@@ -2203,6 +2204,18 @@ function newProject(){return serializeProject(async()=>{
 });}
 
 /* ---------- 主题 ---------- */
+function openThemeMenuAt(anchor){
+  const m=$('theme-menu');
+  if(m.style.display==='block'){m.style.display='none';return;}
+  m.style.display='block';
+  const r=anchor.getBoundingClientRect();
+  m.style.left=Math.max(8,Math.min(window.innerWidth-m.offsetWidth-8,r.right-m.offsetWidth))+'px';
+  m.style.top=(r.bottom+6+m.offsetHeight>window.innerHeight?r.top-m.offsetHeight-6:r.bottom+6)+'px';
+}
+function updateThemeBadge(){
+  const b=$('theme-badge');
+  if(b)b.textContent=({mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[document.body.dataset.theme]||'')+(document.body.dataset.mode==='dark'?' · 暗':'');
+}
 function toggleThemeMenu(e){
   e.stopPropagation();
   const m=$('theme-menu');
@@ -2212,6 +2225,8 @@ function pickTheme(t){
   setTheme(t);
   $('theme-cur').textContent={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[t]||t;
   $('theme-menu').style.display='none';
+  updateThemeBadge();
+  const _m=$('theme-menu');if(_m)_m.style.display='none';
 }
 document.addEventListener('click',e=>{
   const m=$('theme-menu');
@@ -2223,6 +2238,7 @@ function setTheme(t){
 }
 function setMode(m){
   document.body.dataset.mode=m;
+  updateThemeBadge&&updateThemeBadge();
   try{localStorage.setItem('dd-mode',m);}catch(_){}
   const t=$('mode-toggle');if(t)t.textContent=m==='dark'?'☀️ 深色模式：开':'🌙 深色模式：关';
 }
@@ -2235,6 +2251,7 @@ function toggleMode(){setMode(document.body.dataset.mode==='dark'?'light':'dark'
   let m='light';
   try{m=localStorage.getItem('dd-mode')||'light';}catch(_){}
   setMode(m);
+  updateThemeBadge();
   const names={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'};
   const c=$('theme-cur');if(c)c.textContent=names[t]||t;
 })();
