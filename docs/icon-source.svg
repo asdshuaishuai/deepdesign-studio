@@ -1,207 +1,109 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512">
   <defs>
-    <clipPath id="squircle"><rect width="512" height="512" rx="116"/></clipPath>
-    <linearGradient id="bg-grad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#EEF3FA"/>
-      <stop offset=".55" stop-color="#E2ECF7"/>
-      <stop offset="1" stop-color="#CFE0F2"/>
-    </linearGradient>
-    <radialGradient id="bg-glow" cx=".28" cy=".16" r="1">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".85"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    <clipPath id="sq"><rect width="512" height="512" rx="128"/></clipPath>
+    <radialGradient id="bg" cx=".5" cy=".38" r=".9">
+      <stop offset="0" stop-color="#1C1C22"/>
+      <stop offset=".62" stop-color="#0C0C10"/>
+      <stop offset="1" stop-color="#050507"/>
     </radialGradient>
+    <linearGradient id="whale" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset=".7" stop-color="#EEF0F6"/>
+      <stop offset="1" stop-color="#D8DCE6"/>
+    </linearGradient>
+    <linearGradient id="beret" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8556F"/>
+      <stop offset=".6" stop-color="#C4304E"/>
+      <stop offset="1" stop-color="#8E1F38"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F5C05A"/>
+      <stop offset=".6" stop-color="#DE9F2E"/>
+      <stop offset="1" stop-color="#9C6A14"/>
+    </linearGradient>
+    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5AC8FA"/>
+      <stop offset=".5" stop-color="#8F7BF6"/>
+      <stop offset="1" stop-color="#F27DB8"/>
+    </linearGradient>
   </defs>
-  <g clip-path="url(#squircle)">
-    <rect width="512" height="512" fill="url(#bg-grad)"/>
-    <rect width="512" height="512" fill="url(#bg-glow)"/>
 
-                        <defs>
-                            <!-- Deep Oceanic Orca Dark Skin -->
-                            <linearGradient id="orca-skin-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#1E293B"></stop>
-                                <stop offset="45%" stop-color="#0F172A"></stop>
-                                <stop offset="100%" stop-color="#030712"></stop>
-                            </linearGradient>
+  <g clip-path="url(#sq)">
+    <rect width="512" height="512" fill="url(#bg)"/>
 
-                            <!-- Pure Pristine White Patch -->
-                            <linearGradient id="orca-white-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#FFFFFF"></stop>
-                                <stop offset="100%" stop-color="#F1F5F9"></stop>
-                            </linearGradient>
+    <!-- 柔光笔触：圆润低语的背景点缀 -->
+    <path d="M 96 350 C 150 210 300 160 402 200 C 452 220 468 292 424 344
+             C 366 410 236 430 150 396 C 108 378 84 366 96 350"
+          stroke="url(#stroke)" stroke-width="17" stroke-linecap="round" fill="none" opacity=".28"/>
+    <path d="M 150 318 C 196 226 300 192 372 220"
+          stroke="url(#stroke)" stroke-width="8" stroke-linecap="round" fill="none" opacity=".16"/>
 
-                            <!-- Saddle Patch (Dorsal Grey Patch) -->
-                            <linearGradient id="saddle-patch-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#94A3B8" stop-opacity="0.55"></stop>
-                                <stop offset="100%" stop-color="#475569" stop-opacity="0.15"></stop>
-                            </linearGradient>
+    <!-- 白色胖鲸：圆润流线主体（头部右，尾部左下） -->
+    <g>
+      <!-- 尾鳍（圆润双叶） -->
+      <path d="M 150 330 C 120 354 80 364 52 356 C 44 340 60 316 94 304
+               C 116 296 138 304 150 318 C 154 322 154 326 150 330 Z" fill="url(#whale)"/>
+      <path d="M 150 330 C 128 364 96 390 66 388 C 58 372 70 346 102 326
+               C 122 314 140 320 150 330 Z" fill="url(#whale)"/>
 
-                            <!-- French Painter Beret Gradient -->
-                            <linearGradient id="beret-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#FB7185"></stop>
-                                <stop offset="60%" stop-color="#E11D48"></stop>
-                                <stop offset="100%" stop-color="#9F1239"></stop>
-                            </linearGradient>
+      <!-- 主躯干：更胖更圆的流线 -->
+      <path d="M 142 330
+               C 160 258 216 190 296 172
+               C 368 156 424 192 440 240
+               C 454 282 430 322 376 344
+               C 300 374 198 378 152 344
+               C 146 340 143 336 142 330 Z" fill="url(#whale)"/>
 
-                            <!-- Wooden Palette & Brush -->
-                            <linearGradient id="wood-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#F59E0B"></stop>
-                                <stop offset="60%" stop-color="#D97706"></stop>
-                                <stop offset="100%" stop-color="#78350F"></stop>
-                            </linearGradient>
+      <!-- 背鳍（圆顶水滴形，与整体圆润语言统一） -->
+      <path d="M 234 188 C 240 138 256 100 282 84
+               C 292 78 302 84 300 96
+               C 296 122 292 148 300 172
+               C 298 180 288 182 278 178
+               C 262 172 246 178 234 188 Z" fill="url(#whale)"/>
 
-                            <!-- Cosmic Impressionist Paint Stream -->
-                            <linearGradient id="cosmic-paint-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#38BDF8"></stop>
-                                <stop offset="35%" stop-color="#818CF8"></stop>
-                                <stop offset="70%" stop-color="#C084FC"></stop>
-                                <stop offset="100%" stop-color="#F472B6"></stop>
-                            </linearGradient>
+      <!-- 眼斑（深色椭圆，白身上的虎鲸印记） -->
+      <ellipse cx="352" cy="196" rx="30" ry="15" transform="rotate(-16 352 196)" fill="#C9CEDB" opacity=".85"/>
 
-                            <linearGradient id="gold-accent-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stop-color="#FCD34D"></stop>
-                                <stop offset="100%" stop-color="#F59E0B"></stop>
-                            </linearGradient>
+      <!-- 眼睛（深色圆点 + 高光，圆润有神） -->
+      <circle cx="368" cy="222" r="13" fill="#1B1B22"/>
+      <circle cx="368" cy="222" r="11" fill="#2A2A34"/>
+      <circle cx="364" cy="218" r="4.5" fill="#FFFFFF"/>
+      <circle cx="372" cy="226" r="2" fill="#B8C4D8"/>
 
-                            <!-- Soft Glow Filter -->
-                            <filter id="soft-blur" x="-20%" y="-20%" width="140%" height="140%">
-                                <feGaussianBlur stdDeviation="5" result="blur"></feGaussianBlur>
-                                <feComposite in="SourceGraphic" in2="blur" operator="over"></feComposite>
-                            </filter>
+      <!-- 微笑（圆润弧线） -->
+      <path d="M 376 248 C 396 258 420 254 434 244"
+            stroke="#1B1B22" stroke-width="6" stroke-linecap="round" fill="none"/>
 
-                            <!-- Drop Shadow for Accessories -->
-                            <filter id="drop-sh" x="-20%" y="-20%" width="140%" height="140%">
-                                <feDropShadow dx="1" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.35"></feDropShadow>
-                            </filter>
-                        </defs>
+      <!-- 腮红（柔和暖点） -->
+      <ellipse cx="380" cy="238" rx="13" ry="6" fill="#E8556F" opacity=".28"/>
 
-                        <!-- 1. ARTISTIC BACKGROUND: Cosmic Ocean Waves & Paint Streams -->
-                        <g id="layer-paint-background">
-                            <!-- Glowing Ambient Halo -->
-                            <circle cx="256" cy="256" r="210" fill="url(#cosmic-paint-grad)" opacity="0.08" filter="url(#soft-blur)"></circle>
+      <!-- 胸鳍（圆润短鳍） -->
+      <path d="M 306 316 C 330 352 356 378 380 370
+               C 392 358 366 318 338 292 C 324 300 312 306 306 316 Z" fill="url(#whale)"/>
+      <path d="M 316 320 C 334 346 354 362 370 358"
+            stroke="#C9CEDB" stroke-width="4" stroke-linecap="round" fill="none" opacity=".7"/>
+    </g>
 
-                            <!-- Dynamic Impressionist Wave Swirls (星空巨浪笔触) -->
-                            <path class="paint-flow-anim" d="M 70 280 C 100 160, 240 100, 360 140 C 440 170, 460 270, 410 350 C 350 430, 210 440, 130 380 C 80 340, 60 260, 110 190" stroke="url(#cosmic-paint-grad)" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.8"></path>
+    <!-- 贝雷帽（降饱和玫瑰红，圆润贴头） -->
+    <g>
+      <path d="M 300 168 C 286 130 346 102 394 126
+               C 414 136 408 158 384 162
+               C 344 168 312 172 300 168 Z" fill="url(#beret)"/>
+      <path d="M 310 166 C 332 158 372 158 392 164
+               C 382 172 330 174 310 166 Z" fill="#701426"/>
+      <path d="M 344 118 C 342 110 348 106 346 100"
+            stroke="#E8556F" stroke-width="5" stroke-linecap="round" fill="none"/>
+    </g>
 
-                            <path class="paint-flow-anim" d="M 110 260 C 140 170, 250 130, 340 160 C 400 180, 420 250, 380 310 C 330 370, 220 380, 150 330" stroke="url(#gold-accent-grad)" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.85"></path>
+    <!-- 画笔（暖黄圆润，斜衔于嘴边） -->
+    <g transform="translate(398,250) rotate(-14)">
+      <path d="M -54 4 L 22 4 L 22 12 L -54 12 Z" fill="url(#wood)" rx="3"/>
+      <rect x="22" y="2" width="14" height="12" rx="4" fill="#C9CEDB"/>
+      <path d="M 36 2 C 48 -2 60 6 66 8 C 60 10 48 18 36 14 Z" fill="#F27DB8"/>
+      <path d="M 52 6 C 58 6 64 8 68 8 C 64 9 58 10 52 9 Z" fill="#FFFFFF"/>
+    </g>
 
-                            <!-- Floating Stardust & Paint Splatters -->
-                            <g id="stardust">
-                                <circle cx="380" cy="120" r="4" fill="#FCD34D"></circle>
-                                <path d="M 380 112 L 382 118 L 388 120 L 382 122 L 380 128 L 378 122 L 372 120 L 378 118 Z" fill="#FCD34D"></path>
-                                <circle cx="440" cy="220" r="5" fill="#F472B6"></circle>
-                                <circle cx="410" cy="380" r="4" fill="#38BDF8"></circle>
-                                <circle cx="120" cy="140" r="3" fill="#C084FC"></circle>
-                                <circle cx="80" cy="300" r="4.5" fill="#FCD34D"></circle>
-                            </g>
-                        </g>
-
-                        <!-- 2. NATURAL & ELEGANT ORCA CHARACTER BODY -->
-                        <g id="layer-orca-body">
-
-                            <!-- Tail Fluke (双裂流线尾鳍) -->
-                            <g id="orca-tail">
-                                <path d="M 120 340 C 90 355 50 360 25 345 C 20 325 45 305 80 300 C 100 295 118 305 130 320 Z" fill="url(#orca-skin-grad)"></path>
-                                <path d="M 120 340 C 95 375 60 400 30 395 C 20 375 35 350 70 332 C 95 322 115 325 130 330 Z" fill="url(#orca-skin-grad)"></path>
-                            </g>
-
-                            <!-- Smooth Main Orca Torso (流线躯干) -->
-                            <path id="orca-torso" d="M 110 325
-                                     C 145 250 205 170 300 155
-                                     C 375 142 425 180 440 230
-                                     C 452 270 425 315 370 340
-                                     C 285 380 180 385 125 345
-                                     C 118 340 112 332 110 325 Z" fill="url(#orca-skin-grad)"></path>
-
-                            <!-- Iconic Tall Dorsal Fin (高耸直立背鳍) -->
-                            <path id="orca-dorsal-fin" d="M 225 172
-                                     C 235 95 255 35 290 25
-                                     C 280 75 270 128 285 158 Z" fill="url(#orca-skin-grad)"></path>
-
-                            <!-- Subtle Grey Saddle Patch (背鳍后方鞍状灰斑) -->
-                            <path id="orca-saddle-patch" d="M 270 160 C 285 148 310 146 325 158 C 315 175 290 180 270 160 Z" fill="url(#saddle-patch-grad)"></path>
-
-                            <!-- ANATOMICAL WHITE BELLY & JAW PATCH (自然连贯的雪白下颌与腹斑) -->
-                            <path id="orca-white-belly" d="M 135 338
-                                     C 175 360 255 355 330 328
-                                     C 380 310 415 278 418 255
-                                     C 395 245 355 275 300 288
-                                     C 225 305 165 318 135 338 Z" fill="url(#orca-white-grad)"></path>
-
-                            <!-- Lower Jaw White Patch (下颌雪白皮肤) -->
-                            <path id="orca-white-jaw" d="M 365 298 C 400 292 428 268 430 250 C 408 246 372 268 365 298 Z" fill="url(#orca-white-grad)"></path>
-
-                            <!-- ICONIC OVAL EYE PATCH (标志性椭圆眼斑 - 位于眼睛上方) -->
-                            <ellipse id="orca-eye-patch" cx="355" cy="190" rx="28" ry="14" transform="rotate(-18 355 190)" fill="url(#orca-white-grad)"></ellipse>
-
-                            <!-- HIGH-VISIBILITY EXPRESSIVE ORCA EYE & SMILE (清晰瞩目、灵动神采的眼睛与笑容) -->
-                            <g id="orca-face">
-                                <!-- Eye Contour Ring to ensure 100% visibility against dark skin -->
-                                <circle cx="370" cy="216" r="9.5" fill="#1E293B" stroke="#64748B" stroke-width="1.5"></circle>
-                                <!-- Glossy Outer Iris with Cyan Highlight -->
-                                <circle id="orca-eye-iris" cx="370" cy="216" r="8" fill="#020617" stroke="#38BDF8" stroke-width="1.2"></circle>
-                                <!-- Inner Pupil -->
-                                <circle cx="370" cy="216" r="5" fill="#0B0F19"></circle>
-                                <!-- Double Sparkle Catchlights -->
-                                <circle cx="367.5" cy="213.5" r="2.8" fill="#FFFFFF"></circle>
-                                <circle cx="372.5" cy="218.5" r="1.3" fill="#E0F2FE"></circle>
-
-                                <!-- Gentle Blush under eye -->
-                                <ellipse cx="375" cy="230" rx="10" ry="4" fill="#FB7185" opacity="0.35"></ellipse>
-
-                                <!-- Soft Happy Mouth Line -->
-                                <path d="M 378 238 C 398 246 422 240 432 232" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round" fill="none"></path>
-                            </g>
-
-                            <!-- Pectoral Fins (胸鳍) -->
-                            <!-- Left Background Fin -->
-                            <path d="M 250 310 C 225 345 200 380 215 395 C 235 395 260 350 280 315 Z" fill="#0B1220" opacity="0.65"></path>
-
-                            <!-- Right Foreground Fin -->
-                            <path id="orca-right-fin" d="M 300 295 C 325 335 355 368 378 358 C 392 348 365 310 335 282 Z" fill="url(#orca-skin-grad)"></path>
-                            <path d="M 310 300 C 330 330 355 352 372 350" stroke="#334155" stroke-width="2" stroke-linecap="round" fill="none"></path>
-                        </g>
-
-                        <!-- 3. ARTIST ACCESSORIES: French Beret, Palette & Paintbrush -->
-                        <g id="layer-artist-props">
-
-                            <!-- Stylish French Beret (法式贝雷帽 - 可开关/自然贴合头部) -->
-                            <g id="prop-beret" filter="url(#drop-sh)">
-                                <path d="M 300 152 C 290 122, 360 102, 400 130 C 415 140, 405 160, 380 160 C 340 160, 310 162, 300 152 Z" fill="url(#beret-grad)"></path>
-                                <path d="M 310 155 C 330 150, 370 150, 390 157 C 380 162, 330 162, 310 155 Z" fill="#4C0519"></path>
-                                <path d="M 348 116 C 346 108, 351 105, 350 101" stroke="#FB7185" stroke-width="3.5" stroke-linecap="round" fill="none"></path>
-                            </g>
-
-                            <!-- Wooden Palette (木质调色板) -->
-                            <g id="prop-palette" transform="translate(210, 285) rotate(-12)" filter="url(#drop-sh)">
-                                <path d="M 20 15 C 50 5, 88 18, 82 52 C 76 76, 42 80, 18 66 C -6 52, -4 25, 20 15 Z" fill="url(#wood-grad)"></path>
-                                <ellipse cx="18" cy="48" rx="6" ry="8" fill="#0F172A"></ellipse>
-                                <circle cx="22" cy="26" r="4.5" fill="#FB7185"></circle>
-                                <circle cx="36" cy="20" r="4.5" fill="#FCD34D"></circle>
-                                <circle cx="52" cy="24" r="4.5" fill="#38BDF8"></circle>
-                                <circle cx="64" cy="38" r="4.5" fill="#34D399"></circle>
-                                <circle cx="54" cy="58" r="4.5" fill="#C084FC"></circle>
-                            </g>
-
-                            <!-- Paintbrush Held Gracefully in Mouth (画笔 - 咬在嘴里，萌趣自然) -->
-                            <g id="prop-brush-mouth" transform="translate(405, 230) rotate(-15)" filter="url(#drop-sh)">
-                                <!-- Handle -->
-                                <path d="M -50 0 L 30 0 L 30 6 L -50 6 Z" fill="url(#wood-grad)"></path>
-                                <!-- Ferrule -->
-                                <rect x="30" y="-1" width="14" height="8" rx="1.5" fill="#94A3B8"></rect>
-                                <!-- Bristles -->
-                                <path d="M 44 -1 C 56 -3, 68 3, 72 4 C 68 5, 56 10, 44 8 Z" fill="#F472B6"></path>
-                                <!-- Luminous Paint Tip -->
-                                <path d="M 60 2 C 66 2, 74 4, 78 4 C 74 5, 66 6, 60 5 Z" fill="#FCD34D"></path>
-                            </g>
-
-                            <!-- Paintbrush Held by Fin (Alternative mode) -->
-                            <g id="prop-brush-fin" class="hidden" transform="translate(340, 280) rotate(-45)" filter="url(#drop-sh)">
-                                <path d="M 0 0 L 90 0 L 90 7 L 0 7 Z" fill="url(#wood-grad)"></path>
-                                <rect x="90" y="-1" width="18" height="9" rx="2" fill="#94A3B8"></rect>
-                                <path d="M 108 -1 C 122 -3, 134 3, 140 4 C 134 5, 122 10, 108 8 Z" fill="#F472B6"></path>
-                            </g>
-
-                        </g>
-                    
+    <!-- 底部柔和反光，增强圆润质感 -->
+    <ellipse cx="256" cy="472" rx="180" ry="20" fill="#FFFFFF" opacity=".05"/>
   </g>
 </svg>
