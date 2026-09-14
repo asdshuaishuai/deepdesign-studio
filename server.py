@@ -38,7 +38,10 @@ def sync_user_lib(snap):
     """用同批命令尾部的 library-snapshot 结果全量重写本地库（幂等）。
 
     注意 snapshot 必须与变更命令同进程：跨进程注入的 restore 读的是磁盘
-    旧库，首次注册时会得到空快照（鸡生蛋）。"""
+    旧库，首次注册时会得到空快照（鸡生蛋）。snap 为 None（引擎失败/无
+    快照输出）时绝不清库——一次瞬时引擎故障不得抹掉用户组件数据。"""
+    if not isinstance(snap, dict) or not snap.get('ok'):
+        return
     USER_LIB_DIR.mkdir(parents=True, exist_ok=True)
     keep = set()
     for item in (snap or {}).get('components', []):

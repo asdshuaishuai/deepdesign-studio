@@ -1737,7 +1737,11 @@ function renderCompTree(filter){
         cell.style.position='relative';cell.appendChild(ex);
         const del=document.createElement('span');del.textContent='✕';del.title='删除组件';
         del.style.cssText='position:absolute;top:3px;right:20px;font-size:9px;color:#c34;cursor:pointer;opacity:.6';
-        del.onclick=async ev=>{ev.stopPropagation();if(await runOp(`component-delete ${c.id}`,'human')){toast('已删除 '+c.id);loadComponents();}};
+        del.onclick=async ev=>{ev.stopPropagation();
+          const rs=await execCli(['component-delete '+c.id]);
+          const r=rs.find(x=>x&&x.op==='component-delete');
+          if(r&&r.ok){toast('已删除 '+c.id);loadComponents();}
+          else{toast('删除失败：'+(r&&r.error||'unknown'));}};
         cell.appendChild(del);
       }
       cell.onclick=()=>{
@@ -1761,17 +1765,24 @@ function filterComps(v){renderCompTree(v.trim());}
 /* ---------- 用户组件：画板沉淀（人类路线） / MCF 导入导出 ---------- */
 async function saveAsComponent(){
   if(!baseCmd||!active){toast('先创建一个活动画板');return;}
-  const src=sessions[active]&&sessions[active].mbt;
+  const src=mbtText; // canonical 源码存于全局 mbtText（applyMbtResult 赋值）
   if(!src){toast('当前画板没有源码');return;}
   const cid=prompt('组件 id（英文标识符）：',active);
   if(!cid)return;
   if(!/^[a-z][a-z0-9_]*$/.test(cid)){toast('id 需为小写字母开头的标识符');return;}
   const desc=prompt('组件描述：','由 deepDesign 画板沉淀')||'';
   // 构造组件声明：单画板块 + component 元段（v1 固化当前内容为默认值）
-  const m=src.match(/<!-- moonviz:artboard '+active+' -->[\s\S]*?(```mbt[\s\S]*?```)/);
   let body='';
-  if(m){body=m[1];}
-  else{const i=src.indexOf('```mbt');const j=src.indexOf('```',i+6);if(i<0||j<0){toast('画板块提取失败');return;}body=src.slice(i,j+3);}
+  const marker='<!-- moonviz:artboard '+active+' -->';
+  const mi=src.indexOf(marker);
+  if(mi>=0){
+    const bi=src.indexOf('```mbt',mi);
+    const bj=bi>=0?src.indexOf('```',bi+6):-1;
+    if(bi>=0&&bj>bi){body=src.slice(bi,bj+3);}
+  }
+  if(!body){ // 兜底：找不到该画板的块时按 id 提示，而不是抓第一个画板
+    toast('画板「'+active+'」的声明块提取失败（多画板文档请切换到目标画板）');return;
+  }
   const decl='---\n'
     +'moonviz:\n  format: visual-document\n  revision: 1\n'
     +'  title: '+cid+'\n  entry: '+cid+'\n  artboards:\n    - '+cid+'\n'
@@ -1784,10 +1795,11 @@ async function saveAsComponent(){
          .replace('prototype(name="'+active+'"','prototype(name="'+cid+'"')
     +'\n';
   const b64=btoa(unescape(encodeURIComponent(decl)));
-  if(await runOp('component-compile-b64 '+b64,'human')){
-    toast('组件已注册：'+cid+'（本地库已持久化）');
-    loadComponents();
-  }
+  // 组件库命令直连 CLI 顶层（apply-*-mbt-op 白名单不含 component-*）
+  const rs=await execCli(['component-compile-b64 '+b64]);
+  const r=rs.find(x=>x&&x.op==='component-compile');
+  if(r&&r.ok){toast('组件已注册：'+cid+'（本地库已持久化）');loadComponents();}
+  else{toast('注册失败：'+(r&&r.error||'invalid'));}
 }
 async function exportMcf(cid){
   const rs=await execCli(['component-export '+cid]);
@@ -1807,9 +1819,9 @@ async function importMcf(input){
   for(let i=0;i<u.length;i+=8192)bin+=String.fromCharCode(...u.subarray(i,i+8192));
   const b64=btoa(bin);
   const rs=await execCli(['component-import '+b64]);
-  const r=rs.find(x=>x&&(x.ok===true||x.error));
+  const r=rs.find(x=>x&&x.op==='component-import');
   if(r&&r.ok){toast('已导入组件：'+r.component);loadComponents();}
-  else toast('导入失败：'+(r&&r.error||'invalid'));
+  else{toast('导入失败：'+((r&&r.error)||rs.find(x=>x&&x.error&&x.error.startsWith('mcf'))?.error||'invalid'));}
 }
 
 /* ---------- 组件 Pointer 拖拽（真实预览 + 松手落点） ---------- */
