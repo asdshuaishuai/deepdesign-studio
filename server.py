@@ -15,8 +15,24 @@ MOONVIZ_DIR = Path(os.environ.get('MOONVIZ_DIR', ROOT.parent / 'moonviz')).resol
 CODEC_DIR = MOONVIZ_DIR / 'ddp'
 PORT = int(os.environ.get('MOONVIZ_PORT', '8901'))
 MAX_REQUEST_BYTES = 24 * 1024 * 1024
-MOON = shutil.which('moon') or str(Path.home() / '.moon/bin/moon')
 USER_LIB_DIR = ROOT / '.moonviz' / 'components'
+
+
+def engine_cli_binary():
+    """引擎只走独立二进制产物（无 moon run 回退）：
+    MOONVIZ_CLI 环境变量 → 引擎仓库 _build 产物。"""
+    env_cli = os.environ.get('MOONVIZ_CLI')
+    if env_cli:
+        p = Path(env_cli)
+        if p.is_file():
+            return p
+        raise FileNotFoundError(f'MOONVIZ_CLI={env_cli} 不是可执行文件')
+    built = MOONVIZ_DIR / '_build/native/release/build/cli/cli.exe'
+    if built.is_file():
+        return built
+    raise FileNotFoundError(
+        f'找不到引擎二进制：{built} 不存在。请先在引擎仓库执行 '
+        '`moon build --release --target native cli`，或设置 MOONVIZ_CLI。')
 # 触发库同步的命令前缀（编译/导入/删除后把注册表快照落盘）
 LIB_MUTATING = ('component-compile-b64', 'component-import', 'component-delete')
 
@@ -223,6 +239,12 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
         env = dict(os.environ)
         if api_key:
             env['AI_GATEWAY_API_KEY'] = api_key
+        # 桥只走独立二进制：未显式设置时注入定位结果
+        if not env.get('MOONVIZ_CLI'):
+            try:
+                env['MOONVIZ_CLI'] = str(engine_cli_binary())
+            except FileNotFoundError as e:
+                return {'ok': False, 'error': 'engine_binary_missing', 'detail': str(e)}
         payload = {'mode': 'run', 'instruction': instruction, 'mbt_b64': mbt_b64}
         if model:
             payload['model'] = model
@@ -249,12 +271,15 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
         if lib:
             commands = ['library-restore-b64 ' + ' '.join(lib)] + list(commands)
         try:
+            cli_bin = engine_cli_binary()
+        except FileNotFoundError as e:
+            return [{'ok': False, 'error': 'engine_binary_missing', 'detail': str(e)}]
+        try:
             proc = subprocess.run(
-                [MOON, 'run', '--target', 'native', 'cli'],
+                [str(cli_bin)],
                 input='\n'.join(commands) + '\nexit\n',
                 capture_output=True,
                 text=True,
-                cwd=MOONVIZ_DIR,
                 timeout=60,
             )
             results = []

@@ -27,6 +27,21 @@ jobs:
           ref: main
           path: ../moonviz
 
+      - name: Install MoonBit toolchain (Windows)
+        shell: powershell
+        run: irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+
+      - name: Build MoonViz CLI binary (embedded into installer)
+        shell: powershell
+        run: |
+          $env:Path = "$env:USERPROFILE\.moon\bin;$env:Path"
+          moon version
+          moon build --release --target native cli
+          "list-templates", "exit" | &_build/native/release/build/cli/cli.exe | Select-String '"login"'
+        working-directory: ../moonviz
+        # 产物经 beforeBuildCommand(sync-agent.mjs) 以 agent/moonviz-cli.exe
+        # 打进安装包，最终用户无需安装 MoonBit 工具链
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:

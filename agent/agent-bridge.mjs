@@ -2,7 +2,8 @@
 // deepDesign Studio × @open-agent-loops/core bridge.
 //
 // stdin : { mode:'run'|'selftest'|'models', instruction, mbt_b64, api_key, model,
-//           base_url, thinking_level, engine_dir }
+//           base_url, thinking_level }
+// 引擎调用只走 MOONVIZ_CLI 环境变量指向的独立二进制（由宿主注入）。
 // stdout: { ok, mbt_b64, render, ops[], text, error? }
 //
 // Agent 基座：@open-agent-loops/core（开源、极简、原生 OpenAI 兼容）
@@ -11,15 +12,11 @@
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 
 import { runAgent, defineTool, SessionMemoryStore } from '@open-agent-loops/core';
 import { OpenAICompatibleModel } from '@open-agent-loops/core/providers/openai';
 import { z } from 'zod';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_ENGINE = process.env.MOONVIZ_DIR || join(here, '..', '..', 'moonviz');
 const CLI_TIMEOUT_MS = 30000;
 
 function readStdin() {
@@ -34,10 +31,20 @@ function readStdin() {
 
 function b64encode(text) { return Buffer.from(text, 'utf8').toString('base64'); }
 
-function runMoonCli(engineDir, commands) {
+/// 引擎调用：只走 MOONVIZ_CLI 指向的独立二进制（自包含，无需引擎源码
+/// 目录与 moon 工具链）。由宿主（lib.rs / server.py）负责定位并注入。
+function moonCliBin() {
+  const cliBin = process.env.MOONVIZ_CLI;
+  if (!cliBin || !existsSync(cliBin)) {
+    throw new Error('MOONVIZ_CLI not set or missing: engine binary is required');
+  }
+  return cliBin;
+}
+
+function runMoonCli(commands) {
+  const cmd = moonCliBin();
   return new Promise((resolve) => {
-    const child = spawn('moon', ['run', '--target', 'native', 'cli'], {
-      cwd: engineDir,
+    const child = spawn(cmd, [], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let out = '', err = '';
@@ -142,7 +149,7 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 // (\s|$) 允许无参命令（flows / list-templates / list-components）裸调用。
 const READONLY_RE = /^(lint|critique|query|flows|tap|list-templates|list-components|infer)(\s|$)/;
 
-function makeExecutor(engineDir) {
+function makeExecutor() {
   let mbt = null;
   let lastRender = null;
   const ops = [];
@@ -160,7 +167,7 @@ function makeExecutor(engineDir) {
 
       // 空项目起步：template/create 可直接引导
       if (!mbt && /^(template|create) /.test(op.trim())) {
-        const rs = await runMoonCli(engineDir, [op.trim(), 'export-mbt-human']);
+        const rs = await runMoonCli([op.trim(), 'export-mbt-human']);
         const boot = rs.find(r => r && typeof r === 'object' && typeof r.mbt === 'string');
         if (boot && boot.ok) {
           mbt = boot.mbt;
@@ -179,7 +186,7 @@ function makeExecutor(engineDir) {
       // 引擎输出顺序：banner{moonviz} → load ack{ok,entry,revision} → 命令结果，
       // 因此取「最后一个非 banner 对象」——load ack 永远排在命令结果之前。
       if (READONLY_RE.test(op.trim())) {
-        const rs = await runMoonCli(engineDir, [
+        const rs = await runMoonCli([
           `load-mbt-b64 ${b64encode(mbt)}`, op.trim(),
         ]);
         const nonBanner = rs.filter(r => r && typeof r === 'object' && !r.moonviz);
@@ -191,7 +198,7 @@ function makeExecutor(engineDir) {
       }
 
       // 变更操作：apply-agent-mbt-op-b64
-      const rs = await runMoonCli(engineDir, [
+      const rs = await runMoonCli([
         `apply-agent-mbt-op-b64 ${b64encode(mbt)} ${b64encode(op)}`,
       ]);
       const result = rs.find(r => r && typeof r === 'object' && r.mbt !== undefined);
@@ -216,7 +223,7 @@ function makeExecutor(engineDir) {
     },
 
     async listComponents() {
-      const rs = await runMoonCli(engineDir, ['list-components']);
+      const rs = await runMoonCli(['list-components']);
       const arr = rs.find(r => Array.isArray(r));
       return { ok: true, components: arr ?? [] };
     },
@@ -268,17 +275,17 @@ function mapThinking(level) {
   return 'auto';
 }
 
-async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, thinking_level, engine_dir }) {
+async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, thinking_level }) {
   const apiKey = api_key || process.env.AI_GATEWAY_API_KEY;
   if (!apiKey) return { ok: false, error: 'api_key_missing' };
-
-  const engineDir = engine_dir || DEFAULT_ENGINE;
-  if (!existsSync(join(engineDir, 'cli'))) return { ok: false, error: 'engine_dir_invalid' };
+  if (!process.env.MOONVIZ_CLI || !existsSync(process.env.MOONVIZ_CLI)) {
+    return { ok: false, error: 'moonviz_cli_missing' };
+  }
 
   const baseUrl = safeBaseUrl(base_url);
   if (!baseUrl) return { ok: false, error: 'base_url_invalid_https_or_local' };
 
-  const ex = makeExecutor(engineDir);
+  const ex = makeExecutor();
   if (mbt_b64) {
     ex.setMbt(Buffer.from(mbt_b64, 'base64').toString('utf8'));
   }
@@ -324,7 +331,7 @@ async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, th
   // 只读会话（如仅 lint/query）不会产生 apply 渲染——用 render-mbt-b64 兜底，
   // 保证前端始终拿到含 artboards/svg 的终态 render，而不是 null。
   if (ex.mbt() && !ex.render()) {
-    const rs = await runMoonCli(engineDir, [`render-mbt-b64 ${b64encode(ex.mbt())}`]);
+    const rs = await runMoonCli([`render-mbt-b64 ${b64encode(ex.mbt())}`]);
     const rendered = rs.find(r => r && typeof r === 'object' && typeof r.mbt === 'string');
     if (rendered) ex.setRender(rendered);
   }
@@ -339,19 +346,20 @@ async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, th
   };
 }
 
-async function selftest({ mbt_b64, engine_dir }) {
-  const engineDir = engine_dir || DEFAULT_ENGINE;
-  if (!existsSync(join(engineDir, 'cli'))) return { ok: false, error: 'engine_dir_invalid' };
+async function selftest({ mbt_b64 }) {
+  if (!process.env.MOONVIZ_CLI || !existsSync(process.env.MOONVIZ_CLI)) {
+    return { ok: false, error: 'moonviz_cli_missing' };
+  }
   // 严格 base64 校验（与 server.py 同一正则，防换行注入）
   if (typeof mbt_b64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(mbt_b64)) {
     return { ok: false, error: 'mbt_b64_invalid' };
   }
-  const ex = makeExecutor(engineDir);
-  const probe = await runMoonCli(engineDir, [`load-mbt-b64 ${mbt_b64}`]);
+  const ex = makeExecutor();
+  const probe = await runMoonCli([`load-mbt-b64 ${mbt_b64}`]);
   const entry = probe.find(r => r && r.ok)?.entry;
   if (!entry) return { ok: false, error: 'selftest_no_target' };
   ex.setMbt(Buffer.from(mbt_b64, 'base64').toString('utf8'));
-  const q = await runMoonCli(engineDir, [`load-mbt-b64 ${mbt_b64}`, `query ${entry}`]);
+  const q = await runMoonCli([`load-mbt-b64 ${mbt_b64}`, `query ${entry}`]);
   const nodes = q.find(r => Array.isArray(r));
   const node = nodes?.[0]?.id;
   if (!node) return { ok: false, error: 'selftest_no_target' };

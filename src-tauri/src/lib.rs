@@ -16,33 +16,36 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
-/// 定位 MoonViz 引擎目录（含 cli/ 包的 moon 仓库）。
-fn find_moonviz_dir() -> Result<PathBuf, String> {
-    // 引擎 cli 包配置可能是 moon.pkg.json（旧）或 moon.pkg（KDL，moon fmt 新格式）
-    fn is_engine_dir(dir: &PathBuf) -> bool {
-        dir.join("cli").join("moon.pkg.json").exists() || dir.join("cli").join("moon.pkg").exists()
-    }
-    if let Ok(dir) = std::env::var("MOONVIZ_DIR") {
-        let p = PathBuf::from(&dir);
-        if is_engine_dir(&p) {
+/// 引擎 CLI 独立二进制定位（无回退——只走二进制产物，不依赖 moon 工具链）：
+/// 1) MOONVIZ_CLI 环境变量 → 显式指定的二进制
+/// 2) 内嵌引擎二进制（resources 里的 agent/moonviz-cli.exe，
+///    由 moon build --release --target native cli 产出的自包含 CLI）
+/// 3) dev 布局：兄弟 moonviz 仓库的 _build 产物
+fn engine_cli_binary() -> Result<PathBuf, String> {
+    if let Ok(cli) = std::env::var("MOONVIZ_CLI") {
+        let p = PathBuf::from(&cli);
+        if p.is_file() {
             return Ok(p);
         }
-        return Err(format!("MOONVIZ_DIR={} 不含 cli 包", dir));
+        return Err(format!("MOONVIZ_CLI={} 不是可执行文件", cli));
     }
-    if let Ok(exe) = std::env::current_exe() {
-        let mut cur = exe.parent().map(|p| p.to_path_buf());
-        while let Some(dir) = cur {
-            if is_engine_dir(&dir) {
-                return Ok(dir);
-            }
-            cur = dir.parent().map(|p| p.to_path_buf());
+    if let Ok(agent) = fx_agent_root() {
+        let bundled = agent.join("moonviz-cli.exe");
+        if bundled.is_file() {
+            return Ok(bundled);
         }
     }
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../moonviz");
-    if is_engine_dir(&dev) {
-        return Ok(dev.canonicalize().unwrap_or(dev));
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../moonviz/_build/native/release/build/cli/cli.exe");
+    if dev.is_file() {
+        return Ok(dev);
     }
-    Err("找不到 MoonViz 引擎目录：请设置 MOONVIZ_DIR".into())
+    Err(
+        "找不到 MoonViz 引擎二进制：内嵌 moonviz-cli.exe 缺失，且兄弟 moonviz 仓库无 \
+         _build/native/release/build/cli/cli.exe。请先在引擎仓库执行 \
+         `moon build --release --target native cli`，或设置 MOONVIZ_CLI。"
+            .into(),
+    )
 }
 
 /// 执行 MoonViz CLI 命令序列（stdin → stdout JSON 行）
@@ -142,24 +145,18 @@ fn exec_cli_inner(mut commands: Vec<String>) -> Result<Vec<serde_json::Value>, S
         }
         commands.insert(0, restore);
     }
-    let dir = find_moonviz_dir()?;
-    let moon = {
-        let m = which_moon();
-        if m.is_empty() {
-            return Err(
-                "找不到 moon 命令——请确认 MoonBit 工具链已安装，或在 shell 中启动应用".into(),
-            );
-        }
-        m
-    };
-    let mut child = Command::new(&moon)
-        .args(["run", "--target", "native", "cli"])
-        .current_dir(&dir)
+    let cli_bin = engine_cli_binary()?;
+    let mut child = Command::new(&cli_bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("启动 moonviz CLI 失败（moon 不在 PATH？）：{e}"))?;
+        .map_err(|e| {
+            format!(
+                "启动 moonviz CLI 失败（{} 不可执行？）：{e}",
+                cli_bin.display()
+            )
+        })?;
 
     {
         let stdin = child.stdin.as_mut().unwrap();
@@ -265,33 +262,6 @@ fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json::Value
     }))
 }
 
-/// 调用用户指定的 fx Agent 基座；fx 负责模型/Provider/会话，MoonViz 负责执行和校验返回的操作。
-#[tauri::command]
-fn invoke_fx(prompt: String, fx_path: String, cwd: String) -> Result<String, String> {
-    let binary = if fx_path.trim().is_empty() {
-        "fx"
-    } else {
-        fx_path.trim()
-    };
-    let working_dir = if cwd.trim().is_empty() {
-        find_moonviz_dir()?
-    } else {
-        PathBuf::from(cwd.trim())
-    };
-    let output = Command::new(binary)
-        .args(["ask", "--no-save", &prompt])
-        .current_dir(&working_dir)
-        .output()
-        .map_err(|e| format!("fx_unavailable:{e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "fx_failed:{}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
 /// Tauri 端 fx SDK 桥：与 server.py 的 /api/fx/agent 等价，通过 node 运行
 /// agent/agent-bridge.mjs（@open-agent-loops/core 桥），fx 的每次工具调用都在桥内经
 /// MoonViz AgentGate 校验并写回 canonical MBT。Rust 只传输 JSON 字节。
@@ -335,6 +305,17 @@ fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, 
     if !api_key.trim().is_empty() {
         env.retain(|(k, _)| k != "AI_GATEWAY_API_KEY");
         env.push(("AI_GATEWAY_API_KEY".to_string(), api_key));
+    }
+    // 桥与画布共用同一引擎调用：内嵌二进制存在时让桥直接 spawn 它
+    // （独立二进制无需引擎源码目录与 moon 工具链）。
+    if std::env::var("MOONVIZ_CLI").is_err() {
+        if let Ok(agent) = fx_agent_root() {
+            let bundled = agent.join("moonviz-cli.exe");
+            if bundled.is_file() {
+                env.retain(|(k, _)| k != "MOONVIZ_CLI");
+                env.push(("MOONVIZ_CLI".to_string(), bundled.display().to_string()));
+            }
+        }
     }
     let mut child = Command::new(&node)
         .arg(&bridge)
@@ -471,52 +452,13 @@ fn which_node() -> Option<String> {
 
 #[tauri::command]
 fn diagnostics() -> serde_json::Value {
-    let engine = find_moonviz_dir()
+    let engine_bin = engine_cli_binary()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
-    let moon = which_moon();
     serde_json::json!({
-        "engine_dir": engine,
-        "moon": moon,
+        "engine_cli": engine_bin,
         "version": env!("CARGO_PKG_VERSION"),
     })
-}
-
-fn which_moon() -> String {
-    if let Some(p) = find_in_path("moon") {
-        return p;
-    }
-    // GUI 启动的 app 继承的 PATH 不含用户 shell 的 bin——探测常见位置
-    let home = home_dir();
-    #[cfg(windows)]
-    let candidates: Vec<PathBuf> = vec![
-        PathBuf::from(&home).join(".cargo").join("bin").join("moon.exe"),
-        PathBuf::from(&home).join(".moon").join("bin").join("moon.exe"),
-    ];
-    #[cfg(not(windows))]
-    let candidates: Vec<PathBuf> = vec![
-        PathBuf::from(&home).join(".cargo").join("bin").join("moon"),
-        PathBuf::from(&home).join(".moon").join("bin").join("moon"),
-        PathBuf::from("/opt/homebrew/bin/moon"),
-        PathBuf::from("/usr/local/bin/moon"),
-    ];
-    for p in candidates {
-        if p.is_file() {
-            return p.display().to_string();
-        }
-    }
-    // login shell 取真实 PATH（兜底；Windows 无 sh，跳过）
-    #[cfg(not(windows))]
-    if let Ok(out) = Command::new("sh")
-        .args(["-lc", "which moon 2>/dev/null"])
-        .output()
-    {
-        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !s.is_empty() {
-            return s;
-        }
-    }
-    String::new()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -525,7 +467,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             exec_cli,
-            invoke_fx,
             invoke_fx_sdk,
             save_ddp,
             open_ddp,

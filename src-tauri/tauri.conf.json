@@ -34,7 +34,8 @@
       "nsis"
     ],
     "resources": [
-      "agent/agent-bridge.mjs"
+      "agent/agent-bridge.mjs",
+      "agent/moonviz-cli.exe"
     ],
     "icon": [
       "icons/icon.png",

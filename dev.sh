@@ -9,10 +9,14 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 export MOONVIZ_DIR="${MOONVIZ_DIR:-$(cd "$ROOT/../moonviz" 2>/dev/null && pwd)}"
 export MOONVIZ_DDP_HELPER="${MOONVIZ_DDP_HELPER:-$MOONVIZ_DIR/ddp/target/release/ddp_codec}"
 
-if [ ! -d "$MOONVIZ_DIR/cli" ]; then
-  echo "✗ 找不到引擎目录（需要含 cli/）：设置 MOONVIZ_DIR" >&2
-  exit 1
+# 引擎只走独立二进制（无 moon run 回退）：缺失时现场构建
+ENGINE_BIN="$MOONVIZ_DIR/_build/native/release/build/cli/cli.exe"
+if [ ! -x "$ENGINE_BIN" ]; then
+  echo "→ 引擎二进制缺失，构建中（moon build --release --target native cli）…"
+  (cd "$MOONVIZ_DIR" && moon build --release --target native cli)
 fi
+export MOONVIZ_CLI="${MOONVIZ_CLI:-$ENGINE_BIN}"
+echo "→ 引擎二进制：$MOONVIZ_CLI"
 
 if [ "${1:-}" = "--web" ]; then
   echo "→ 网页模式（免 Rust 编译，改前端刷新即生效）"
@@ -41,6 +45,6 @@ if [ -z "$TAURI_BIN" ]; then
 fi
 
 echo "→ debug 模式编译并启动 deepDesign Studio"
-echo "  引擎：$MOONVIZ_DIR"
+echo "  引擎：$MOONVIZ_CLI（独立二进制）"
 echo "  提示：tauri dev 只 watch src-tauri/；改 frontend/ 后请在窗口按 ⌘R 刷新"
 cd "$ROOT" && exec "$TAURI_BIN" dev

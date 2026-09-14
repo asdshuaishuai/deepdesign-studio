@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// 将 agent/ 桥打包为单文件并复制到 src-tauri/agent/agent-bridge.mjs。
-// esbuild 把 @open-agent-loops/core/zod/openai 全部内联，打包产物
-// 无需 node_modules——tauri resources 只需携带这一个文件。
-// （tauri resources glob 不支持 .. 路径，故复制进 src-tauri 再引用。）
+// 打包前置同步：
+// 1) agent/ 桥 → esbuild 单文件 → src-tauri/agent/agent-bridge.mjs
+//    （tauri resources glob 不支持 .. 路径；单文件无需 node_modules）
+// 2) MoonViz 引擎独立二进制 → src-tauri/agent/moonviz-cli.exe
+//    （moon build --release --target native cli 的自包含产物，
+//     运行时优先于 moon run，最终用户无需 MoonBit 工具链）
 import { copyFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -21,15 +23,32 @@ if (!existsSync(join(src, 'node_modules'))) {
   process.exit(1);
 }
 
-// 1) esbuild 单文件打包（cross-platform 经 npm script 调用本地 bin）
+// ---- 1) 桥单文件打包 ----
 const r = spawnSync('npm', ['run', 'bundle'], { cwd: src, stdio: 'inherit', shell: process.platform === 'win32' });
 if (r.status !== 0) {
   console.error('[sync-agent] npm run bundle 失败');
   process.exit(1);
 }
 
-// 2) 产物以 agent-bridge.mjs 之名放入 src-tauri/agent/（运行时 fx_agent_root 按此名查找）
+// ---- 2) 引擎二进制定位（本地与 CI 同为 <root>/../moonviz 兄弟布局）----
+const engineBinCandidates = [
+  process.env.MOONVIZ_CLI,
+  join(root, '..', 'moonviz', '_build', 'native', 'release', 'build', 'cli', 'cli.exe'),
+].filter(Boolean);
+const engineBin = engineBinCandidates.find(p => existsSync(p));
+if (!engineBin) {
+  console.error(
+    '[sync-agent] 找不到引擎二进制：请在兄弟目录 moonviz/ 运行 ' +
+    '`moon build --release --target native cli`（产物 _build/native/release/build/cli/cli.exe），' +
+    '或设置 MOONVIZ_CLI 指向已有二进制。'
+  );
+  process.exit(1);
+}
+
+// ---- 3) 落位（统一命名 moonviz-cli.exe，与引擎自身产物命名一致，跨平台免后缀判断）----
 rmSync(dst, { recursive: true, force: true });
 mkdirSync(dst, { recursive: true });
 copyFileSync(join(src, 'agent-bridge.bundle.mjs'), join(dst, 'agent-bridge.mjs'));
-console.log('[sync-agent] agent-bridge.bundle.mjs -> src-tauri/agent/agent-bridge.mjs');
+copyFileSync(engineBin, join(dst, 'moonviz-cli.exe'));
+console.log(`[sync-agent] agent-bridge.bundle.mjs -> src-tauri/agent/agent-bridge.mjs`);
+console.log(`[sync-agent] ${engineBin} -> src-tauri/agent/moonviz-cli.exe`);
