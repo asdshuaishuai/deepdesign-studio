@@ -230,7 +230,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
         if isinstance(base_url, str) and base_url.strip():
             payload['base_url'] = base_url.strip()
         thinking_level = data.get('thinking_level')
-        if thinking_level in ('auto', 'adaptive', 'off'):
+        if thinking_level in ('auto', 'adaptive', 'off', 'disabled', 'on', 'enabled', 'low', 'medium', 'high'):
             payload['thinking_level'] = thinking_level
         try:
             proc = subprocess.run([node, str(bridge)], input=json.dumps(payload), capture_output=True, text=True, cwd=str(ROOT), timeout=180, env=env)

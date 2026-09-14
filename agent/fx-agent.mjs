@@ -2,7 +2,7 @@
 // deepDesign Studio × fx Agent SDK (libfx) bridge.
 //
 // stdin : { mode:'run'|'selftest'|'models', instruction, mbt_b64, api_key, model, base_url,
-//           thinking_level:'auto'|'adaptive'|'off' (MiniMax M3), engine_dir }
+//           thinking_level:'auto'|'off'|'on'|'low'|'medium'|'high' (MiniMax M3), engine_dir }
 // stdout: { ok, mbt_b64, render, ops[], log[], error? }
 //
 // Contract: fx proposes operations via tools; every mutation executes through
@@ -137,15 +137,26 @@ const PROVIDER_PRESETS = {
 };
 
 // MiniMax 思考控制：thinking_level → chat/completions body 注入。
-//   auto/adaptive → {type:'adaptive'}（M3 默认；M2.x 恒开，字段被接受并忽略）
-//   off           → {type:'disabled'}（仅 M3 生效；M2.x 服务端仍保持开启）
+// M3 三态 + 努力等级（M2.x 恒开，字段被接受并忽略）：
+//   off / auto / on(强制) — thinking.type = disabled | adaptive | enabled
+//   low / medium / high   — thinking.type = adaptive + 顶层 reasoning_effort
+//     （effort 为 OpenAI 兼容字段：官方 Responses API 与 vLLM/第三方托管
+//       均识别；官方 chat 端点当前不调深度，字段被安全忽略）
 // reasoning_split:true 让 thinking 走 reasoning_content，避免混入 content。
 function minimaxRequestBodyPatch(level) {
-  if (!level || level === 'auto' || level === 'adaptive') {
-    return (obj) => { obj.thinking = { type: 'adaptive' }; obj.reasoning_split = true; };
-  }
-  if (level === 'off') {
-    return (obj) => { obj.thinking = { type: 'disabled' }; obj.reasoning_split = true; };
+  const t = (type) => (obj) => {
+    obj.thinking = { type };
+    obj.reasoning_split = true;
+  };
+  if (!level || level === 'auto' || level === 'adaptive') return t('adaptive');
+  if (level === 'off' || level === 'disabled') return t('disabled');
+  if (level === 'on' || level === 'enabled') return t('enabled');
+  if (level === 'low' || level === 'medium' || level === 'high') {
+    return (obj) => {
+      obj.thinking = { type: 'adaptive' };
+      obj.reasoning_effort = level;
+      obj.reasoning_split = true;
+    };
   }
   return null;
 }

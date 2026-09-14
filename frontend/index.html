@@ -767,11 +767,15 @@ body:not(.design-active) .flow-wires{display:none}
       </label>
       <label>思考等级（MiniMax）
         <select id="agent-thinking">
-          <option value="auto">auto · 自适应思考（默认）</option>
-          <option value="off">off · 关闭思考（仅 M3 生效）</option>
+          <option value="auto">auto · 自适应（默认，按需思考）</option>
+          <option value="on">on · 强制思考（每轮必思）</option>
+          <option value="low">low · 努力等级：低</option>
+          <option value="medium">medium · 努力等级：中</option>
+          <option value="high">high · 努力等级：深</option>
+          <option value="off">off · 关闭思考（仅 M3）</option>
         </select>
       </label>
-      <label style="font-size:10.5px;color:var(--tx3);align-self:end">M2.x 系列思考不可关闭；M3 可关。</label>
+      <label style="font-size:10.5px;color:var(--tx3);align-self:end">M2.x 思考常开；effort 档经 reasoning_effort 下发。</label>
     </div>
     <div class="settings-actions"><button class="tbtn" onclick="closeSettings()">取消</button><button class="tbtn pri" onclick="saveSettings()">保存设置</button></div>
   </div>
@@ -2171,7 +2175,7 @@ function setTheme(t){
 })();
 
 let agentConfig={baseUrl:'',apiKey:'',model:'',thinkingLevel:'auto'};
-function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};if(!['auto','off'].includes(agentConfig.thinkingLevel))agentConfig.thinkingLevel='auto';}catch(_){} }
+function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};if(!['auto','off','on','low','medium','high'].includes(agentConfig.thinkingLevel))agentConfig.thinkingLevel='auto';}catch(_){} }
 const PROVIDERS={deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-chat'},kimi:{baseUrl:'https://api.moonshot.cn/v1',model:'moonshotai/kimi-k2-instruct'},glm:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4.7'},minimax:{baseUrl:'https://api.minimax.cn/v1',model:'MiniMax-M3'},'minimax-intl':{baseUrl:'https://api.minimax.chat/v1',model:'MiniMax-M3'},vercel:{baseUrl:'',model:''}};
 /* MiniMax 思考能力等级：M3 支持 adaptive/disabled；M2.x 服务端不可关（UI 提示） */
 const MINIMAX_STATIC_MODELS=['MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed','MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2'];
