@@ -3,10 +3,10 @@
 //
 // stdin : { mode:'run'|'selftest'|'models', instruction, mbt_b64, api_key, model,
 //           base_url, thinking_level, engine_dir }
-// stdout: { ok, mbt_b64, render, ops[], log[], error? }
+// stdout: { ok, mbt_b64, render, ops[], text, error? }
 //
 // Agent 基座：@open-agent-loops/core（开源、极简、原生 OpenAI 兼容）
-// LLM 完全自主决策——看到工具结果决定下一步，判断何时停止。
+// LLM 完全自主决策——系统提示词通过 runAgent({ system }) 传入。
 // 所有变更经 MoonViz AgentGate 校验后写入 canonical .mbt.md。
 
 import { spawn } from 'node:child_process';
@@ -20,6 +20,7 @@ import { z } from 'zod';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ENGINE = join(here, '..', '..', 'moonviz');
+const CLI_TIMEOUT_MS = 30000;
 
 function readStdin() {
   return new Promise((resolve, reject) => {
@@ -40,10 +41,15 @@ function runMoonCli(engineDir, commands) {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let out = '', err = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve([{ ok: false, error: 'engine_timeout' }]);
+    }, CLI_TIMEOUT_MS);
     child.stdout.on('data', c => (out += c));
     child.stderr.on('data', c => (err += c));
-    child.on('error', e => resolve([{ ok: false, error: 'moon_unavailable:' + e.message }]));
+    child.on('error', e => { clearTimeout(timer); resolve([{ ok: false, error: 'moon_unavailable:' + e.message }]); });
     child.on('close', () => {
+      clearTimeout(timer);
       const results = [];
       for (const line of out.split('\n')) {
         const t = line.trim();
@@ -60,36 +66,68 @@ function runMoonCli(engineDir, commands) {
 }
 
 /// 引擎模板清单（与 MoonViz list-templates 同步）
-const ENGINE_TEMPLATES = `login(登录页 390x844) | signup(注册页 390x844) | dashboard(仪表盘 390x844)
-profile(个人主页 390x844) | settings(设置页 390x844) | list_detail(列表-详情 390x844)
-onboarding(引导页 390x844) | empty_state(空状态页 390x844) | web_landing(Web落地页 1280x800)
-web_login(Web登录 1280x800) | web_dashboard(Web仪表盘 1280x800) | pc_app(PC桌面应用 1440x900)
-adaptive_landing(自适应落地页 1280x800) | login_v2(登录页v2 390x844)`;
+const ENGINE_TEMPLATES = `login(登录页) | signup(注册页) | dashboard(仪表盘) | profile(个人主页)
+settings(设置页) | list_detail(列表-详情，含两屏) | onboarding(引导页) | empty_state(空状态)
+web_landing(Web落地页 1280x800) | web_login(Web登录) | web_dashboard(Web仪表盘) | pc_app(PC桌面 1440x900)
+adaptive_landing(自适应落地页) | login_v2(登录页v2)`;
 
-const INSTRUCTIONS = `You are the embedded agent of deepDesign Studio, a visual prototyping editor.
-The project's single source of truth is one MoonBit literate .mbt.md document held by the host.
-You can build COMPLETE interactive prototypes: multiple artboards connected by tap-navigation flows.
+const INSTRUCTIONS = `You are the embedded design agent of deepDesign Studio, a visual prototyping editor.
+You operate as a product designer, not a command executor: interpret what the user wants to
+ACHIEVE, decide which screens the experience needs, build them, connect them, and verify the result.
+The single source of truth is one MoonBit literate .mbt.md document; every operation you issue is
+validated by the engine (AgentGate) and committed immediately, so the user watches progress live.
 
-## Workflow for building a prototype from a natural-language request (e.g. "make a WeChat-style social app"):
-1. If the document has no artboards yet, call moonviz_op with "template <template_id> <name> <w> <h>" for EACH screen. Available templates:
-${ENGINE_TEMPLATES}
-2. Customize each artboard with ops like "update <artboard> <node> text=... fill=...".
-3. Connect screens with flows: "flow <from_artboard> <to_artboard> <trigger_node_id>".
-4. Run "fix <artboard>" if any op is rejected for layout violations.
+## Mindset
+- Derive intent: "a WeChat-style app" means an experience (login, feed, chat, profile, settings),
+  not one artboard. Before the first tool call, state a one-line plan: the screen list and how they connect.
+- Think in flows: a prototype is screens + navigation. An unconnected screen is unfinished.
+- Write real product copy (realistic labels, names, numbers), never lorem ipsum.
+- Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
+  get read_mbt, one targeted op, done.
 
-## Rules:
-- Mutate the design ONLY by calling the moonviz_op tool, one operation string per call.
-- Operation grammar (CLI-style):
-  template <template_id> <name> <w> <h> | create <name> <w> <h>
+## Build loop (from empty document)
+1. PLAN: choose screens; map each to a template. Available: ${ENGINE_TEMPLATES}
+   Notes: template/create size args are optional; list_detail yields list AND detail screens;
+   adaptive templates pick structure by width.
+2. CREATE: one "template <id> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
+   node ids are only discoverable there. Artboard id = sanitized name.
+3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.
+   "place <artboard> <component> <instance_id> [variant|-] [x] [y]" to add engine components
+   (discover ids via list_components; "-" as variant means default).
+4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
+5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired; no dangling refs.
+   Run "fix <artboard>" if violations accumulated (fix commits when it strictly reduces them).
+6. REPORT: stop calling tools and summarize: screens built and the flow map.
+
+## Tweak loop (document already loaded)
+0. read_mbt FIRST — always ground ids and flows before any op.
+1. Make the minimal ops. 2. Report what changed.
+
+## Operation grammar (one op per moonviz_op call, no newlines)
+  template <template_id> <name> [w] [h] | create <name> [w] [h]
+  | duplicate <artboard> <new_name> | delete-artboard <artboard>
+  | place <artboard> <component> <instance_id> [variant|-] [x] [y]
   | move <artboard> <node> <x> <y> | update <artboard> <node> k=v [k=v ...]
   | delete <artboard> <node> | copy <artboard> <node> <new_id> [dx] [dy]
   | reorder <artboard> <node> front|back|up|down | flip <artboard> <node> h|v|both|none
-  | place <artboard> <component> <instance_id> - <x> <y>
-  | flow <from_artboard> <to_artboard> <node> | theme <name> | fix <artboard>
-- Node ids and artboard ids are shared identifiers: never rename or guess them; call read_mbt first when unsure.
-- update keys: w h text fill text_color stroke radius opacity font_size weight shadow rotate blur blend line tracking constraint.
-- If an op is rejected, read the error, adjust the op, and retry with corrected values; do not repeat an identical failing op.
-- When the user goal is reached, stop calling tools and summarize briefly.`;
+  | flow <from_artboard> <to_artboard> <node>
+  | theme <name>  (light|dark|high_contrast|sepia|nord|sunset)
+  | fix <artboard>
+- update keys: w h text fill text_color stroke radius opacity font_size weight shadow rotate
+  blur blend line tracking constraint. Quote values with spaces: text="Sign in".
+  Unquoted words after a space are silently dropped — always quote multi-word text.
+- duplicate is the cheapest way to spawn "a similar screen" before diverging with update.
+
+## Ground truth and errors
+- NEVER guess node/component/template/theme ids. Templates: list above; components: list_components;
+  everything else: read_mbt. Ids are shared with the human canvas: never rename; new ids = snake_case.
+- Errors: unknown_artboard/unknown_node/unknown_component/unknown_template → read_mbt then retry with real ids.
+  Predicate violations (overflow, overlap) reject the op with predicate + node_id + detail → adjust values;
+  if stuck run fix <artboard>. Never repeat an identical failing op.
+- debt = remaining tolerated violations; keep it 0. All changes go through moonviz_op only.`;
+
+// 只读命令（走 load-mbt-b64 管道而非 apply-op 路径）
+const READONLY_RE = /^(lint|critique|query|flows|tap|list-templates|list-components|infer|fix) /;
 
 function makeExecutor(engineDir) {
   let mbt = null;
@@ -114,13 +152,26 @@ function makeExecutor(engineDir) {
           mbt = boot.mbt;
           lastRender = boot;
           ops.push(op);
-          return { ok: true, op, revision: boot.revision ?? 0 };
+          return { ok: true, op, revision: boot.revision ?? 0,
+            artboards: (boot.artboards || []).map(a => ({ id: a.id, name: a.name })) };
         }
         const err = rs.find(r => r && r.error);
         return { ok: false, error: (err && err.error) || 'boot_failed' };
       }
 
       if (!mbt) return { ok: false, error: 'no_mbt_loaded' };
+
+      // 只读命令（lint/critique/query/flows/tap）：走 load + 命令管线
+      if (READONLY_RE.test(op.trim())) {
+        const rs = await runMoonCli(engineDir, [
+          `load-mbt-b64 ${b64encode(mbt)}`, op.trim(),
+        ]);
+        const result = rs.find(r => r && typeof r === 'object' && !r.moonviz);
+        ops.push(op);
+        return result || { ok: false, error: 'readonly_no_output' };
+      }
+
+      // 变更操作：apply-agent-mbt-op-b64
       const rs = await runMoonCli(engineDir, [
         `apply-agent-mbt-op-b64 ${b64encode(mbt)} ${b64encode(op)}`,
       ]);
@@ -153,37 +204,31 @@ function makeExecutor(engineDir) {
   };
 }
 
-// ============================================================
-// Agent 工具定义（@open-agent-loops/core defineTool）
-// ============================================================
 function makeTools(ex) {
   return [
     defineTool({
       name: 'moonviz_op',
-      description: 'Execute one MoonViz design operation. Each call is validated by the engine (AgentGate) and committed to the canonical .mbt.md.',
+      description: 'Execute one MoonViz design operation (validated by AgentGate, committed to .mbt.md). Also supports read-only ops: lint, critique, query, flows, tap.',
       parameters: z.object({
-        op: z.string().describe('One operation string, e.g. "update login title fill=#28a745"'),
+        op: z.string().describe('One operation string, e.g. "update login title text=\\"Sign in\\""'),
       }),
-      execute: async ({ op }) => ex.moonvizOp(op),
+      execute: async ({ op }) => { const r = await ex.moonvizOp(op); return { content: JSON.stringify(r) }; },
     }),
     defineTool({
       name: 'read_mbt',
-      description: 'Read the current canonical .mbt.md source of truth.',
+      description: 'Read the current canonical .mbt.md source of truth (node ids, flows, all screens).',
       parameters: z.object({}),
-      execute: async () => ex.readMbt(),
+      execute: async () => { const r = await ex.readMbt(); return { content: JSON.stringify(r) }; },
     }),
     defineTool({
       name: 'list_components',
       description: 'List all engine UI component presets (id, category, variants).',
       parameters: z.object({}),
-      execute: async () => ex.listComponents(),
+      execute: async () => { const r = await ex.listComponents(); return { content: JSON.stringify(r) }; },
     }),
   ];
 }
 
-// ============================================================
-// Agent 运行（@open-agent-loops/core runAgent）
-// ============================================================
 async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, thinking_level, engine_dir }) {
   const apiKey = api_key || process.env.AI_GATEWAY_API_KEY;
   if (!apiKey) return { ok: false, error: 'api_key_missing' };
@@ -196,12 +241,11 @@ async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, th
     ex.setMbt(Buffer.from(mbt_b64, 'base64').toString('utf8'));
   }
 
-  // Model：@open-agent-loops/core 的 OpenAICompatibleModel（原生 OpenAI 格式）
   const agentModel = new OpenAICompatibleModel({
     apiKey,
     baseURL: base_url || 'https://api.deepseek.com',
     model: model || 'deepseek-chat',
-    thinking: thinking_level === 'off' ? 'off' : 'on',
+    thinking: thinking_level === 'off' ? 'off' : 'auto',
   });
 
   const tools = makeTools(ex);
@@ -210,40 +254,55 @@ async function runWithAgent({ instruction, mbt_b64, api_key, model, base_url, th
   const result = await runAgent({
     model: agentModel,
     memory,
+    system: INSTRUCTIONS,
     sessionId: 'studio_' + Date.now().toString(36),
     prompt: instruction,
     tools,
-    // 事件回调可选——不传则 runAgent 内部 drain
+    maxSteps: 20,
   });
+
+  // 从 newMessages 提取 assistant 总结和错误信息
+  const newMsgs = result?.newMessages || [];
+  const lastAssistant = [...newMsgs].reverse().find(m => m.role === 'assistant');
+  const hasError = newMsgs.some(m => m.role === 'assistant' && m.isError);
+  const text = lastAssistant?.content || '';
+
+  // mbt 为 null 且无 ops → agent 未执行任何操作
+  if (!ex.mbt() && ex.ops().length === 0) {
+    return {
+      ok: false,
+      error: hasError ? 'llm_stream_error' : 'agent_no_mbt',
+      detail: hasError ? text.slice(0, 200) : 'LLM did not call any tools',
+      ops: [], text,
+    };
+  }
 
   return {
     ok: ex.mbt() !== null,
     mbt_b64: ex.mbt() ? b64encode(ex.mbt()) : null,
     render: ex.render(),
     ops: ex.ops(),
-    stopReason: result?.stopReason || 'done',
-    text: result?.text || '',
+    stopReason: result?.steps >= 20 ? 'max_turns' : 'done',
+    text,
   };
 }
 
-// ============================================================
-// Selftest（无 API key，验证 executor 链路）
-// ============================================================
 async function selftest({ mbt_b64, engine_dir }) {
   const engineDir = engine_dir || DEFAULT_ENGINE;
   if (!existsSync(join(engineDir, 'cli'))) return { ok: false, error: 'engine_dir_invalid' };
+  // 严格 base64 校验（与 server.py 同一正则，防换行注入）
+  if (typeof mbt_b64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(mbt_b64)) {
+    return { ok: false, error: 'mbt_b64_invalid' };
+  }
   const ex = makeExecutor(engineDir);
-
   const probe = await runMoonCli(engineDir, [`load-mbt-b64 ${mbt_b64}`]);
   const entry = probe.find(r => r && r.ok)?.entry;
   if (!entry) return { ok: false, error: 'selftest_no_target' };
   ex.setMbt(Buffer.from(mbt_b64, 'base64').toString('utf8'));
-
   const q = await runMoonCli(engineDir, [`load-mbt-b64 ${mbt_b64}`, `query ${entry}`]);
   const nodes = q.find(r => Array.isArray(r));
   const node = nodes?.[0]?.id;
   if (!node) return { ok: false, error: 'selftest_no_target' };
-
   const ok1 = await ex.moonvizOp(`update ${entry} ${node} fill=#28a745`);
   const bad = await ex.moonvizOp(`move ${entry} nonexistent_node_xyz 99999 0`);
   const ok2 = await ex.moonvizOp(`move ${entry} ${node} 20 30`);
@@ -255,13 +314,10 @@ async function selftest({ mbt_b64, engine_dir }) {
   };
 }
 
-// ============================================================
-// Models list（GET /models）
-// ============================================================
 async function listModels({ base_url, api_key }) {
   const apiKey = api_key || process.env.AI_GATEWAY_API_KEY;
   if (!apiKey) return { ok: false, error: 'api_key_missing' };
-  if (!base_url) return { ok: false, error: 'base_url_required' };
+  if (!base_url || !/^https:\/\//.test(base_url)) return { ok: false, error: 'base_url_must_be_https' };
   try {
     const res = await fetch(base_url.replace(/\/$/, '') + '/models', {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -275,9 +331,6 @@ async function listModels({ base_url, api_key }) {
   }
 }
 
-// ============================================================
-// stdin/stdout 协议
-// ============================================================
 const input = JSON.parse(await readStdin());
 try {
   const out = input.mode === 'selftest' ? await selftest(input)

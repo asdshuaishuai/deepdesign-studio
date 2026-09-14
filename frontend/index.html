@@ -867,7 +867,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </label>
     </div>
     <div class="settings-sec">AI 端点（Agent）</div>
-    <p class="settings-note">Agent 实现基于 fx-agent-sdk（libfx 嵌入），操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点（OpenAI chat 兼容格式）。</p>
+    <p class="settings-note">Agent 基于 @open-agent-loops/core（原生 OpenAI 兼容），操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点（OpenAI chat 兼容格式）。</p>
     <div class="settings-grid">
       <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="vercel" onclick="applyProvider('vercel')">Vercel AI Gateway（默认）</button></label>
       <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = Vercel AI Gateway；或 https://api.deepseek.com 等OpenAI兼容端点"></label>

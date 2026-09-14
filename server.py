@@ -178,7 +178,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
             return {'ok': False, 'error': 'models_base_url_required'}
         bridge = ROOT / 'agent' / 'agent-bridge.mjs'
         if not bridge.exists():
-            return {'ok': False, 'error': 'fx_bridge_missing'}
+            return {'ok': False, 'error': 'agent_bridge_missing'}
         import shutil as _shutil
         node = _shutil.which('node')
         if not node:
@@ -199,7 +199,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
             return {'ok': False, 'error': 'fx_bridge_unavailable'}
 
     def run_fx_sdk(self, data):
-        # Embedded fx agent via libfx: fx proposes ops through tools; every op is
+        # Embedded agent via @open-agent-loops/core: fx proposes ops through tools; every op is
         # executed by MoonViz (AgentGate) inside the bridge and returns canonical MBT.
         instruction = data.get('instruction')
         mbt_b64 = data.get('mbt_b64')
@@ -215,7 +215,7 @@ class MoonVizHandler(http.server.SimpleHTTPRequestHandler):
             return {'ok': False, 'error': 'fx_model_invalid'}
         bridge = ROOT / 'agent' / 'agent-bridge.mjs'
         if not bridge.exists():
-            return {'ok': False, 'error': 'fx_bridge_missing'}
+            return {'ok': False, 'error': 'agent_bridge_missing'}
         import shutil as _shutil
         node = _shutil.which('node')
         if not node:
