@@ -1,5 +1,5 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'frontend','index.html'),'utf8');
 const source=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const elements=new Map();
 function element(id){if(!elements.has(id))elements.set(id,{value:'',style:{},dataset:{},textContent:'',innerHTML:'',className:'',classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},focus(){},querySelectorAll(){return[]},replaceChildren(){}});return elements.get(id)}

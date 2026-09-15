@@ -103,6 +103,7 @@ fn instructions() -> String {
 /// - StepFun（platform.stepfun.com，含 Step Plan step_plan/v1）：effort low/medium/high
 ///   （max 降级 high），无开关
 /// - Qwen：DashScope 兼容模式对未知字段严格——仅 vLLU 自部署方言 off 开关
+///
 /// 档位归一：off / auto / low / medium / high / max；旧值 on → high；未知 → auto。
 fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
     let level = match level {
@@ -265,7 +266,7 @@ impl EngineState {
                         return json!({
                             "ok": true, "op": op,
                             "revision": boot.get("revision").cloned().unwrap_or(json!(0)),
-                            "artboards": boot.get("artboards").map(|a| artboard_index(a)).unwrap_or(json!([])),
+                            "artboards": boot.get("artboards").map(artboard_index).unwrap_or(json!([])),
                         });
                     }
                     let err = rs.iter().find(|r| r.get("error").is_some());
@@ -325,7 +326,7 @@ impl EngineState {
                             "ok": true, "op": op,
                             "debt": r.get("debt").cloned().unwrap_or(json!(0)),
                             "revision": r.get("revision").cloned().unwrap_or(json!(0)),
-                            "artboards": r.get("artboards").map(|a| artboard_index(a)).unwrap_or(json!([])),
+                            "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
                         })
                     }
                     _ => {

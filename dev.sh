@@ -29,12 +29,8 @@ fi
 # tauri CLI 探测：全局 tauri → npx
 TAURI_BIN="$(command -v tauri || true)"
 if [ -z "$TAURI_BIN" ]; then
-  if [ -x "$ROOT/node_modules/.bin/tauri" ]; then
-    TAURI_BIN="$ROOT/node_modules/.bin/tauri"
-  else
-    echo "→ 未找到 tauri CLI，改用 npx @tauri-apps/cli（首次会拉包）"
-    cd "$ROOT" && exec npx @tauri-apps/cli dev
-  fi
+  echo "→ 未找到 tauri CLI，改用 npx @tauri-apps/cli（首次会拉包）"
+  cd "$ROOT" && exec npx @tauri-apps/cli dev
 fi
 
 echo "→ debug 模式编译并启动 deepDesign Studio"

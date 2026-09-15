@@ -66,7 +66,7 @@ fn user_lib_b64s() -> Vec<String> {
         let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
         paths.sort();
         for p in paths {
-            if p.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.ends_with(".mbt.md")) {
+            if p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(".mbt.md")) {
                 if let Ok(bytes) = std::fs::read(&p) {
                     out.push(BASE64.encode(bytes));
                 }
@@ -107,7 +107,7 @@ fn write_user_lib(snap: &serde_json::Value) {
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
             let p = e.path();
-            if p.file_name().and_then(|x| x.to_str()).map_or(false, |n| n.ends_with(".mbt.md"))
+            if p.file_name().and_then(|x| x.to_str()).is_some_and(|n| n.ends_with(".mbt.md"))
                 && !keep.contains(&p.file_name().unwrap_or_default().to_string_lossy().to_string())
             {
                 let _ = std::fs::remove_file(p);
@@ -366,7 +366,7 @@ pub fn run() {
             // 原生菜单 → 前端动作桥：直接 eval 前端全局映射函数（比事件通道更直接）
             let id = event.id().as_ref().to_string();
             if let Some(win) = app.get_webview_window("main") {
-                let _ = win.eval(&format!(
+                let _ = win.eval(format!(
                     "if(typeof nativeMenuAction==='function')nativeMenuAction({:?})",
                     id
                 ));
