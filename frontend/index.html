@@ -210,6 +210,18 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .colorpair{display:flex;gap:5px;align-items:center}
 .colorpair input[type=color]{width:28px;height:27px;padding:2px;border:1px solid rgba(0,0,0,.1);border-radius:7px;background:#fff;cursor:pointer}
 .colorpair input[type=text]{flex:1;height:27px;padding:0 8px;border-radius:7px;font-family:ui-monospace;font-size:11px;border:1px solid rgba(0,0,0,.1);background:#fff;outline:none;min-width:0}
+.sec-hd{margin:10px 0 6px;font-size:10.5px;font-weight:700;color:var(--tx3);letter-spacing:.04em}
+.ix-list{margin:6px 0 2px;display:flex;flex-direction:column;gap:4px}
+.ix-row{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--tx2);background:rgba(0,0,0,.03);border-radius:7px;padding:4px 7px}
+.ix-row code{font-size:10px;color:var(--tx);font-weight:600}
+.ix-row span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ix-row button{border:1px solid rgba(0,0,0,.12);background:#fff;border-radius:6px;font-size:9.5px;padding:1px 6px;cursor:pointer}
+.ix-empty{font-size:10.5px;color:var(--tx3);padding:3px 2px}
+.seg2{display:flex;gap:4px}
+.seg2 button{flex:1;height:26px;border:1px solid rgba(0,0,0,.1);background:#fff;border-radius:7px;font-size:10.5px;font-weight:600;color:var(--tx2);cursor:pointer}
+.seg2 button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+body[data-mode="dark"] .seg2 button{background:#2a2a2e;border-color:#3a3a3f;color:var(--tx2)}
+body[data-mode="dark"] .seg2 button.on{background:var(--acc);color:#fff}
 .segshadow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px}
 .segshadow button{display:flex;flex-direction:column;align-items:center;gap:3px;height:40px;padding-top:5px;border:1px solid rgba(0,0,0,.1);background:#fff;border-radius:8px;font-size:9px;font-weight:600;color:var(--tx2);cursor:pointer}
 .segshadow .demo{width:24px;height:9px;border-radius:3px;background:#007aff}
@@ -1686,6 +1698,15 @@ function renderInspector(){
     return;
   }
   const sh=n.style.shadow||'none';
+  const al=n.style.align||'left';
+  const it=n.style.italic||'normal';
+  const ds=n.style.dash||'solid';
+  const vis=n.style.visible!==false;
+  const wm=n.width_mode||'fixed';
+  const lay=n.layout||null;
+  const layMode=lay?(lay.dir||'vertical'):'none';
+  const layJust=lay?(lay.justify||'start'):'start';
+  const segBtns=(key,cur,pairs,cb)=>pairs.map(p=>{const[v,l]=p.split(':');return `<button class="${cur===v?'on':''}" onclick="${cb}('${key}','${v}')">${l}</button>`;}).join('');
   const previous=body.dataset.node;const drafts=previous===active+'/'+selected?Array.from(body.querySelectorAll('input')).filter(i=>i.value!==i.defaultValue).map(i=>[i.id,i.value]):[];body.dataset.node=active+'/'+selected;
   body.innerHTML=`
     <div class="nodecard"><div><div class="lbl">当前选中节点</div><div class="val">${n.id}</div></div><span class="tag">${n.component&&n.component!=='frame'?n.component:n.kind}</span></div>
@@ -1696,6 +1717,24 @@ function renderInspector(){
     <div class="frow"><label>文字色</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-tc-c" value="${normColor(n.style.text_color)}"><input type="text" id="p-tc" value="${n.style.text_color}"></span></div>
     <div class="frow"><label>圆角/透明</label><input type="number" id="p-r" value="${n.style.radius}"><input type="number" id="p-op" value="${n.style.opacity}" step="0.1" min="0" max="1"></div>
     <div class="frow"><label>阴影</label><span class="segshadow" style="grid-column:2/4">${['none','e1','e2','e3'].map(v=>`<button data-v="${v}" class="${sh===v?'on':''}" onclick="setShadow('${v}')"><span class="demo"></span>${v}</button>`).join('')}</span></div>
+    <div class="frow"><label>字号/描边</label><input type="number" id="p-fs" value="${n.style.font_size}"><input type="number" id="p-sw" value="${n.style.stroke_width||0}" step="0.5"></div>
+    <div class="frow"><label>描边色</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-st-c" value="${normColor(n.style.stroke==='none'?'#000000':n.style.stroke)}"><input type="text" id="p-stroke" value="${n.style.stroke}"></span></div>
+    <div class="frow"><label>对齐</label><span class="seg2" style="grid-column:2/4">${segBtns('align',al,['left:左','center:中','right:右'],'setProp')}</span></div>
+    <div class="frow"><label>斜体/线型</label><span class="seg2"><button class="${it==='italic'?'on':''}" onclick="setProp('italic','${it==='italic'?'false':'true'}')">I 斜体</button></span><span class="seg2">${segBtns('dash',ds,['solid:实','dashed:虚','dotted:点'],'setProp')}</span></div>
+    <div class="frow"><label>可见性</label><span class="seg2" style="grid-column:2/4"><button class="${vis?'on':''}" onclick="setProp('visible','${vis?'false':'true'}')">${vis?'● 可见':'○ 已隐藏'}</button></span></div>
+    <div class="frow"><label>尺寸模式</label><span class="seg2" style="grid-column:2/4">${segBtns('width_mode',wm,['fixed:定','hug:包','fill:撑'],'setProp')}</span></div>
+    <div class="frow"><label>容器布局</label><span class="seg2" style="grid-column:2/4">${segBtns('layout',layMode,['none:无','vertical:纵','horizontal:横'],'setProp')}</span></div>
+    <div class="frow"><label>间距/内边距</label><input type="number" id="p-gap" value="${lay?lay.gap:0}"><input type="number" id="p-pad" value="${lay?lay.padding:0}"></div>
+    <div class="frow"><label>布局对齐</label><span class="seg2" style="grid-column:2/4">${segBtns('justify',layJust,['start:起','center:中','end:末'],'setProp')}</span></div>
+    <div class="sec-hd">交互</div>
+    <div class="frow"><label>触发</label><select id="ix-trigger" style="grid-column:2/4">${['tap','long_press','swipe_left','swipe_right','swipe_up','swipe_down','scroll_end','key_enter','focus','blur'].map(v=>`<option value="${v}">${v}</option>`).join('')}</select></div>
+    <div class="frow"><label>动作</label><input type="text" id="ix-action" style="grid-column:2/4" placeholder="navigate_to:目标画板 / show_toast:你好 / back"></div>
+    <div class="frow"><span style="grid-column:2/4;display:flex;gap:6px"><button class="ibtn" style="flex:1" onclick="attachIx()">绑定交互</button><button class="ibtn" style="flex:1" onclick="detachIx()">清除交互</button></span></div>
+    <div id="ix-list" class="ix-list"></div>
+    <div class="sec-hd">组件状态</div>
+    <div class="frow"><label>状态名</label><input type="text" id="st-name" style="grid-column:2/4" placeholder="pressed / disabled / default"></div>
+    <div class="frow"><span style="grid-column:2/4;display:flex;gap:6px"><button class="ibtn" style="flex:1" onclick="defineSt()">定义状态（用当前填充色）</button></span></div>
+    <div id="st-list" class="ix-list"></div>
     <div class="insp-actions">
       <button class="ibtn" onclick="alignH()">水平居中</button>
       <button class="ibtn" onclick="alignV()">垂直居中</button>
@@ -1705,9 +1744,15 @@ function renderInspector(){
   const link=(c,t)=>{const cc=document.querySelector(c),tt=document.querySelector(t);if(!cc||!tt)return;
     cc.oninput=()=>tt.value=cc.value;tt.oninput=()=>{if(/^#[0-9a-fA-F]{6}$/.test(tt.value))cc.value=tt.value;};};
   for(const [id,value] of drafts){if($(id))$(id).value=value;}
-  link('#p-fill-c','#p-fill');link('#p-tc-c','#p-tc');
+  loadIxList();loadStList();
+  link('#p-fill-c','#p-fill');link('#p-tc-c','#p-tc');link('#p-st-c','#p-stroke');
 }
 function setShadow(v){runOp(`update ${active} ${selected} shadow=${v}`,'human').then(()=>renderInspector());}
+/* 属性面板即时设置（分段控件）：直接走 human 门禁回写 MBT */
+function setProp(key,value){
+  if(!selected)return;
+  runOp(`update ${active} ${selected} ${key}=${value}`,'human').then(ok=>{if(ok)renderInspector();});
+}
 async function alignH(){const n=nodeOf(selected);if(!n)return;await runOp(`move ${active} ${selected} ${Math.max(0,Math.round((currentW-n.rect.w)/2))} ${Math.round(n.rect.y)}`,'human');}
 async function alignV(){const n=nodeOf(selected);if(!n)return;await runOp(`move ${active} ${selected} ${Math.round(n.rect.x)} ${Math.max(0,Math.round((currentH-n.rect.h)/2))}`,'human');}
 async function delSelected(){await runOp(`delete ${active} ${selected}`,'human');select(null);}
@@ -1721,6 +1766,14 @@ async function applyProps(){
   if(values['p-text']!==n.text)upd.push(`text=${JSON.stringify(values['p-text'])}`);
   if(values['p-fill']!==n.style.fill)upd.push(`fill=${values['p-fill']}`);
   if(values['p-tc']!==n.style.text_color)upd.push(`text_color=${values['p-tc']}`);
+  if(Number.isFinite(+values['p-fs'])&&+values['p-fs']!==n.style.font_size)upd.push(`font_size=${+values['p-fs']}`);
+  if(Number.isFinite(+values['p-sw'])&&+values['p-sw']!==(n.style.stroke_width||0))upd.push(`stroke_width=${+values['p-sw']}`);
+  if(values['p-stroke']!==n.style.stroke)upd.push(`stroke=${values['p-stroke']}`);
+  // 布局数值仅在容器已有布局时提交（否则引擎侧为 no-op，避免误导）
+  if(n.layout){
+    if(Number.isFinite(+values['p-gap'])&&+values['p-gap']!==n.layout.gap)upd.push(`gap=${+values['p-gap']}`);
+    if(Number.isFinite(+values['p-pad'])&&+values['p-pad']!==n.layout.padding)upd.push(`padding=${+values['p-pad']}`);
+  }
   if(!Number.isFinite(x)||!Number.isFinite(y)){toast('位置数值无效');return;}
   const ok=await serializeProject(async()=>{
     if((x!==Math.round(n.rect.x)||y!==Math.round(n.rect.y))&&!await runOpNow(`move ${board} ${id} ${x} ${y}`,'human'))return false;
@@ -1729,6 +1782,50 @@ async function applyProps(){
   if(ok&&active===board&&selected===id){$('insp-body').dataset.node='';renderInspector();}
 }
 
+/* ---------- 交互与组件状态 ---------- */
+async function attachIx(){
+  if(!selected)return;
+  const trig=$('ix-trigger').value,act=$('ix-action').value.trim();
+  if(!act){toast('请填写动作，例如 navigate_to:home 或 show_toast:你好');return;}
+  const ok=await runOp(`interact ${active} ${selected} ${trig} ${act}`,'human');
+  if(ok){toast('已绑定交互');loadIxList();}
+}
+async function detachIx(){
+  if(!selected)return;
+  if(await runOp(`uninteract ${active} ${selected}`,'human')){toast('已清除交互');loadIxList();}
+}
+async function defineSt(){
+  if(!selected)return;
+  const name=$('st-name').value.trim();
+  if(!name){toast('请填写状态名，例如 pressed');return;}
+  const n=nodeOf(selected);if(!n)return;
+  const ok=await runOp(`state ${active} ${selected} ${name} fill=${n.style.fill}`,'human');
+  if(ok){toast('已定义状态 '+name);loadStList();}
+}
+/* 交互/状态清单：只读查询，经 load+命令管道 */
+async function loadIxList(){
+  const box=$('ix-list');if(!box||!active)return;
+  try{
+    const rs=await execCli([`load-mbt-b64 ${utf8ToB64(mbtText)}`,'interactions '+active]);
+    const arr=rs.filter(r=>r&&typeof r==='object'&&!r.moonviz).pop();
+    box.innerHTML=Array.isArray(arr)&&arr.length
+      ? arr.map(x=>`<div class="ix-row"><code>${x.node}</code><span>${x.trigger} → ${x.action}</span></div>`).join('')
+      : '<div class="ix-empty">本画板暂无交互</div>';
+  }catch(_){box.innerHTML='<div class="ix-empty">读取失败</div>';}
+}
+async function loadStList(){
+  const box=$('st-list');if(!box||!active)return;
+  try{
+    const rs=await execCli([`load-mbt-b64 ${utf8ToB64(mbtText)}`,'states '+active]);
+    const arr=rs.filter(r=>r&&typeof r==='object'&&!r.moonviz).pop();
+    box.innerHTML=Array.isArray(arr)&&arr.length
+      ? arr.map(x=>`<div class="ix-row"><code>${x.node}</code><span>${(x.states||[]).join(' / ')}${x.current!=='default'?' · 当前 '+x.current:''}</span><button onclick="setState('${x.node}','${x.current==='default'?'pressed':'default'}')">切换</button></div>`).join('')
+      : '<div class="ix-empty">暂无组件状态</div>';
+  }catch(_){box.innerHTML='<div class="ix-empty">读取失败</div>';}
+}
+async function setState(node,state){
+  if(await runOp(`set-state ${node} ${state}`,'human')){loadStList();}
+}
 /* ---------- 面板切换 ---------- */
 function switchLeft(w){
   ['layer','comp','flow'].forEach(x=>{
