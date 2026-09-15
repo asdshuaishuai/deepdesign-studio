@@ -1648,7 +1648,7 @@ async function sendAgent(){
   const showSteps=steps=>{planEl.style.display='block';planEl.innerHTML=steps.map((s,i)=>`<div class="step" id="apstep${i}"><span class="n">${i+1}</span><span>${String(s).replace(/</g,'&lt;')}</span></div>`).join('');};
   try{
     loadAgentConfig();
-    // 唯一执行基座：agent-bridge（@open-agent-loops/core，逐条 moonviz_op 经 AgentGate 写回 MBT）
+    // 唯一执行基座：Rust 进程内 agent（src-tauri/src/agent.rs，逐条 moonviz_op 经 AgentGate 写回 MBT）
     // 注入选区上下文，让 agent 知道用户针对哪个节点/画板
     const ctx=`Target: node "${n.id}" on artboard "${active}". Task: ${text}`;
     const r=await askFxSdk(ctx);
@@ -1657,7 +1657,7 @@ async function sendAgent(){
     try{applyMbtResult(r.render);}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用 fx 结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;return;}
     document.querySelectorAll('#ap-plan .step').forEach(s=>s.classList.add('done'));
     res.style.display='block';res.className='ap-result ok';
-    const cut=r.stopReason==='max_turns'?'（已达步数上限）':'';
+    const cut=r.stopReason==='max_turns'?'（已达步数上限）':(r.stopReason==='error'?'（中途出错，已保留完成部分）':'');
     res.textContent=`fx 已通过 MoonViz 提交 ${r.ops.length} 条变更（AgentGate）${cut}${r.text?' — '+String(r.text).slice(0,120):''}`;
     trackAgent(text,r.ops);
     $('ap-send').disabled=false;$('ap-input').value='';
@@ -1795,7 +1795,7 @@ async function runGlobalPrompt(){
       }
     }
     trackAgent(t,r.ops);
-    const cut=r.stopReason==='max_turns'?'（已达步数上限，结果可能不完整）':'';
+    const cut=r.stopReason==='max_turns'?'（已达步数上限，结果可能不完整）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
     toast(`AI 已提交 ${r.ops.length} 条操作（AgentGate 校验）${cut}`);
   }catch(err){
     toast('AI 调用失败：'+String(err).slice(0,90));

@@ -88,20 +88,36 @@ fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
 }
 
-/// thinking 家族表（对齐 @open-agent-loops/core reasoning-kwargs 的核心子集）：
-/// 按 model id 前缀/关键词匹配方言，on/off 注入对应开关字段；auto 不注入。
-/// 未知或非推理模型 → None（服务端默认），与 JS 框架行为一致。
+/// thinking 家族表（按各家官方 API 文档核对，2026-09）：
+/// - DeepSeek / GLM(智谱) / Kimi(Moonshot) 官方 OpenAI 兼容端点统一为
+///   body 顶层 `thinking: {"type": "enabled"|"disabled"}`
+///   （DeepSeek https://api-docs.deepseek.com/guides/thinking_mode/；
+///    GLM docs.bigmodel.cn/cn/guide/capabilities/thinking；
+///    Kimi platform.kimi.ai/docs/guide/use-thinking-models）
+/// - MiniMax M3：`thinking: {"type": "adaptive"(默认)|"disabled"}`——on 档省略
+///   参数（默认即 adaptive 开启），off 档显式 disabled（M2.x 接受但忽略，无害）
+/// - Qwen：官方 DashScope 兼容模式不支持 body 开关，保留 vLLM 自部署方言
+///   chat_template_kwargs.enable_thinking
+/// - 兼容前端历史保存的 low/medium/high 档位 → on（对齐旧桥 mapThinking）
+/// - auto / 未知模型 → None（服务端默认）
 fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
+    let level = match level {
+        "on" | "low" | "medium" | "high" => "on",
+        "off" => "off",
+        _ => "auto",
+    };
     if level == "auto" {
         return None;
     }
     let on = level == "on";
     let m = model.to_ascii_lowercase();
-    if m.contains("glm") {
-        Some(json!({"chat_template_kwargs": {"enable_thinking": on, "clear_thinking": false}}))
-    } else if m.contains("kimi") {
-        Some(json!({"chat_template_kwargs": {"thinking": {"type": if on {"enabled"} else {"disabled"}}}}))
-    } else if m.contains("deepseek") {
+    if m.contains("minimax") {
+        if on {
+            None
+        } else {
+            Some(json!({"thinking": {"type": "disabled"}}))
+        }
+    } else if m.contains("glm") || m.contains("kimi") || m.contains("deepseek") {
         Some(json!({"thinking": {"type": if on {"enabled"} else {"disabled"}}}))
     } else if m.contains("qwen") {
         Some(json!({"chat_template_kwargs": {"enable_thinking": on}}))
@@ -271,6 +287,26 @@ impl EngineState {
         }
     }
 
+    /// 终态 render 兜底（移植自 JS 桥）：只读会话（仅 lint/query/flows 等）
+    /// 不产生 apply 渲染——用 render-mbt-b64 补齐，保证前端 applyMbtResult
+    /// 始终拿到含 artboards/svg 的 render 而不是 null。
+    async fn ensure_render(&mut self) {
+        if self.last_render.is_some() {
+            return;
+        }
+        let Some(mbt) = self.mbt.clone() else { return };
+        let Ok(rs) = self.exec(vec![format!("render-mbt-b64 {}", b64_encode(&mbt))]).await
+        else {
+            return;
+        };
+        if let Some(rendered) = rs
+            .iter()
+            .find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
+        {
+            self.last_render = Some(rendered.clone());
+        }
+    }
+
     async fn list_components(&self) -> Value {
         match self.exec(vec!["list-components".into()]).await {
             Ok(rs) => match rs.iter().find(|r| r.is_array()) {
@@ -328,6 +364,22 @@ fn tools_schema() -> Value {
 }
 
 /// 模型端点校验：https 任意主机；http 仅放行本机/内网（本地 LLM 如 Ollama/vLLM）。
+/// 内网判定用 std::net IP 解析（精确覆盖 10/8、172.16/12、192.168/16 回环与链路本地），
+/// 避免 starts_with 前缀误放行公网段（如 172.2.x.x）或 DNS 名（如 10.evil.com）。
+fn is_local_host(host: &str) -> bool {
+    if host == "localhost" {
+        return true;
+    }
+    let h = host.trim_matches(|c| c == '[' || c == ']');
+    match h.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => {
+            v4.is_loopback() || v4.is_private() || v4.is_link_local()
+        }
+        Ok(std::net::IpAddr::V6(v6)) => v6.is_loopback(),
+        Err(_) => false,
+    }
+}
+
 fn safe_base_url(u: &str) -> Option<String> {
     let u = u.trim();
     if u.is_empty() {
@@ -335,19 +387,7 @@ fn safe_base_url(u: &str) -> Option<String> {
     }
     let parsed = reqwest::Url::parse(u).ok()?;
     let host = parsed.host_str()?;
-    let local = host == "localhost"
-        || host == "127.0.0.1"
-        || host == "[::1]"
-        || host.starts_with("192.168.")
-        || host.starts_with("10.")
-        || host.starts_with("172.16.")
-        || host.starts_with("172.17.")
-        || host.starts_with("172.18.")
-        || host.starts_with("172.19.")
-        || host.starts_with("172.2")
-        || host.starts_with("172.30.")
-        || host.starts_with("172.31.");
-    if parsed.scheme() == "https" || (parsed.scheme() == "http" && local) {
+    if parsed.scheme() == "https" || (parsed.scheme() == "http" && is_local_host(host)) {
         Some(parsed.to_string())
     } else {
         None
@@ -411,11 +451,9 @@ pub async fn run(
         Err(e) => return json!({"ok": false, "error": e}),
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(LLM_TIMEOUT)
-        .build()
-        .map_err(|e| json!({"ok": false, "error": format!("client_build_failed:{e}")}))
-        .unwrap();
+    let Ok(client) = reqwest::Client::builder().timeout(LLM_TIMEOUT).build() else {
+        return json!({"ok": false, "error": "client_build_failed", "ops": state.ops, "text": ""});
+    };
 
     let mut messages: Vec<Value> = vec![
         json!({"role": "system", "content": instructions()}),
@@ -426,14 +464,16 @@ pub async fn run(
         let resp = match chat_once(&client, &base, api_key, model, thinking, &messages).await {
             Ok(r) => r,
             Err(e) => {
-                return json!({"ok": false, "error": e, "ops": state.ops, "text": ""});
+                // 中途 LLM 失败：已提交的引擎操作不丢弃（对齐旧桥语义）——
+                // 零操作时才整体失败，否则带部分状态返回，前端可应用已完成的变更。
+                return finish_partial(&mut state, &e).await;
             }
         };
         let Some(msg) = resp
             .pointer("/choices/0/message")
             .and_then(|v| v.as_object().cloned())
         else {
-            return json!({"ok": false, "error": "llm_no_choice", "ops": state.ops, "text": ""});
+            return finish_partial(&mut state, "llm_no_choice").await;
         };
         let tool_calls: Vec<Value> = msg
             .get("tool_calls")
@@ -450,6 +490,7 @@ pub async fn run(
                     "ops": state.ops, "text": text,
                 });
             }
+            state.ensure_render().await;
             let stop = if step + 1 >= MAX_STEPS { "max_turns" } else { "done" };
             return json!({
                 "ok": state.mbt.is_some(),
@@ -461,7 +502,8 @@ pub async fn run(
             });
         }
 
-        // 回填 assistant 消息（含 tool_calls）后顺序执行每个调用
+        // 回填 assistant 消息（含 tool_calls）后顺序执行每个调用。
+        // MiniMax 多轮 tool 对话要求完整回传 assistant 消息以保留推理链。
         messages.push(Value::Object(msg));
         for call in tool_calls {
             let id = call.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -486,6 +528,7 @@ pub async fn run(
     }
 
     // 跑满步数：尽力返回当前状态
+    state.ensure_render().await;
     json!({
         "ok": state.mbt.is_some(),
         "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
@@ -496,17 +539,37 @@ pub async fn run(
     })
 }
 
+/// 中途失败的部分状态返回：零操作 → 纯失败；有已提交工作 → ok:true +
+/// partial_error 说明，前端照常应用 mbt_b64/render 并提示部分完成。
+async fn finish_partial(state: &mut EngineState, error: &str) -> Value {
+    if state.mbt.is_none() && state.ops.is_empty() {
+        return json!({"ok": false, "error": error, "ops": [], "text": ""});
+    }
+    state.ensure_render().await;
+    json!({
+        "ok": state.mbt.is_some(),
+        "partial_error": error,
+        "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
+        "render": state.last_render.clone(),
+        "ops": state.ops,
+        "stopReason": "error",
+        "text": "",
+    })
+}
+
 /// /models 端点：OpenAI 兼容模型列表（设置面板「获取模型」）。
+/// 与 run 路径不同：base_url 必填（空值报错，绝不静默替换默认端点——
+/// 用户的 api_key 不能被发往未配置的目的地）。
 pub async fn list_models(base_url: &str, api_key: &str) -> Value {
     if api_key.trim().is_empty() {
         return json!({"ok": false, "error": "api_key_missing"});
     }
+    if base_url.trim().is_empty() {
+        return json!({"ok": false, "error": "models_base_url_required"});
+    }
     let Some(base) = safe_base_url(base_url) else {
         return json!({"ok": false, "error": "base_url_must_be_https"});
     };
-    if base.trim().is_empty() {
-        return json!({"ok": false, "error": "models_base_url_required"});
-    }
     let url = format!("{}/models", base.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
@@ -544,16 +607,33 @@ mod tests {
 
     #[test]
     fn thinking_family_table() {
+        // auto / 未知模型：不注入
         assert_eq!(thinking_extra_body("GLM-5", "auto"), None);
+        assert_eq!(thinking_extra_body("some-plain-model", "on"), None);
+        // DeepSeek / GLM / Kimi 官方 API：body 顶层 thinking.type
         assert_eq!(
             thinking_extra_body("glm-4.7", "on"),
-            Some(json!({"chat_template_kwargs": {"enable_thinking": true, "clear_thinking": false}}))
+            Some(json!({"thinking": {"type": "enabled"}}))
         );
         assert_eq!(
             thinking_extra_body("DeepSeek-V4", "off"),
             Some(json!({"thinking": {"type": "disabled"}}))
         );
-        assert_eq!(thinking_extra_body("some-plain-model", "on"), None);
+        assert_eq!(
+            thinking_extra_body("moonshotai/kimi-k2.6", "off"),
+            Some(json!({"thinking": {"type": "disabled"}}))
+        );
+        // MiniMax M3：off → disabled；on → 省略（默认 adaptive）
+        assert_eq!(thinking_extra_body("MiniMax-M3", "off"), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("MiniMax-M3", "on"), None);
+        assert_eq!(thinking_extra_body("MiniMax-M2.7", "off"), Some(json!({"thinking": {"type": "disabled"}})));
+        // Qwen：vLLM 自部署方言保留
+        assert_eq!(
+            thinking_extra_body("qwen3-max", "on"),
+            Some(json!({"chat_template_kwargs": {"enable_thinking": true}}))
+        );
+        // 前端历史保存的 low/medium/high → on（对齐旧桥）
+        assert_eq!(thinking_extra_body("deepseek-chat", "high"), Some(json!({"thinking": {"type": "enabled"}})));
     }
 
     #[test]
@@ -572,6 +652,15 @@ mod tests {
         assert!(safe_base_url("http://localhost:11434/v1").is_some());
         assert!(safe_base_url("http://192.168.1.5:8000").is_some());
         assert!(safe_base_url("http://evil.example.com").is_none());
+        // IP 精确段判定：私有段放行、公网 172.2/172.255 拒绝、DNS 前缀伪装拒绝
+        assert!(safe_base_url("http://172.20.1.5:8000").is_some());
+        assert!(safe_base_url("http://172.16.0.1").is_some());
+        assert!(safe_base_url("http://172.31.255.255").is_some());
+        assert!(safe_base_url("http://172.2.3.4").is_none());
+        assert!(safe_base_url("http://172.255.0.1").is_none());
+        assert!(safe_base_url("http://10.evil.com").is_none());
+        assert!(safe_base_url("http://192.168.evil.com").is_none());
+        assert!(safe_base_url("http://[::1]:11434").is_some());
         assert!(safe_base_url("ftp://x").is_none());
     }
 
@@ -654,5 +743,110 @@ mod tests {
         let mbt = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
         assert!(mbt.contains("lg"), "canonical mbt 应含画板 lg");
         assert!(out["render"]["artboards"].is_array(), "render 应含 artboards");
+    }
+
+    /// 可复用 mock LLM：按顺序回放脚本化响应体，读完整请求后返回。
+    async fn spawn_mock_llm(rounds: Vec<Value>) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            for body in rounds {
+                let Ok((mut sock, _)) = listener.accept().await else { break };
+                let mut raw = Vec::new();
+                let mut chunk = [0u8; 16384];
+                loop {
+                    match sock.read(&mut chunk).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            raw.extend_from_slice(&chunk[..n]);
+                            let s = String::from_utf8_lossy(&raw).into_owned();
+                            if let Some(pos) = s.find("\r\n\r\n") {
+                                let body_start = pos + 4;
+                                if let Some(len) = s
+                                    .lines()
+                                    .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().to_string()))
+                                    .and_then(|v| v.parse::<usize>().ok())
+                                {
+                                    if raw.len() >= body_start + len { break; }
+                                }
+                            }
+                        }
+                    }
+                }
+                let body_str = serde_json::to_string(&body).unwrap();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body_str.len(),
+                    body_str
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+        (port, handle)
+    }
+
+    /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。
+    #[tokio::test]
+    async fn mid_run_llm_failure_preserves_committed_work() {
+        if crate::engine_cli_binary().is_err() {
+            eprintln!("跳过：本机无引擎二进制");
+            return;
+        }
+        // mock 只服务第一轮（bootstrap tool_call），之后 listener 关闭 → 第二轮连接被拒
+        let (port, mock) = spawn_mock_llm(vec![serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "moonviz_op",
+                 "arguments": "{\"op\": \"template login lg\"}"}}
+            ]}}]
+        })]).await;
+        let out = run("建一个登录页", None, "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "部分成功应 ok:true: {out}");
+        assert!(out["partial_error"].is_string(), "应带 partial_error: {out}");
+        assert_eq!(out["stopReason"], json!("error"));
+        assert_eq!(out["ops"], json!(["template login lg"]));
+        let mbt = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
+        assert!(mbt.contains("lg"), "已提交的 canonical mbt 不得丢失");
+        assert!(out["render"]["artboards"].is_array(), "错误路径也要有 render 兜底");
+    }
+
+    /// 只读会话（仅 read_mbt）：终态 render 不得为 null（render-mbt-b64 兜底）。
+    #[tokio::test]
+    async fn readonly_session_gets_render_fallback() {
+        if crate::engine_cli_binary().is_err() {
+            eprintln!("跳过：本机无引擎二进制");
+            return;
+        }
+        // 用真实引擎生成一个 mbt 文档作为输入
+        let rs = tokio::task::spawn_blocking(move || {
+            crate::exec_cli_pipeline(vec!["template login rt".into(), "export-mbt-human".into()])
+        })
+        .await
+        .unwrap();
+        let mbt_b64 = match rs {
+            Ok(rs) => rs.iter().find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
+                .and_then(|r| r.get("mbt").and_then(|v| v.as_str()).map(String::from)),
+            Err(_) => None,
+        };
+        let Some(mbt) = mbt_b64 else { eprintln!("跳过：引擎未产出 mbt"); return };
+
+        let (port, mock) = spawn_mock_llm(vec![
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "read_mbt", "arguments": "{}"}}
+                ]}}]
+            }),
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": "当前文档包含登录页 rt。"}}]
+            }),
+        ]).await;
+        let out = run("看下现在的文档", Some(&b64_encode(&mbt)), "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(out["stopReason"], json!("done"));
+        assert!(out["render"].is_object(), "只读会话 render 必须兜底非 null: {out}");
+        assert!(out["render"]["artboards"].is_array(), "兜底 render 应含 artboards");
+        assert!(out["mbt_b64"].is_string(), "mbt 应原样回传");
     }
 }

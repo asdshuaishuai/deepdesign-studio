@@ -309,7 +309,13 @@ async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::V
     let key = if !api_key.trim().is_empty() {
         api_key
     } else {
-        p.get("api_key").and_then(|v| v.as_str()).unwrap_or("").to_string()
+        // 三档：invoke 参数 > payload 字段 > 环境变量（设置面板文案承诺的回退）
+        let from_payload = p.get("api_key").and_then(|v| v.as_str()).unwrap_or("");
+        if !from_payload.trim().is_empty() {
+            from_payload.to_string()
+        } else {
+            std::env::var("AI_GATEWAY_API_KEY").unwrap_or_default()
+        }
     };
     if p.get("mode").and_then(|v| v.as_str()) == Some("models") {
         let base = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
