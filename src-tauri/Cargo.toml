@@ -14,6 +14,15 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 base64 = "0.22"
 zeroize = "1.8"
+# Agent 基座（进程内，无 JS 运行时）：reqwest 直发 OpenAI chat-completions
+# wire format（schema 由 agent.rs 的 json! 字面量 + cargo test 契约测试锚定）。
+# 不引入类型化 chat 客户端：thinking 家族等非标字段需在序列化后注入，
+# 类型层反而被绕过（评估阶段已验证 async-openai 0.42 无 extra-fields 口子）。
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["time", "net"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
 
 [lib]
 name = "deepdesign_studio_lib"

@@ -5,6 +5,4 @@ tmp_icons/
 __pycache__/
 .DS_Store
 *.log
-src-tauri/agent/
-agent/agent-bridge.bundle.mjs
-agent/agent-bridge.bundle.mjs.map
+src-tauri/engine/

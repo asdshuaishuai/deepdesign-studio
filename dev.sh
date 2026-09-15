@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 # deepDesign Studio — debug 模式编译启动（非 release）
-# 用法：./dev.sh [--web] [--fresh]
+# 用法：./dev.sh [--fresh]
 #   默认：tauri dev（debug 编译 + 启动原生客户端）
 #   --fresh：先 kill 旧进程 + 清 WebView 缓存，确保加载最新前端
-#   --web  ：免编译网页模式（server.py）
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export MOONVIZ_DIR="${MOONVIZ_DIR:-$(cd "$ROOT/../moonviz" 2>/dev/null && pwd)}"
-export MOONVIZ_DDP_HELPER="${MOONVIZ_DDP_HELPER:-$MOONVIZ_DIR/ddp/target/release/ddp_codec}"
 
 # 引擎只走独立二进制（无 moon run 回退）：缺失时现场构建
 ENGINE_BIN="$MOONVIZ_DIR/_build/native/release/build/cli/cli.exe"
@@ -17,11 +15,6 @@ if [ ! -x "$ENGINE_BIN" ]; then
 fi
 export MOONVIZ_CLI="${MOONVIZ_CLI:-$ENGINE_BIN}"
 echo "→ 引擎二进制：$MOONVIZ_CLI"
-
-if [ "${1:-}" = "--web" ]; then
-  echo "→ 网页模式（免 Rust 编译，改前端刷新即生效）"
-  exec python3 "$ROOT/server.py"
-fi
 
 # --fresh 或检测到旧进程：清理
 if [ "${1:-}" = "--fresh" ] || pgrep -f "deepDesign Studio" >/dev/null 2>&1 || pgrep -f "tauri dev" >/dev/null 2>&1; then

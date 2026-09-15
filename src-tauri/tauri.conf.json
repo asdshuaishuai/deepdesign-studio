@@ -5,7 +5,7 @@
   "identifier": "com.deepcode.deepdesign",
   "build": {
     "frontendDist": "../frontend",
-    "beforeBuildCommand": "node ../scripts/sync-agent.mjs"
+    "beforeBuildCommand": "node scripts/sync-engine.mjs"
   },
   "app": {
     "withGlobalTauri": true,
@@ -34,9 +34,7 @@
       "nsis"
     ],
     "resources": [
-      "agent/agent-bridge.mjs",
-      "agent/moonviz-cli.exe",
-      "agent/node.exe"
+      "engine/moonviz-cli.exe"
     ],
     "icon": [
       "icons/icon.png",

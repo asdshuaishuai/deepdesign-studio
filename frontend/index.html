@@ -813,7 +813,6 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   </div>
 </div>
 <div id="toast"></div>
-<input id="ddp-file" type="file" accept=".ddp,application/octet-stream" hidden>
 <!-- 导出选择：是否加密 -->
 <div id="export-choice" aria-hidden="true">
   <div class="ec-card">
@@ -924,9 +923,7 @@ function utf8ToB64(text){return btoa(unescape(encodeURIComponent(text)));}
 function b64ToUtf8(text){return decodeURIComponent(escape(atob(text)));}
 async function execCli(cmds){
   const t0=performance.now();
-  let r;
-  if(IS_TAURI)r=await window.__TAURI__.core.invoke('exec_cli',{commands:cmds});
-  else{const res=await fetch('/api/exec',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands:cmds})});r=await res.json();}
+  const r=await window.__TAURI__.core.invoke('exec_cli',{commands:cmds});
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
   return r;
 }
@@ -2213,31 +2210,6 @@ function closeDdpPassword(value=null){
 }
 $('ddp-password').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeDdpPassword();}else if(e.key==='Enter'){e.preventDefault();submitDdpPassword();}else if(e.key==='Tab'){const els=Array.from($('ddp-password').querySelectorAll('input,button'));const i=els.indexOf(document.activeElement);e.preventDefault();els[(i+(e.shiftKey?-1:1)+els.length)%els.length].focus();}});
 async function promptDdpPassword(label){return requestDdpPassword(label);}
-async function ddpApi(path,payload){
-  const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await res.json();if(!res.ok||!data||data.ok!==true)throw new Error((data&&data.error)||'ddp_request_failed');
-  return data;
-}
-function downloadDdp(ddpB64){
-  const raw=atob(ddpB64);const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));a.download='deepdesign.ddp';a.click();URL.revokeObjectURL(a.href);
-}
-function readDdpFile(){
-  const input=$('ddp-file');input.value='';input.onchange=()=>{
-    const file=input.files&&input.files[0];if(!file)return;
-    if(file.size>16*1024*1024+45){toast('DDP 文件过大');return;}
-    const reader=new FileReader();reader.onerror=()=>toast('DDP 文件读取失败');reader.onload=async()=>{
-      try{
-        const password=await promptDdpPassword('输入 DDP 密码：');if(password===null)return;
-        const bytes=new Uint8Array(reader.result);let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
-        const r=await ddpApi('/api/ddp/decrypt',{ddp_b64:btoa(binary),password});
-        await serializeProject(async()=>{const rs=await execCli([`render-mbt-b64 ${r.mbt_b64}`]);const result=mbtResult(rs);
-        if(!result||result.ok!==true)throw new Error((rs[rs.length-1]||{}).error||'MBT 校验失败');
-        applyMbtResult(result,{reset:true});filePath=file.name;$('file-label').textContent=file.name;toast('已打开 DDP，并从 MBT 重新渲染');});
-      }catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));}
-    };reader.readAsArrayBuffer(file);
-  };input.click();
-}
 function exportDdp(){return serializeProject(exportDdpNow);}
 /* 导出：先问“是否加密”（DDP1 加密 / DDP2 免密），拿到密码后再弹系统保存对话框 */
 let exportDdpResolve=null;
@@ -2264,20 +2236,14 @@ async function exportDdpNow(){
     if(!password){toast('DDP 密码不能为空');return;}
   }
   try{
-    if(IS_TAURI){
-      const r=await window.__TAURI__.core.invoke('save_ddp',{mbtB64:utf8ToB64(mbtText),password});
-      if(!r||r==='canceled')return;
-      filePath=r.path;$('file-label').textContent=r.path.split('/').pop();
-      toast(password?'已导出加密 DDP（DDP1）':'已导出 DDP（免密 DDP2）');
-    }else{
-      const r=await ddpApi('/api/ddp/encrypt',{mbt_b64:utf8ToB64(mbtText),password});downloadDdp(r.ddp_b64);
-      toast(password?'已导出加密 DDP（DDP1）':'已导出 DDP（免密 DDP2）');
-    }
+    const r=await window.__TAURI__.core.invoke('save_ddp',{mbtB64:utf8ToB64(mbtText),password});
+    if(!r||r==='canceled')return;
+    filePath=r.path;$('file-label').textContent=r.path.split('/').pop();
+    toast(password?'已导出加密 DDP（DDP1）':'已导出 DDP（免密 DDP2）');
   }catch(err){toast('DDP 导出失败：'+String(err).slice(0,80));}
 }
 async function saveProject(){await exportDdp();}
 async function openProject(){
-  if(!IS_TAURI){readDdpFile();return;}
   const password=await promptDdpPassword('输入 DDP 密码：');
   if(password===null)return;
   try{
@@ -2357,13 +2323,7 @@ function closeSettings(){ $('settings-modal').style.display='none';$('settings-m
 async function askFxSdk(instruction){
   const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto'};
   
-  let data;
-  if(IS_TAURI){
-    data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:agentConfig.apiKey||''});
-  }else{
-    const res=await fetch('/api/fx/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    data=await res.json();
-  }
+  const data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:agentConfig.apiKey||''});
   if(!data||data.ok!==true){
     const d=(data&&(data.detail?data.error+': '+data.detail:data.error))||'fxsdk_failed';
     throw Error(d);
@@ -2377,8 +2337,7 @@ async function fetchFxModels(){
   if(!baseUrl){toast('先填 Base URL（MiniMax 预设可一键填入）');return;}
   let data;
   try{
-    if(IS_TAURI){data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:apiKey||''});}
-    else{const res=await fetch('/api/fx/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});data=await res.json();}
+    data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:apiKey||''});
   }catch(err){toast('获取失败：'+String(err).slice(0,80));return;}
   let ids=(data&&data.models||[]).map(m=>m.id).filter(Boolean);
   if(!data||data.ok!==true||!ids.length){

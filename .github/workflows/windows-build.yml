@@ -39,18 +39,14 @@ jobs:
           moon build --release --target native cli
           "list-templates", "exit" | &_build/native/release/build/cli/cli.exe | Select-String '"login"'
         working-directory: ../moonviz
-        # 产物经 beforeBuildCommand(sync-agent.mjs) 以 agent/moonviz-cli.exe
-        # 打进安装包，最终用户无需安装 MoonBit 工具链
+        # 产物经 beforeBuildCommand(sync-engine.mjs) 以 engine/moonviz-cli.exe
+        # 打进安装包，最终用户无需安装 MoonBit 工具链；Agent 基座为 Rust 进程内
+        # 实现（无 JS 运行时），node 仅用于构建期脚本
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Install agent bridge dependencies
-        run: npm ci
-        working-directory: agent
-        # bundle.resources 会把 agent/node_modules 一并打进安装包
 
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable

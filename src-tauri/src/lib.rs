@@ -2,10 +2,14 @@
 //!
 //! 架构：
 //! - 前端 (纯静态): 多画板页签 + 拖拽画布 + 操作流 + Agent 控制台 + decl 视图
-//! - 后端 (Rust): exec_cli（引擎进程）+ 加密 DDP 字节读写
+//! - 后端 (Rust): exec_cli（引擎进程）+ 加密 DDP 字节读写 + agent（进程内
+//!   Agent 循环：OpenAI chat 兼容工具调用 × MoonViz AgentGate）
 //!
 //! 引擎 100% MoonBit 独立进程（stdin/stdout JSON 协议）。唯一事实源是
 //! MoonBit `.mbt.md`；DDP 只是它的认证加密表示，Rust 不解释视觉语义。
+//! Agent 基座 Rust 原生化后无 JS 运行时依赖（node/桥已删除）。
+
+pub mod agent;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use moonviz_ddp::{decrypt_ddp, encrypt_ddp};
@@ -21,7 +25,7 @@ use zeroize::Zeroizing;
 /// 2) 内嵌引擎二进制（resources 里的 agent/moonviz-cli.exe，
 ///    由 moon build --release --target native cli 产出的自包含 CLI）
 /// 3) dev 布局：兄弟 moonviz 仓库的 _build 产物
-fn engine_cli_binary() -> Result<PathBuf, String> {
+pub(crate) fn engine_cli_binary() -> Result<PathBuf, String> {
     if let Ok(cli) = std::env::var("MOONVIZ_CLI") {
         let p = PathBuf::from(&cli);
         if p.is_file() {
@@ -29,11 +33,8 @@ fn engine_cli_binary() -> Result<PathBuf, String> {
         }
         return Err(format!("MOONVIZ_CLI={} 不是可执行文件", cli));
     }
-    if let Ok(agent) = fx_agent_root() {
-        let bundled = agent.join("moonviz-cli.exe");
-        if bundled.is_file() {
-            return Ok(bundled);
-        }
+    if let Ok(dir) = engine_bin_dir() {
+        return Ok(dir.join("moonviz-cli.exe"));
     }
     let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../moonviz/_build/native/release/build/cli/cli.exe");
@@ -116,7 +117,12 @@ fn write_user_lib(snap: &serde_json::Value) {
 }
 
 #[tauri::command]
-fn exec_cli(mut commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
+fn exec_cli(commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
+    exec_cli_pipeline(commands)
+}
+
+/// 引擎完整管道（用户组件库 restore/snapshot 写回）——画布命令与 Agent 工具共用。
+pub(crate) fn exec_cli_pipeline(mut commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
     // snapshot 与变更命令同进程：跨进程注入的 restore 只读磁盘旧库，
     // 首次注册会得到空快照（鸡生蛋）。
     let mutating = commands.iter().any(|c| is_lib_mutating(c));
@@ -262,156 +268,59 @@ fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json::Value
     }))
 }
 
-/// Tauri 端 fx SDK 桥：与 server.py 的 /api/fx/agent 等价，通过 node 运行
-/// agent/agent-bridge.mjs（@open-agent-loops/core 桥），fx 的每次工具调用都在桥内经
-/// MoonViz AgentGate 校验并写回 canonical MBT。Rust 只传输 JSON 字节。
-/// 定位 agent-bridge.mjs 所在的 agent 目录：
-/// 1) dev：编译清单目录的上一级（<deepDesign>/agent——CARGO_MANIFEST_DIR 是 src-tauri）
-/// 2) 打包回退：从可执行文件向上逐级找 agent/agent-bridge.mjs
-///    - Windows（NSIS）：resources 落在 exe 旁 → dir/agent 直接命中
-///    - macOS（.app）：resources 落在 Contents/Resources/agent → 补查 dir/Resources/agent
-fn fx_agent_root() -> Result<PathBuf, String> {
+/// 内嵌引擎二进制所在目录（tauri resources 布局）：
+/// 1) dev：编译清单目录的上一级（<deepDesign>/engine——CARGO_MANIFEST_DIR 是 src-tauri）
+/// 2) 打包回退：从可执行文件向上逐级找 engine/moonviz-cli.exe
+///    - Windows（NSIS）：resources 落在 exe 旁 → dir/engine 直接命中
+///    - macOS（.app）：resources 落在 Contents/Resources/engine → 补查 dir/Resources/engine
+fn engine_bin_dir() -> Result<PathBuf, String> {
     let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
-        .join("agent");
-    if dev.join("agent-bridge.mjs").exists() {
+        .join("engine");
+    if dev.join("moonviz-cli.exe").exists() {
         return Ok(dev);
     }
     if let Ok(exe) = std::env::current_exe() {
         let mut dir = exe.parent().map(|p| p.to_path_buf());
         for _ in 0..4 {
             if let Some(d) = dir {
-                let cand = d.join("agent");
-                if cand.join("agent-bridge.mjs").exists() {
+                let cand = d.join("engine");
+                if cand.join("moonviz-cli.exe").exists() {
                     return Ok(cand);
                 }
-                let res_cand = d.join("Resources").join("agent");
-                if res_cand.join("agent-bridge.mjs").exists() {
+                let res_cand = d.join("Resources").join("engine");
+                if res_cand.join("moonviz-cli.exe").exists() {
                     return Ok(res_cand);
                 }
                 dir = d.parent().map(|p| p.to_path_buf());
             }
         }
     }
-    Err("fxsdk_bridge_missing".into())
+    Err("engine_bin_missing".into())
 }
 
-/// node 运行时定位（运行 agent-bridge.mjs 桥）：
-/// 1) MOONVIZ_NODE 环境变量 → 显式指定
-/// 2) 内嵌 agent/node.exe（resources，打包自包含——最终用户无需安装 Node.js）
-/// 3) 系统 PATH（仅 dev 布局使用，开发者本机有 node）
-fn resolve_node() -> Option<String> {
-    if let Ok(n) = std::env::var("MOONVIZ_NODE") {
-        let p = PathBuf::from(&n);
-        if p.is_file() {
-            return Some(p.display().to_string());
-        }
-        return None;
-    }
-    if let Ok(agent) = fx_agent_root() {
-        let bundled = agent.join("node.exe");
-        if bundled.is_file() {
-            return Some(bundled.display().to_string());
-        }
-    }
-    which_node()
-}
-
+/// Agent 基座入口（进程内，无 JS 运行时）：
+/// payload = { mode?:'models', instruction, mbt_b64?, api_key?, model?, base_url?, thinking_level? }
+/// 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text} / models 列表。
 #[tauri::command]
-fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
-    let app_root = fx_agent_root()?;
-    let bridge = app_root.join("agent-bridge.mjs");
-    let node = resolve_node().ok_or("node_unavailable")?;
-    let mut env: Vec<(String, String)> = std::env::vars().collect();
-    if !api_key.trim().is_empty() {
-        env.retain(|(k, _)| k != "AI_GATEWAY_API_KEY");
-        env.push(("AI_GATEWAY_API_KEY".to_string(), api_key));
+async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
+    let p: serde_json::Value =
+        serde_json::from_str(&payload).map_err(|e| format!("fxsdk_payload_invalid:{e}"))?;
+    let key = if !api_key.trim().is_empty() {
+        api_key
+    } else {
+        p.get("api_key").and_then(|v| v.as_str()).unwrap_or("").to_string()
+    };
+    if p.get("mode").and_then(|v| v.as_str()) == Some("models") {
+        let base = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
+        return Ok(agent::list_models(base, &key).await);
     }
-    // 桥与画布共用同一引擎调用：内嵌二进制存在时让桥直接 spawn 它
-    // （独立二进制无需引擎源码目录与 moon 工具链）。
-    if std::env::var("MOONVIZ_CLI").is_err() {
-        if let Ok(agent) = fx_agent_root() {
-            let bundled = agent.join("moonviz-cli.exe");
-            if bundled.is_file() {
-                env.retain(|(k, _)| k != "MOONVIZ_CLI");
-                env.push(("MOONVIZ_CLI".to_string(), bundled.display().to_string()));
-            }
-        }
-    }
-    let mut child = Command::new(&node)
-        .arg(&bridge)
-        .current_dir(&app_root)
-        .envs(env)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("fxsdk_spawn_failed:{e}"))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload.as_bytes())
-            .map_err(|e| format!("fxsdk_write_failed:{e}"))?;
-        // 显式关闭 stdin：桥的 readStdin() 依赖 EOF 才会开始执行
-        drop(stdin);
-    }
-    let output = wait_child_output(child, std::time::Duration::from_secs(300))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    match serde_json::from_str::<serde_json::Value>(stdout.trim()) {
-        Ok(value) if value.is_object() => Ok(value),
-        _ => Err(format!(
-            "fxsdk_bridge_failed:{}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )),
-    }
-}
-
-/// 带超时的 wait_with_output：管道由后台线程读取（避免子进程写满管道死锁），
-/// 主循环轮询 try_wait，超时 kill。原版 wait_with_output 无界等待，
-/// 桥内 maxSteps×每步 LLM+CLI 可能长时间运行。
-fn wait_child_output(
-    mut child: std::process::Child,
-    timeout: std::time::Duration,
-) -> Result<std::process::Output, String> {
-    let mut stdout_pipe = child.stdout.take();
-    let mut stderr_pipe = child.stderr.take();
-    let out_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(p) = stdout_pipe.as_mut() {
-            let _ = p.read_to_end(&mut buf);
-        }
-        buf
-    });
-    let err_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(p) = stderr_pipe.as_mut() {
-            let _ = p.read_to_end(&mut buf);
-        }
-        buf
-    });
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let stdout = out_handle.join().unwrap_or_default();
-                let stderr = err_handle.join().unwrap_or_default();
-                return Ok(std::process::Output {
-                    status,
-                    stdout,
-                    stderr,
-                });
-            }
-            Ok(None) => {
-                if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = out_handle.join();
-                    let _ = err_handle.join();
-                    return Err("fxsdk_timeout".into());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            Err(e) => return Err(format!("fxsdk_wait_failed:{e}")),
-        }
-    }
+    let instruction = p.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+    let mbt_b64 = p.get("mbt_b64").and_then(|v| v.as_str());
+    let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
+    let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
+    let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
+    Ok(agent::run(instruction, mbt_b64, &key, model, base_url, thinking).await)
 }
 
 /// 跨平台 home 目录：Windows 用 USERPROFILE，Unix 用 HOME。
@@ -419,56 +328,6 @@ fn home_dir() -> String {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default()
-}
-
-/// 在 PATH 中查找可执行文件（split_paths 处理 Unix ':' 与 Windows ';'，Windows 自动补 .exe）。
-fn find_in_path(name: &str) -> Option<String> {
-    let exe = if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    };
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let p = dir.join(&exe);
-        if p.is_file() {
-            return Some(p.display().to_string());
-        }
-    }
-    None
-}
-
-/// Locate a usable node binary for the fx SDK bridge.
-fn which_node() -> Option<String> {
-    if let Some(p) = find_in_path("node") {
-        return Some(p);
-    }
-    // GUI 启动的 app 继承的 PATH 可能不含用户 shell 的 bin——探测常见安装位置
-    let home = home_dir();
-    #[cfg(windows)]
-    let candidates: Vec<PathBuf> = {
-        let program_files =
-            std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".into());
-        vec![
-            PathBuf::from(program_files).join("nodejs").join("node.exe"),
-            PathBuf::from(&home)
-                .join("scoop")
-                .join("apps")
-                .join("nodejs")
-                .join("current")
-                .join("node.exe"),
-        ]
-    };
-    #[cfg(not(windows))]
-    let candidates: Vec<PathBuf> = vec![
-        PathBuf::from(&home).join(".volta").join("bin").join("node"),
-        PathBuf::from("/opt/homebrew/bin/node"),
-        PathBuf::from("/usr/local/bin/node"),
-    ];
-    candidates
-        .into_iter()
-        .find(|p| p.is_file())
-        .map(|p| p.display().to_string())
 }
 
 #[tauri::command]
