@@ -927,6 +927,7 @@ function serializeProject(task){const pending=projectQueue.then(task);projectQue
 let toolMode='select',mode='wireframe',playStack=[],currentSvg='',stageAnchors={};
 let linkSource=null;
 let inlineTarget=null;
+let ctxTarget=null;
 let suppressComponentClick=false;
 let thumbCache={};
 const $=id=>document.getElementById(id);
@@ -1163,6 +1164,9 @@ function renderFlowWires(stage){
   stage.insertBefore(wire,stage.firstChild);
 }
 function escapeCss(v){return String(v).replace(/[^a-zA-Z0-9_-]/g,'_');}
+/* HTML 文本转义：节点/画板 id 来自引擎文档，而文档可能是外部打开的 .ddp——
+ * 拼进 innerHTML 前必须转义，不要假设 id 一定是 ASCII（引擎目前并不清洗 id）。 */
+const escHtml=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 /* 连接模式优先级高于 Frame 切换：捕获阶段截断普通 onclick */
 function bindFlowTargetCapture(){
@@ -1320,6 +1324,373 @@ async function runOpNow(cmd,src){
   setStatus(src,cmd,true,last.op?(last.op+(last.detached?' · 脱离布局':'')):(last.flow||last.result||''));
   await refresh();
   return true;
+}
+
+/* ---------- 画布交互：点选 / 拖拽 / 双击改文字 ---------- */
+const nodeOf=id=>nodes.find(n=>n.id===id);
+function activeDisplayScale(){
+  const body=document.querySelector('.frame-wrap.active .frame-body');
+  const sess=sessions[active];
+  return body&&sess&&sess.w ? body.getBoundingClientRect().width/sess.w : (scale||1);
+}
+function onDown(e){
+  if(mode==='play')return;
+  if(e.button!==0)return;
+  // 只有 text 工具会在此消费点击。frame 工具尚无实现（无拖拽定义尺寸的引擎 op），
+  // 不要把它并进这个 guard——那会让它静默吞掉每一次画布点击、连节点选择都做不到。
+  if(toolMode==='text'){
+    const svg=$('fb-'+active)&&$('fb-'+active).querySelector('svg');
+    if(!svg)return;
+    const r=svg.getBoundingClientRect();
+    const localScale=r.width/(sessions[active]?sessions[active].w:1);
+    const cx=Math.round((e.clientX-r.left)/localScale),cy=Math.round((e.clientY-r.top)/localScale);
+    if(cx<0||cy<0)return;
+    placing++;
+    const nid=`text_${placing}`;
+    runOp(`place ${active} body_text ${nid} - ${cx} ${cy}`,'human').then(async ok=>{
+      if(ok){await runOp(`update ${active} ${nid} text=Text`,'human');select(nid,null);}
+    });
+    return;
+  }
+  const g=e.currentTarget&&e.currentTarget.id&&e.currentTarget.id.startsWith('n_') ? e.currentTarget : (e.target.closest&&e.target.closest('g[id^="n_"]'));
+  if(!g)return;
+  const nid=g.id.slice(2);
+  if(nid==='root'||nid==='__free__')return;
+  if(toolMode==='link'){
+    linkSource={from:active,node:nid};
+    select(nid,null);
+    $('canvas-scroll').classList.add('linking');
+    $('canvas-hint').textContent='源节点 '+nid+' 已选择 · 点击目标画板的标题栏完成连接';
+    toast('已选择源节点 '+nid+'，请点击目标画板标题栏');
+    return;
+  }
+  select(nid,e);
+  const n=nodeOf(nid);if(!n)return;
+  const startX=e.clientX,startY=e.clientY;let moved=false;
+  try{g.setPointerCapture(e.pointerId);}catch(_){}
+  const mv=ev=>{
+    const k=activeDisplayScale();
+    const dx=(ev.clientX-startX)/k,dy=(ev.clientY-startY)/k;
+    if(Math.abs(dx)>1.5||Math.abs(dy)>1.5)moved=true;
+    g.setAttribute('transform',`translate(${dx.toFixed(1)},${dy.toFixed(1)})`);
+  };
+  const up=async ev=>{
+    g.removeEventListener('pointermove',mv);g.removeEventListener('pointerup',up);
+    g.removeEventListener('pointercancel',onCancel);
+    if(!moved)return;
+    const k=activeDisplayScale();
+    const dx=(ev.clientX-startX)/k,dy=(ev.clientY-startY)/k;
+    await runOp(`move ${active} ${nid} ${Math.max(0,Math.round(n.rect.x+dx))} ${Math.max(0,Math.round(n.rect.y+dy))}`,'human');
+  };
+  // 指针被系统取消（手势/失焦）时必须同样摘掉监听：否则 mv 会留在节点上，
+  // 之后任何一次 pointerup 都会用陈旧基线误发一条 move op。
+  const onCancel=()=>{
+    g.removeEventListener('pointermove',mv);g.removeEventListener('pointerup',up);
+    g.removeAttribute('transform');
+  };
+  g.addEventListener('pointermove',mv);
+  g.addEventListener('pointerup',up);
+  g.addEventListener('pointercancel',onCancel);
+}
+/* 选中视觉：在活动 frame 上叠加选框 + 尺寸 chip（HTML 覆盖层） */
+function updateSel(){
+  const wrap=document.querySelector('.frame-wrap.active');
+  document.querySelectorAll('.seloverlay').forEach(x=>x.remove());
+  const n=selected&&nodeOf(selected);
+  if(!n||!wrap)return;
+  const svg=wrap.querySelector('.frame-body svg');
+  if(!svg)return;
+  const body=wrap.querySelector('.frame-body');
+  const br=body.getBoundingClientRect();
+  const sr=svg.getBoundingClientRect();
+  const dispScale=sr.width/(sessions[active]?sessions[active].w:1);
+  const box=document.createElement('div');
+  box.className='seloverlay';
+  box.style.cssText=`position:absolute;border:1.5px solid var(--acc);pointer-events:none;z-index:6;box-shadow:0 0 0 3px rgba(0,122,255,.15);border-radius:2px;
+    left:${n.rect.x*dispScale}px;top:${n.rect.y*dispScale}px;width:${Math.max(6,n.rect.w*dispScale)}px;height:${Math.max(6,n.rect.h*dispScale)}px`;
+  const chip=document.createElement('div');
+  chip.style.cssText=`position:absolute;left:${n.rect.x*dispScale}px;top:${(n.rect.y+n.rect.h)*dispScale+6}px;background:var(--acc);color:#fff;font-size:10px;font-weight:600;font-family:ui-monospace;padding:2px 6px;border-radius:4px;pointer-events:none;z-index:7;white-space:nowrap`;
+  chip.textContent=Math.round(n.rect.w)+' × '+Math.round(n.rect.h);
+  body.style.position='relative';
+  body.appendChild(box);body.appendChild(chip);
+}
+function select(nid,ev){
+  selected=nid;
+  document.querySelectorAll('#stage g.sel-hint').forEach(g=>g.classList.remove('sel-hint'));
+  if(nid){
+    const g=document.querySelector(`#fb-${active} g[id="n_${nid}"]`);
+    if(g)g.classList.add('sel-hint');
+  }
+  updateSel();renderInspector();
+  if(nid&&ev&&ev.clientX!==undefined)openAgentPop(ev);
+  else if(!nid)closeAgentPop();
+  if($('lp-layer').style.display!=='none')renderLayers();
+}
+/* 双击行内改文字 */
+function onDblClick(e){
+  if(mode==='play')return;
+  const g=e.target.closest('g[id^="n_"]');
+  if(!g)return;
+  const nid=g.id.slice(2);
+  const n=nodeOf(nid);
+  if(!n){return;}
+  if(n.kind==='image'){toast('图片节点请使用 Agent 添加说明');return;}
+  const r=g.getBoundingClientRect();
+  inlineTarget=nid;
+  const box=$('inline-edit');
+  box.style.display='block';
+  box.style.left=Math.min(r.left,window.innerWidth-260)+'px';
+  box.style.top=Math.min(r.top-6,window.innerHeight-50)+'px';
+  const inp=$('inline-input');
+  inp.value=n.text;inp.focus();inp.select();
+}
+async function commitInline(){
+  const v=$('inline-input').value;
+  $('inline-edit').style.display='none';
+  if(inlineTarget)await runOp(`update ${active} ${inlineTarget} text=${JSON.stringify(v)}`,'human');
+  inlineTarget=null;
+}
+function cancelInline(){$('inline-edit').style.display='none';inlineTarget=null;}
+
+/* ---------- 右键菜单（动态构建：节点 / 画布空白 / 画板卡片 / MBT 编辑器） ---------- */
+function showMenu(x,y,title,items){
+  const m=$('ctxmenu');
+  m.innerHTML='';
+  if(title){const t=document.createElement('div');t.className='ctx-title';t.textContent=title;m.appendChild(t);}
+  items.forEach(it=>{
+    if(it==='-'){const s=document.createElement('div');s.className='ctx-sep';m.appendChild(s);return;}
+    const b=document.createElement('button');
+    if(it.danger)b.className='danger';
+    const label=document.createElement('span');label.textContent=it.label;b.appendChild(label);
+    if(it.kbd){const k=document.createElement('span');k.className='kbd-hint';k.textContent=it.kbd;b.appendChild(k);}
+    b.onclick=ev=>{ev.stopPropagation();hideMenu();it.action();};
+    m.appendChild(b);
+  });
+  m.style.display='block';
+  m.style.left=Math.max(6,Math.min(x,window.innerWidth-210))+'px';
+  m.style.top=Math.max(6,Math.min(y,window.innerHeight-(items.length*33+40)))+'px';
+}
+function hideMenu(){const m=$('ctxmenu');if(m)m.style.display='none';}
+document.addEventListener('click',ev=>{if(ev.button!==0)return;hideMenu();});
+document.addEventListener('contextmenu',ev=>{
+  if(mode==='play')return;
+  // 只接管画布区域与源码编辑器的右键；其余交给系统/输入框默认菜单
+  const cs=$('canvas-scroll');
+  const ds=$('decl-stage');
+  if(cs&&cs.contains(ev.target)&&!(ds&&ds.contains(ev.target))){
+    const g=ev.target.closest&&ev.target.closest('g[id^="n_"]');
+    if(!g){ev.preventDefault();canvasMenu(ev.clientX,ev.clientY);}
+  }
+});
+window.addEventListener('blur',()=>hideMenu());
+
+function onCtx(e){
+  if(mode==='play')return;
+  const g=e.target.closest&&e.target.closest('g[id^="n_"]');
+  if(g){
+    e.preventDefault();
+    ctxTarget=g.id.slice(2);
+    if(ctxTarget==='root'){toast('画板根节点不可删除——如需删除整个画板，请右键画板标题栏');return;}
+    if(selected!==ctxTarget)select(ctxTarget);
+    nodeMenu(e.clientX,e.clientY);
+    return;
+  }
+  // WKWebView 里 svg 内点击可能落到根/装饰层：画布模式下的空白右键统一给画布菜单
+  if(mode==='wireframe'||mode==='hifi'){e.preventDefault();canvasMenu(e.clientX,e.clientY);}
+}
+function nodeMenu(x,y){
+  const nid=ctxTarget;
+  showMenu(x,y,nid,[
+    {label:'✏️ 编辑文字',kbd:'双击',action:()=>startInlineEdit(nid,x,y)},
+    {label:'⧉ 复制元素',action:()=>ctxDo('copy')},
+    '-',
+    {label:'⬆ 置顶',action:()=>ctxDo('front')},
+    {label:'⬇ 置底',action:()=>ctxDo('back')},
+    '-',
+    {label:'↔ 水平居中',action:()=>ctxDo('hcenter')},
+    {label:'↕ 垂直居中',action:()=>ctxDo('vcenter')},
+    {label:'⇋ 水平翻转',action:()=>ctxDo('fh')},
+    {label:'⇵ 垂直翻转',action:()=>ctxDo('fv')},
+    '-',
+    {label:'🔗 从这里链接交互…',action:()=>ctxDo('link')},
+    {label:'🗑 删除元素',kbd:'⌫',danger:true,action:()=>ctxDo('del')},
+  ]);
+}
+function canvasMenu(x,y){
+  showMenu(x,y,'画布',[
+    {label:'✚ 新建画板',kbd:'⇧⌘N',action:()=>createBlank()},
+    {label:'⧉ 复制当前画板',kbd:'⇧⌘D',action:()=>duplicateActiveBoard()},
+    '-',
+    {label:mode==='hifi'?'◻ 切换到线框图':'🎨 切换到高保真',action:()=>setMode(mode==='hifi'?'wireframe':'hifi')},
+    {label:'‹/› 查看 MBT 源码',kbd:'⌘3',action:()=>setMode('decl')},
+    {label:'✓ 校验并渲染（AgentGate）',action:()=>validateMbt()},
+    {label:'▶ 演示模式',kbd:'⌘4',action:()=>setMode('play')},
+    '-',
+    {label:'⛶ 适配窗口',kbd:'⌘0',action:()=>zoomReset()},
+  ]);
+}
+function artboardMenu(x,y,id){
+  showMenu(x,y,id,[
+    {label:'→ 切换到此画板',action:()=>{if(id!==active)switchSession(id);}},
+    {label:'⧉ 复制此画板',action:()=>duplicateBoard(id)},
+    '-',
+    {label:'▶ 从此画板演示',action:()=>{if(id!==active)switchSession(id).then(()=>setMode('play'));else setMode('play');}},
+    '-',
+    {label:'🗑 删除此画板',kbd:'⇧⌘⌫',danger:true,action:()=>deleteBoard(id)},
+  ]);
+}
+async function deleteBoard(id){
+  if(Object.keys(sessions).length<=1){toast('至少保留一个画板');return;}
+  const ok=await runOp(`delete-artboard ${id}`,'human');
+  if(ok){toast(`画板 ${id} 已删除`);}
+}
+function declMenu(x,y){
+  showMenu(x,y,'MBT 源码 · 唯一事实源',[
+    {label:'⌿ 全选',kbd:'⌘A',action:()=>{const d=$('decl-text');d.focus();d.select();}},
+    {label:'⧉ 复制源码',action:()=>{navigator.clipboard.writeText($('decl-text').value).then(()=>toast('已复制完整 .mbt.md'));}},
+    '-',
+    {label:'✓ 校验并渲染（AgentGate）',action:()=>validateMbt()},
+    {label:'🗑 清空编辑器',danger:true,action:()=>{$('decl-text').value='';$('decl-text').focus();}},
+  ]);
+}
+function startInlineEdit(nid,x,y){
+  const n=nodeOf(nid);if(!n)return;
+  if(n.kind==='image'){toast('图片节点请使用 Agent 添加说明');return;}
+  inlineTarget=nid;
+  const box=$('inline-edit');
+  box.style.display='block';
+  box.style.left=Math.min(x,window.innerWidth-260)+'px';
+  box.style.top=Math.min(y-6,window.innerHeight-50)+'px';
+  const inp=$('inline-input');
+  inp.value=n.text;inp.focus();inp.select();
+}
+async function duplicateBoard(id){
+  const nid=newId();
+  const ok=await runOp(`duplicate ${id} ${nid}`,'human');
+  if(ok)toast(`画板已复制：${id} → ${nid}`);
+}
+function duplicateActiveBoard(){if(active)duplicateBoard(active);else toast('先创建画板');}
+async function ctxDo(a){
+  const nid=ctxTarget;if(!nid)return;
+  if(a==='copy'){placing++;await runOp(`copy ${active} ${nid} ${nid}_c${placing} 24 24`,'human');}
+  else if(a==='front'||a==='back')await runOp(`reorder ${active} ${nid} ${a}`,'human');
+  else if(a==='del'){await runOp(`delete ${active} ${nid}`,'human');select(null);}
+  else if(a==='fh')await runOp(`flip ${active} ${nid} h`,'human');
+  else if(a==='fv')await runOp(`flip ${active} ${nid} v`,'human');
+  else if(a==='hcenter'){const n=nodeOf(nid);if(n){const x=Math.max(0,Math.round((currentW-n.rect.w)/2));await runOp(`move ${active} ${nid} ${x} ${Math.round(n.rect.y)}`,'human');}}
+  else if(a==='vcenter'){const n=nodeOf(nid);if(n){const y=Math.max(0,Math.round((currentH-n.rect.h)/2));await runOp(`move ${active} ${nid} ${Math.round(n.rect.x)} ${y}`,'human');}}
+  else if(a==='link'){
+    toolMode='link';linkSource={from:active,node:nid};
+    document.querySelectorAll('.ctool[data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='link'));
+    $('canvas-scroll').classList.add('linking');
+    $('canvas-hint').textContent='连接工具：已选源 '+nid+'，点击目标画板完成链接';
+    toast('已选源 '+nid+' — 点击目标画板标题栏完成链接');
+  }
+}
+
+/* ---------- 原生菜单栏事件桥（macOS 菜单 → 前端动作） ---------- */
+function nativeMenuAction(id){
+  const map={
+    'new-project':()=>newProject(),
+    'open-ddp':()=>openProject(),
+    'save':()=>saveProject(),
+    'export-ddp':()=>exportDdp(),
+    'view-wireframe':()=>setMode('wireframe'),
+    'view-hifi':()=>setMode('hifi'),
+    'view-decl':()=>setMode('decl'),
+    'view-play':()=>setMode('play'),
+    'view-fit':()=>zoomReset(),
+    'board-new':()=>createBlank(),
+    'board-dup':()=>duplicateActiveBoard(),
+    'autofix':()=>runAutoFix(),
+    'validate':()=>{setMode('decl');validateMbt();},
+    'shortcuts':()=>openShortcuts(),
+    'settings':()=>openSettings(),
+  };
+  if(map[id])map[id]();
+}
+/* 原生菜单经 Rust webview.eval 直调 nativeMenuAction；
+ * 不再注册 event.listen——Tauri ACL 默认未放行 event:allow-listen，
+ * 曾在状态栏留下「引擎调用失败 × event.listen not allowed」报错。 */
+/* ---------- 快捷键说明弹窗 ---------- */
+function openShortcuts(){$('shortcuts-modal').style.display='flex';}
+function closeShortcuts(){$('shortcuts-modal').style.display='none';}
+document.getElementById('decl-text').addEventListener('input',renderDeclHighlight);
+document.getElementById('decl-text').addEventListener('scroll',function(){const hl=$('decl-hl');hl.scrollTop=this.scrollTop;hl.scrollLeft=this.scrollLeft;});
+document.addEventListener('keydown',async e=>{
+  if($('export-choice').style.display==='flex'){if(e.key==='Escape')closeExportChoice('cancel');return;}
+  if($('shortcuts-modal').style.display==='flex'){if(e.key==='Escape')closeShortcuts();return;}
+  if(mode==='play'){if(e.key==='Escape')playBack();return;}
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();$('gp-input').focus();return;}
+  if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveProject();return;}
+  if(document.activeElement&&(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA'))return;
+  if(e.key==='Escape'&&(placeMode||linkSource)){placeMode=null;linkSource=null;$('canvas-scroll').classList.remove('placing','linking');$('canvas-hint').textContent='选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流';return;}
+  if(e.key.startsWith('Arrow')&&selected){
+    e.preventDefault();
+    const n=nodeOf(selected);if(!n)return;
+    const st=e.shiftKey?10:1;
+    const d={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[e.key];
+    if(d)await runOp(`move ${active} ${selected} ${Math.round(n.rect.x+d[0])} ${Math.round(n.rect.y+d[1])}`,'human');
+    return;
+  }
+  if((e.key==='Delete'||e.key==='Backspace')&&selected){
+    await runOp(`delete ${active} ${selected}`,'human');select(null);
+  }
+});
+
+/* ---------- 悬浮行内 Agent ---------- */
+const QUICK=['文字大一点','改成主色','更圆润','加阴影','居中','链接到下一个画板'];
+function openAgentPop(ev){
+  const n=nodeOf(selected);if(!n)return;
+  const pop=$('agent-pop');
+  $('ap-ctx').textContent=selected+' · '+(n.component&&n.component!=='frame'?n.component:n.kind);
+  $('ap-plan').style.display='none';$('ap-result').style.display='none';
+  const chips=$('ap-chips');chips.innerHTML='';
+  QUICK.forEach(c=>{const s=document.createElement('span');s.className='ap-chip';s.textContent=c;s.onclick=()=>{$('ap-input').value=c;$('ap-input').focus();};chips.appendChild(s);});
+  pop.style.display='block';
+  let px=ev.clientX+14,py=ev.clientY-40;
+  if(py<60)py=60;
+  pop.style.left=Math.min(px,window.innerWidth-360)+'px';
+  pop.style.top=Math.min(py,window.innerHeight-pop.offsetHeight-16)+'px';
+  setTimeout(()=>$('ap-input').focus(),40);
+}
+function closeAgentPop(){$('agent-pop').style.display='none';}
+/* 悬浮 Agent 执行：唯一基座为 Rust 进程内 agent（src-tauri/src/agent.rs） */
+async function sendAgent(){
+  const text=$('ap-input').value.trim();if(!text||!selected)return;
+  const n=nodeOf(selected);if(!n)return;
+  $('ap-send').disabled=true;
+  const planEl=$('ap-plan');const res=$('ap-result');
+  const showSteps=steps=>{planEl.style.display='block';planEl.innerHTML=steps.map((s,i)=>`<div class="step" id="apstep${i}"><span class="n">${i+1}</span><span>${escHtml(s)}</span></div>`).join('');};
+  try{
+    loadAgentConfig();
+    // 注入选区上下文，让 agent 知道用户针对哪个节点/画板
+    const ctx=`Target: node "${n.id}" on artboard "${active}". Task: ${text}`;
+    const r=await askFxSdk(ctx);
+    showSteps(r.ops.map(x=>'op→ '+x));
+    if(!r.ops.length){res.style.display='block';res.className='ap-result err';res.textContent='未生成可执行操作';$('ap-send').disabled=false;return;}
+    try{applyMbtResult(r.render);}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用渲染结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;return;}
+    document.querySelectorAll('#ap-plan .step').forEach(s=>s.classList.add('done'));
+    res.style.display='block';res.className='ap-result ok';
+    const cut=r.stopReason==='max_turns'?'（已达步数上限）':(r.stopReason==='error'?'（中途出错，已保留完成部分）':'');
+    res.textContent=`已通过 MoonViz 提交 ${r.ops.length} 条变更（AgentGate）${cut}${r.text?' — '+String(r.text).slice(0,120):''}`;
+    trackAgent(text,r.ops);
+    $('ap-send').disabled=false;$('ap-input').value='';
+  }catch(err){
+    res.style.display='block';res.className='ap-result err';res.textContent='Agent 不可用：'+String(err).slice(0,120);
+    $('ap-send').disabled=false;
+  }
+}
+/* Agent 追踪（参考 diff 卡） */
+function trackAgent(instruction,cmds){
+  const body=$('tl-body');
+  if(body.querySelector('.empty-insp'))body.innerHTML='';
+  const d=document.createElement('div');d.className='trk';
+  const time=new Date().toTimeString().slice(0,5);
+  d.innerHTML=`<div class="trk-h"><span class="who">⚡ AGENT · ${escHtml(selected||active)}</span><span class="tm">${time}</span></div>
+    <div class="trk-msg">“${escHtml(instruction)}”</div>
+    ${cmds.length?`<div class="trk-cmds">${cmds.map((c,i)=>`<div class="pi"><span class="num">${i+1}</span><span>${escHtml(c)}</span></div>`).join('')}</div>`:''}`;
+  body.prepend(d);
 }
 /* ---------- MoonBit 源码高亮（scope 名对齐官方 moonbit-tmLanguage） ---------- */
 function mbtHighlight(text){
