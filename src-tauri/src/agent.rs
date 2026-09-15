@@ -88,41 +88,46 @@ fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
 }
 
-/// thinking 家族表（按各家官方 API 文档核对，2026-09）：
-/// - DeepSeek / GLM(智谱) / Kimi(Moonshot) 官方 OpenAI 兼容端点统一为
-///   body 顶层 `thinking: {"type": "enabled"|"disabled"}`
-///   （DeepSeek https://api-docs.deepseek.com/guides/thinking_mode/；
-///    GLM docs.bigmodel.cn/cn/guide/capabilities/thinking；
-///    Kimi platform.kimi.ai/docs/guide/use-thinking-models）
-/// - MiniMax M3：`thinking: {"type": "adaptive"(默认)|"disabled"}`——on 档省略
-///   参数（默认即 adaptive 开启），off 档显式 disabled（M2.x 接受但忽略，无害）
-/// - Qwen：官方 DashScope 兼容模式不支持 body 开关，保留 vLLM 自部署方言
-///   chat_template_kwargs.enable_thinking
-/// - 兼容前端历史保存的 low/medium/high 档位 → on（对齐旧桥 mapThinking）
-/// - auto / 未知模型 → None（服务端默认）
+/// 思考控制（按四家官方文档核对，2026-09）：
+/// 思考等级收敛为 OpenAI 标准字段 `reasoning_effort`（低/中/高/最深），
+/// 开关收敛为 body 顶层 `thinking: {"type": "enabled"|"disabled"}`。
+/// - DeepSeek（api-docs.deepseek.com/guides/thinking_mode）：
+///   reasoning_effort: low/high/max（min/medium/xhigh/ultra 服务端自动映射）
+/// - Kimi 订阅端点 api.kimi.com/coding/v1（kimi.com/code/docs）：
+///   reasoning_effort: low/high/max（medium→high、minimum/light→low、none→关闭）
+/// - GLM 5.2+（docs.bigmodel.cn/cn/guide/capabilities/thinking）：
+///   reasoning_effort: max/xhigh/high/medium/low/minimal/none（5.3 仅 max/high/low；
+///   5.3 的 thinking.type=disabled 会报错，off 档为其服务端限制）
+/// - MiniMax M3（platform.minimax.io/docs/api-reference/text-openai-api）：
+///   仅 thinking.type adaptive(默认)/disabled，不支持 effort —— 等级档不注入
+/// - Qwen：官方 DashScope 兼容模式无 body 开关，保留 vLLM 自部署方言
+/// 档位归一：off / auto / low / medium / high / max；旧值 on → high。
+/// auto 及未知 → None（服务端默认）。
 fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
     let level = match level {
-        "on" | "low" | "medium" | "high" => "on",
         "off" => "off",
+        "on" | "high" => "high",
+        "low" => "low",
+        "medium" => "medium",
+        "max" => "max",
         _ => "auto",
     };
     if level == "auto" {
         return None;
     }
-    let on = level == "on";
     let m = model.to_ascii_lowercase();
-    if m.contains("minimax") {
-        if on {
-            None
-        } else {
-            Some(json!({"thinking": {"type": "disabled"}}))
-        }
-    } else if m.contains("glm") || m.contains("kimi") || m.contains("deepseek") {
-        Some(json!({"thinking": {"type": if on {"enabled"} else {"disabled"}}}))
-    } else if m.contains("qwen") {
-        Some(json!({"chat_template_kwargs": {"enable_thinking": on}}))
-    } else {
+    if m.contains("qwen") && level == "off" {
+        // vLLM 自部署方言（DashScope 兼容模式无 body 开关）
+        return Some(json!({"chat_template_kwargs": {"enable_thinking": false}}));
+    }
+    if level == "off" {
+        Some(json!({"thinking": {"type": "disabled"}}))
+    } else if m.contains("minimax") || m.contains("qwen") {
+        // MiniMax 仅支持开关（等级回落默认 adaptive）；Qwen DashScope 兼容模式
+        // 对未知 body 字段严格（400）——两者的等级档均不注入
         None
+    } else {
+        Some(json!({"reasoning_effort": level}))
     }
 }
 
@@ -608,32 +613,54 @@ mod tests {
     #[test]
     fn thinking_family_table() {
         // auto / 未知模型：不注入
-        assert_eq!(thinking_extra_body("GLM-5", "auto"), None);
-        assert_eq!(thinking_extra_body("some-plain-model", "on"), None);
-        // DeepSeek / GLM / Kimi 官方 API：body 顶层 thinking.type
+        assert_eq!(thinking_extra_body("GLM-5.2", "auto"), None);
+        // reasoning_effort 是 OpenAI 标准字段：未知模型（如 "k2.6" 不带品牌名）也统一下发，
+        // 由服务端决定接受或忽略；严格拒绝的端点会以 llm_http_4xx 透传给用户
         assert_eq!(
-            thinking_extra_body("glm-4.7", "on"),
-            Some(json!({"thinking": {"type": "enabled"}}))
+            thinking_extra_body("some-plain-model", "high"),
+            Some(json!({"reasoning_effort": "high"}))
+        );
+        // 等级档 → OpenAI 标准 reasoning_effort（DeepSeek/Kimi/GLM 统一）
+        assert_eq!(
+            thinking_extra_body("deepseek-chat", "high"),
+            Some(json!({"reasoning_effort": "high"}))
         );
         assert_eq!(
-            thinking_extra_body("DeepSeek-V4", "off"),
+            thinking_extra_body("glm-5.2", "max"),
+            Some(json!({"reasoning_effort": "max"}))
+        );
+        assert_eq!(
+            thinking_extra_body("kimi-for-coding", "low"),
+            Some(json!({"reasoning_effort": "low"}))
+        );
+        assert_eq!(
+            thinking_extra_body("kimi-k2.6", "medium"),
+            Some(json!({"reasoning_effort": "medium"}))
+        );
+        // 旧值 on → high（前端历史保存配置迁移）
+        assert_eq!(
+            thinking_extra_body("deepseek-chat", "on"),
+            Some(json!({"reasoning_effort": "high"}))
+        );
+        // off → thinking disabled（GLM/Kimi/DeepSeek/MiniMax 官方统一格式）
+        assert_eq!(
+            thinking_extra_body("glm-5.2", "off"),
             Some(json!({"thinking": {"type": "disabled"}}))
         );
         assert_eq!(
-            thinking_extra_body("moonshotai/kimi-k2.6", "off"),
+            thinking_extra_body("MiniMax-M3", "off"),
             Some(json!({"thinking": {"type": "disabled"}}))
         );
-        // MiniMax M3：off → disabled；on → 省略（默认 adaptive）
-        assert_eq!(thinking_extra_body("MiniMax-M3", "off"), Some(json!({"thinking": {"type": "disabled"}})));
-        assert_eq!(thinking_extra_body("MiniMax-M3", "on"), None);
-        assert_eq!(thinking_extra_body("MiniMax-M2.7", "off"), Some(json!({"thinking": {"type": "disabled"}})));
-        // Qwen：vLLM 自部署方言保留
+        // MiniMax 不支持等级：low/medium/high/max 均不注入（默认 adaptive）
+        assert_eq!(thinking_extra_body("MiniMax-M3", "high"), None);
+        assert_eq!(thinking_extra_body("MiniMax-M3", "max"), None);
+        // Qwen off → vLLM 自部署方言
         assert_eq!(
-            thinking_extra_body("qwen3-max", "on"),
-            Some(json!({"chat_template_kwargs": {"enable_thinking": true}}))
+            thinking_extra_body("qwen3-max", "off"),
+            Some(json!({"chat_template_kwargs": {"enable_thinking": false}}))
         );
-        // 前端历史保存的 low/medium/high → on（对齐旧桥）
-        assert_eq!(thinking_extra_body("deepseek-chat", "high"), Some(json!({"thinking": {"type": "enabled"}})));
+        // Qwen 等级档：不注入（DashScope 无对应字段）
+        assert_eq!(thinking_extra_body("qwen3-max", "high"), None);
     }
 
     #[test]
