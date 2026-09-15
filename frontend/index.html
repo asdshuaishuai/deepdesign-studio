@@ -868,7 +868,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div class="settings-sec">AI 端点（Agent）</div>
     <p class="settings-note">Agent 基于 @open-agent-loops/core（原生 OpenAI 兼容），操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点（OpenAI chat 兼容格式）。</p>
     <div class="settings-grid">
-      <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi</button><button type="button" class="prov-chip" data-prov="kimi-coding" onclick="applyProvider('kimi-coding')">Kimi 订阅</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="glm-coding" onclick="applyProvider('glm-coding')">GLM Coding</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="minimax-intl" onclick="applyProvider('minimax-intl')">MiniMax 国际</button></label>
+      <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="glm-coding" onclick="applyProvider('glm-coding')">GLM Coding</button><button type="button" class="prov-chip" data-prov="zai" onclick="applyProvider('zai')">z.ai</button><button type="button" class="prov-chip" data-prov="zai-coding" onclick="applyProvider('zai-coding')">z.ai Coding</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi API</button><button type="button" class="prov-chip" data-prov="kimi-plan" onclick="applyProvider('kimi-plan')">Kimi 订阅</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="minimax-intl" onclick="applyProvider('minimax-intl')">MiniMax 国际</button><button type="button" class="prov-chip" data-prov="stepfun" onclick="applyProvider('stepfun')">StepFun</button><button type="button" class="prov-chip" data-prov="stepfun-plan" onclick="applyProvider('stepfun-plan')">StepFun 订阅</button></label>
       <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = https://api.deepseek.com（DeepSeek 默认）；支持任意 OpenAI 兼容端点，本地 http 仅限内网地址"></label>
       <label class="wide">API Token<input id="agent-api-key" type="password" autocomplete="off" placeholder="仅本机保存；留空则用环境变量 AI_GATEWAY_API_KEY；订阅计划填专属 Key（MiniMax 为 sk-cp- 前缀）"></label>
       <label class="wide">Model ID
@@ -2313,13 +2313,17 @@ function toggleMode(){setAppMode(document.body.dataset.mode==='dark'?'light':'da
 let agentConfig={baseUrl:'',apiKey:'',model:'',thinkingLevel:'auto'};
 function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};agentConfig.thinkingLevel={on:'high'}[agentConfig.thinkingLevel]||(['auto','off','low','medium','high','max'].includes(agentConfig.thinkingLevel)?agentConfig.thinkingLevel:'auto');}catch(_){} }
 const PROVIDERS={
-  deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-chat'},
-  kimi:{baseUrl:'https://api.moonshot.cn/v1',model:'kimi-k2.6'},
-  'kimi-coding':{baseUrl:'https://api.kimi.com/coding/v1',model:'kimi-for-coding'},
-  glm:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-5.2'},
-  'glm-coding':{baseUrl:'https://open.bigmodel.cn/api/coding/paas/v4',model:'glm-5.2'},
+  deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-flash'},
+  glm:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-5.3'},
+  'glm-coding':{baseUrl:'https://open.bigmodel.cn/api/coding/paas/v4',model:'glm-5.3'},
+  zai:{baseUrl:'https://api.z.ai/api/paas/v4',model:'glm-5.3'},
+  'zai-coding':{baseUrl:'https://api.z.ai/api/coding/paas/v4',model:'glm-5.3'},
+  kimi:{baseUrl:'https://api.moonshot.cn/v1',model:'kimi-k3'},
+  'kimi-plan':{baseUrl:'https://api.kimi.com/coding/v1',model:'kimi-for-coding'},
   minimax:{baseUrl:'https://api.minimax.cn/v1',model:'MiniMax-M3'},
   'minimax-intl':{baseUrl:'https://api.minimax.io/v1',model:'MiniMax-M3'},
+  stepfun:{baseUrl:'https://api.stepfun.com/v1',model:'step-3.7-flash'},
+  'stepfun-plan':{baseUrl:'https://api.stepfun.com/step_plan/v1',model:'step-3.7-flash'},
 };
 /* MiniMax 思考能力等级：M3 支持 adaptive/disabled；M2.x 服务端不可关（UI 提示） */
 const MINIMAX_STATIC_MODELS=['MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed','MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2'];

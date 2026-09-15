@@ -88,21 +88,22 @@ fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
 }
 
-/// 思考控制（按四家官方文档核对，2026-09）：
-/// 思考等级收敛为 OpenAI 标准字段 `reasoning_effort`（低/中/高/最深），
-/// 开关收敛为 body 顶层 `thinking: {"type": "enabled"|"disabled"}`。
-/// - DeepSeek（api-docs.deepseek.com/guides/thinking_mode）：
-///   reasoning_effort: low/high/max（min/medium/xhigh/ultra 服务端自动映射）
-/// - Kimi 订阅端点 api.kimi.com/coding/v1（kimi.com/code/docs）：
-///   reasoning_effort: low/high/max（medium→high、minimum/light→low、none→关闭）
-/// - GLM 5.2+（docs.bigmodel.cn/cn/guide/capabilities/thinking）：
-///   reasoning_effort: max/xhigh/high/medium/low/minimal/none（5.3 仅 max/high/low；
-///   5.3 的 thinking.type=disabled 会报错，off 档为其服务端限制）
-/// - MiniMax M3（platform.minimax.io/docs/api-reference/text-openai-api）：
-///   仅 thinking.type adaptive(默认)/disabled，不支持 effort —— 等级档不注入
-/// - Qwen：官方 DashScope 兼容模式无 body 开关，保留 vLLM 自部署方言
-/// 档位归一：off / auto / low / medium / high / max；旧值 on → high。
-/// auto 及未知 → None（服务端默认）。
+/// 思考控制（逐家官方文档核对，2026-09；等级=OpenAI 标准 reasoning_effort，
+/// 开关=body 顶层 thinking.type）：
+/// - DeepSeek（api-docs.deepseek.com）：effort low/high/max（min/medium/xhigh/ultra
+///   服务端自动映射）；off→thinking disabled；思考模式忽略 temperature
+/// - GLM-5.3 / 5.3-flash（docs.bigmodel.cn 与 docs.z.ai，bigmodel/z.ai 双平台同参数）：
+///   强制思考——off 降级 effort=low、medium 降级 high（官方迁移指引：disabled→enabled+low；
+///   仅 low/high/max 三档）
+/// - GLM-5.2 及更早：thinking.type 开关 + effort 七档（max/xhigh/high/medium/low/minimal/none）
+/// - Kimi k3 / kimi-for-coding（platform.kimi.com + kimi.com/code）：恒开思考无开关——
+///   off→effort none（路由到无思考版），等级 low/high/max（medium 降级 high）
+/// - Kimi k2.x：thinking.type 开关（k2.6）；等级档不传（未定义）
+/// - MiniMax M2/M3：仅 thinking.type adaptive(默认)/disabled，无等级（M2.x disabled 忽略）
+/// - StepFun（platform.stepfun.com，含 Step Plan step_plan/v1）：effort low/medium/high
+///   （max 降级 high），无开关
+/// - Qwen：DashScope 兼容模式对未知字段严格——仅 vLLU 自部署方言 off 开关
+/// 档位归一：off / auto / low / medium / high / max；旧值 on → high；未知 → auto。
 fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
     let level = match level {
         "off" => "off",
@@ -116,19 +117,71 @@ fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
         return None;
     }
     let m = model.to_ascii_lowercase();
-    if m.contains("qwen") && level == "off" {
-        // vLLM 自部署方言（DashScope 兼容模式无 body 开关）
-        return Some(json!({"chat_template_kwargs": {"enable_thinking": false}}));
+
+    // GLM-5.3 家族（含 5.3-flash，bigmodel/z.ai 同构）：强制思考，仅 low/high/max
+    if m.contains("glm-5.3") || m.contains("glm-5.3-flash") {
+        return Some(json!({"reasoning_effort": match level {
+            "off" | "low" => "low",
+            "medium" | "high" => "high",
+            _ => "max",
+        }}));
     }
+    // Kimi k3 / 订阅 kimi-for-coding：恒开思考；off→none（路由无思考版）；无 medium
+    if m.contains("k3") || m.contains("kimi-for-coding") {
+        return Some(json!({"reasoning_effort": match level {
+            "off" => "none",
+            "medium" => "high",
+            lv => lv,
+        }}));
+    }
+    // Kimi k2.x：仅开关
+    if m.contains("kimi") || m.contains("moonshot") {
+        if level == "off" {
+            return Some(json!({"thinking": {"type": "disabled"}}));
+        }
+        return None;
+    }
+    // GLM-5.2 及更早：开关 + 全档 effort
+    if m.contains("glm") {
+        if level == "off" {
+            return Some(json!({"thinking": {"type": "disabled"}}));
+        }
+        return Some(json!({"reasoning_effort": level}));
+    }
+    // MiniMax：仅开关，无等级
+    if m.contains("minimax") {
+        if level == "off" {
+            return Some(json!({"thinking": {"type": "disabled"}}));
+        }
+        return None;
+    }
+    // StepFun（含 Step Plan）：effort 三档，无开关
+    if m.contains("step") {
+        return Some(json!({"reasoning_effort": match level {
+            "off" | "low" => "low",
+            "max" => "high",
+            lv => lv,
+        }}));
+    }
+    // DeepSeek：开关 + effort（medium 等由服务端映射）
+    if m.contains("deepseek") {
+        if level == "off" {
+            return Some(json!({"thinking": {"type": "disabled"}}));
+        }
+        return Some(json!({"reasoning_effort": level}));
+    }
+    // Qwen：DashScope 严格——仅 vLLM 自部署 off 方言
+    if m.contains("qwen") {
+        if level == "off" {
+            return Some(json!({"chat_template_kwargs": {"enable_thinking": false}}));
+        }
+        return None;
+    }
+    // 默认（未知/自定义模型）：OpenAI 标准字段直传，严格端点的 4xx 会透传给用户
     if level == "off" {
-        Some(json!({"thinking": {"type": "disabled"}}))
-    } else if m.contains("minimax") || m.contains("qwen") {
-        // MiniMax 仅支持开关（等级回落默认 adaptive）；Qwen DashScope 兼容模式
-        // 对未知 body 字段严格（400）——两者的等级档均不注入
-        None
-    } else {
-        Some(json!({"reasoning_effort": level}))
+        return Some(json!({"thinking": {"type": "disabled"}}));
     }
+    Some(json!({"reasoning_effort": level}))
 }
 
 /// 只读命令：走 load-mbt-b64 管道而非 apply-op 路径。
@@ -612,55 +665,47 @@ mod tests {
 
     #[test]
     fn thinking_family_table() {
-        // auto / 未知模型：不注入
-        assert_eq!(thinking_extra_body("GLM-5.2", "auto"), None);
-        // reasoning_effort 是 OpenAI 标准字段：未知模型（如 "k2.6" 不带品牌名）也统一下发，
-        // 由服务端决定接受或忽略；严格拒绝的端点会以 llm_http_4xx 透传给用户
-        assert_eq!(
-            thinking_extra_body("some-plain-model", "high"),
-            Some(json!({"reasoning_effort": "high"}))
-        );
-        // 等级档 → OpenAI 标准 reasoning_effort（DeepSeek/Kimi/GLM 统一）
-        assert_eq!(
-            thinking_extra_body("deepseek-chat", "high"),
-            Some(json!({"reasoning_effort": "high"}))
-        );
-        assert_eq!(
-            thinking_extra_body("glm-5.2", "max"),
-            Some(json!({"reasoning_effort": "max"}))
-        );
-        assert_eq!(
-            thinking_extra_body("kimi-for-coding", "low"),
-            Some(json!({"reasoning_effort": "low"}))
-        );
-        assert_eq!(
-            thinking_extra_body("kimi-k2.6", "medium"),
-            Some(json!({"reasoning_effort": "medium"}))
-        );
-        // 旧值 on → high（前端历史保存配置迁移）
-        assert_eq!(
-            thinking_extra_body("deepseek-chat", "on"),
-            Some(json!({"reasoning_effort": "high"}))
-        );
-        // off → thinking disabled（GLM/Kimi/DeepSeek/MiniMax 官方统一格式）
-        assert_eq!(
-            thinking_extra_body("glm-5.2", "off"),
-            Some(json!({"thinking": {"type": "disabled"}}))
-        );
-        assert_eq!(
-            thinking_extra_body("MiniMax-M3", "off"),
-            Some(json!({"thinking": {"type": "disabled"}}))
-        );
-        // MiniMax 不支持等级：low/medium/high/max 均不注入（默认 adaptive）
+        // auto：任何模型都不注入
+        assert_eq!(thinking_extra_body("GLM-5.3", "auto"), None);
+        // GLM-5.3 / 5.3-flash（bigmodel 与 z.ai 同构）：强制思考，off/low→low、medium/high→high、max→max
+        assert_eq!(thinking_extra_body("glm-5.3", "off"), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("GLM-5.3-Flash", "low"), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("glm-5.3", "medium"), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("glm-5.3", "max"), Some(json!({"reasoning_effort": "max"})));
+        // GLM-5.2：开关 + 全档
+        assert_eq!(thinking_extra_body("glm-5.2", "off"), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("glm-5.2", "max"), Some(json!({"reasoning_effort": "max"})));
+        assert_eq!(thinking_extra_body("glm-5.2", "medium"), Some(json!({"reasoning_effort": "medium"})));
+        // Kimi k3 / kimi-for-coding（订阅）：恒开，off→none，medium→high
+        assert_eq!(thinking_extra_body("kimi-k3", "off"), Some(json!({"reasoning_effort": "none"})));
+        assert_eq!(thinking_extra_body("kimi-k3", "medium"), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("kimi-k3", "max"), Some(json!({"reasoning_effort": "max"})));
+        assert_eq!(thinking_extra_body("kimi-for-coding", "low"), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("k3-256k", "high"), Some(json!({"reasoning_effort": "high"})));
+        // Kimi k2.x：仅开关，等级不传
+        assert_eq!(thinking_extra_body("kimi-k2.6", "off"), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("kimi-k2.6", "high"), None);
+        assert_eq!(thinking_extra_body("kimi-k2.7-code", "off"), Some(json!({"thinking": {"type": "disabled"}})));
+        // DeepSeek：开关 + effort（medium 服务端映射）
+        assert_eq!(thinking_extra_body("deepseek-flash", "off"), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("deepseek-flash", "medium"), Some(json!({"reasoning_effort": "medium"})));
+        assert_eq!(thinking_extra_body("deepseek-v4-pro", "high"), Some(json!({"reasoning_effort": "high"})));
+        // MiniMax：仅开关
+        assert_eq!(thinking_extra_body("MiniMax-M3", "off"), Some(json!({"thinking": {"type": "disabled"}})));
         assert_eq!(thinking_extra_body("MiniMax-M3", "high"), None);
-        assert_eq!(thinking_extra_body("MiniMax-M3", "max"), None);
-        // Qwen off → vLLM 自部署方言
-        assert_eq!(
-            thinking_extra_body("qwen3-max", "off"),
-            Some(json!({"chat_template_kwargs": {"enable_thinking": false}}))
-        );
-        // Qwen 等级档：不注入（DashScope 无对应字段）
+        assert_eq!(thinking_extra_body("MiniMax-M2.7", "max"), None);
+        // StepFun（含 Step Plan）：三档 effort，off→low，max→high
+        assert_eq!(thinking_extra_body("step-3.7-flash", "low"), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("step-3.7-flash", "off"), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("step-3.7-flash", "medium"), Some(json!({"reasoning_effort": "medium"})));
+        assert_eq!(thinking_extra_body("step-3.5-flash", "max"), Some(json!({"reasoning_effort": "high"})));
+        // Qwen：仅 vLLM 方言 off
+        assert_eq!(thinking_extra_body("qwen3-max", "off"), Some(json!({"chat_template_kwargs": {"enable_thinking": false}})));
         assert_eq!(thinking_extra_body("qwen3-max", "high"), None);
+        // 旧值 on → high
+        assert_eq!(thinking_extra_body("deepseek-flash", "on"), Some(json!({"reasoning_effort": "high"})));
+        // 未知模型：OpenAI 标准字段直传
+        assert_eq!(thinking_extra_body("some-model", "high"), Some(json!({"reasoning_effort": "high"})));
     }
 
     #[test]
