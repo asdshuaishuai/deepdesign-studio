@@ -35,7 +35,8 @@
     ],
     "resources": [
       "agent/agent-bridge.mjs",
-      "agent/moonviz-cli.exe"
+      "agent/moonviz-cli.exe",
+      "agent/node.exe"
     ],
     "icon": [
       "icons/icon.png",

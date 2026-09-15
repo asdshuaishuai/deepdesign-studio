@@ -296,11 +296,32 @@ fn fx_agent_root() -> Result<PathBuf, String> {
     Err("fxsdk_bridge_missing".into())
 }
 
+/// node 运行时定位（运行 agent-bridge.mjs 桥）：
+/// 1) MOONVIZ_NODE 环境变量 → 显式指定
+/// 2) 内嵌 agent/node.exe（resources，打包自包含——最终用户无需安装 Node.js）
+/// 3) 系统 PATH（仅 dev 布局使用，开发者本机有 node）
+fn resolve_node() -> Option<String> {
+    if let Ok(n) = std::env::var("MOONVIZ_NODE") {
+        let p = PathBuf::from(&n);
+        if p.is_file() {
+            return Some(p.display().to_string());
+        }
+        return None;
+    }
+    if let Ok(agent) = fx_agent_root() {
+        let bundled = agent.join("node.exe");
+        if bundled.is_file() {
+            return Some(bundled.display().to_string());
+        }
+    }
+    which_node()
+}
+
 #[tauri::command]
 fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
     let app_root = fx_agent_root()?;
     let bridge = app_root.join("agent-bridge.mjs");
-    let node = which_node().ok_or("node_unavailable")?;
+    let node = resolve_node().ok_or("node_unavailable")?;
     let mut env: Vec<(String, String)> = std::env::vars().collect();
     if !api_key.trim().is_empty() {
         env.retain(|(k, _)| k != "AI_GATEWAY_API_KEY");
