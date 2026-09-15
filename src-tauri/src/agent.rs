@@ -16,11 +16,12 @@ const MAX_STEPS: usize = 20;
 const ENGINE_OP_TIMEOUT: Duration = Duration::from_secs(30);
 const LLM_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// 引擎模板清单（与 MoonViz list-templates 同步；原样搬运自 JS 桥提示词）。
+/// 引擎模板清单（id 与 MoonViz `list-templates` 对齐，尺寸以引擎实际产出为准）。
+/// 改这里必须同步 `template_ids_match_engine` 契约测试。
 const ENGINE_TEMPLATES: &str = "login(登录页) | signup(注册页) | dashboard(仪表盘) | profile(个人主页)
-settings(设置页) | list_detail(列表-详情，含两屏) | onboarding(引导页) | empty_state(空状态)
-web_landing(Web落地页 1280x800) | web_login(Web登录) | web_dashboard(Web仪表盘) | pc_app(PC桌面 1440x900)
-adaptive_landing(自适应落地页) | login_v2(登录页v2)";
+settings(设置页) | list_detail(列表-详情) | onboarding(引导页) | empty_state(空状态)
+web_landing(Web落地页 1280x800) | web_login(Web登录 1280x800) | web_dashboard(Web仪表盘 1280x800)
+pc_app(PC桌面 1280x800) | adaptive_landing(自适应落地页) | login_v2(登录页v2)";
 
 const INSTRUCTIONS: &str = r#"You are the embedded design agent of deepDesign Studio, a visual prototyping editor.
 You operate as a product designer, not a command executor: interpret what the user wants to
@@ -50,8 +51,11 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
    "place <artboard> <component> <instance_id> [variant|-] [x] [y]" to add engine components
    (discover ids via list_components; "-" as variant means default).
 4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
+   Use "interact" for anything richer than navigation (show_toast, set_state, haptic, play_sound) —
+   and define the target with "state" first if you want a pressed/selected visual.
 5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired; no dangling refs.
-   Run "fix <artboard>" if violations accumulated (fix commits when it strictly reduces them).
+   Run "missing <artboard>" to catch unwired CTAs, "fix <artboard>" if violations accumulated
+   (fix commits when it strictly reduces them).
 6. REPORT: stop calling tools and summarize: screens built and the flow map.
 
 ## Tweak loop (document already loaded)
@@ -65,16 +69,35 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   | move <artboard> <node> <x> <y> | update <artboard> <node> k=v [k=v ...]
   | delete <artboard> <node> | copy <artboard> <node> <new_id> [dx] [dy]
   | reorder <artboard> <node> front|back|up|down | flip <artboard> <node> h|v|both|none
+  | group <artboard> <group_id> <n1> <n2> ... | ungroup <artboard> <group_id>
+  | align <artboard> left|right|top|bottom|hcenter|vcenter <n1> <n2> ...
+  | restyle <artboard> <component_id> k=v ...   (propagate to that component's instances)
+  | resize-canvas <artboard> <w> <h> | responsive <artboard>  (adds _tablet/_desktop variants)
+  | interact <artboard> <node> <trigger> <action>  | uninteract <artboard> <node>
+  | state <artboard> <node> <state_name> k=v ...   | set-state <node> <state_name> [toggle]
   | flow <from_artboard> <to_artboard> <node>
   | theme <name>  (light|dark|high_contrast|sepia|nord|sunset)
   | fix <artboard>
-- read-only inspection ops (no document change): lint <artboard>
-  | critique <artboard> | query <artboard> | infer <artboard>
-  | flows | tap <artboard> <x> <y>
-- update keys: w h text fill text_color stroke radius opacity font_size weight shadow rotate
-  blur blend line tracking constraint. Quote values with spaces: text="Sign in".
+- interact triggers: tap long_press swipe_left swipe_right swipe_up swipe_down scroll_end
+  key_enter focus blur. interact actions: back | haptic | navigate_to:<board>
+  | show_toast:<msg> | set_text:<node>:<text> | set_state:<node>:<state>
+  | toggle_state:<node> | play_sound:<name>. Define the state via "state" BEFORE
+  set_state/toggle_state can target it; call set-state only after a state exists.
+- read-only inspection ops (no document change):
+  list | flows | list-templates | list-components | list-tools | list-tokens | list-themes
+  | lint <artboard> | critique <artboard> | query <artboard> | infer <artboard>
+  | spec <artboard> | missing <artboard> | doc-json <artboard> | states <artboard>
+  | interactions <artboard> | export-svg <artboard> | tap <artboard> <x> <y> | benchmark
+- update keys: w h text fill text_color stroke stroke_width radius opacity font_size weight
+  shadow rotate blur blend line tracking constraint align italic dash visible layout gap
+  justify padding width_mode height_mode x_mode y_mode name.
+  (align left|center|right; dash solid|dashed|dotted; visible true|false;
+   layout vertical|horizontal|none; width_mode/height_mode hug|fill; x_mode/y_mode center|start)
+  Quote values with spaces: text="Sign in".
   Unquoted words after a space are silently dropped — always quote multi-word text.
 - duplicate is the cheapest way to spawn "a similar screen" before diverging with update.
+- The engine REJECTS unsupported ops with mbt_operation_unsupported. Notably "constrain" and a
+  standalone "name" op are CLI-only surfaces, NOT reachable here — use "update ... name=<id>".
 
 ## Ground truth and errors
 - NEVER guess node/component/template/theme ids. Templates: list above; components: list_components;
@@ -185,15 +208,26 @@ fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
     Some(json!({"reasoning_effort": level}))
 }
 
-/// 只读命令：走 load-mbt-b64 管道而非 apply-op 路径。
-/// 注意 fix 不在此列——引擎在 apply-agent-mbt-op-b64 中为 fix 实现了
-/// 「违规严格下降才提交」的还债语义，走只读管道会丢弃变更。
+/// 只读命令白名单：**路由契约**——引擎的 `apply-agent-mbt-op-b64` 只接受变更类操作，
+/// 任何未列于此的只读 op 都会被它拒绝（`mbt_operation_unsupported`）。
+/// 注意 `fix` 不在此列——引擎在 apply 路径为 fix 实现了「违规严格下降才提交」的还债语义，
+/// 走只读管道会丢弃变更。反之变更类 op（state/interact/group/responsive…）绝不能入表，
+/// 否则变更被静默丢弃且不报错。
+/// 提到模块级是为了让 `readonly_whitelist_matches_engine_surface` 能把它与探针集合严格比对。
+const READONLY_OPS: [&str; 19] = [
+    // 无参清点类
+    "list", "list-templates", "list-components", "list-tools", "list-tokens", "list-themes",
+    "flows", "benchmark",
+    // 需 <artboard> 的检视类
+    "lint", "critique", "query", "infer", "spec", "missing", "doc-json", "states",
+    "interactions", "export-svg",
+    // 需 <artboard> <x> <y> 的模拟类
+    "tap",
+];
+
 fn is_readonly_op(op: &str) -> bool {
-    const READONLY: [&str; 8] = [
-        "lint", "critique", "query", "flows", "tap", "list-templates", "list-components", "infer",
-    ];
     match op.split_whitespace().next() {
-        Some(head) => READONLY.contains(&head),
+        Some(head) => READONLY_OPS.contains(&head),
         None => false,
     }
 }
@@ -395,7 +429,7 @@ fn tools_schema() -> Value {
             "type": "function",
             "function": {
                 "name": "moonviz_op",
-                "description": "Execute one MoonViz design operation (validated by AgentGate, committed to .mbt.md). Also supports read-only ops: lint, critique, query, flows, tap.",
+                "description": "Execute one MoonViz design operation (validated by AgentGate, committed to .mbt.md). Also supports read-only inspection ops (no commit): list, flows, list-templates, list-components, list-tools, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, doc-json <ab>, states <ab>, interactions <ab>, export-svg <ab>, tap <ab> <x> <y>, benchmark.",
                 "parameters": {
                     "type": "object",
                     "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -711,11 +745,156 @@ mod tests {
 
     #[test]
     fn readonly_routing() {
-        assert!(is_readonly_op("lint login"));
+        // 无参清点类
+        assert!(is_readonly_op("list"));
         assert!(is_readonly_op("flows"));
         assert!(is_readonly_op("list-components"));
+        assert!(is_readonly_op("list-themes"));
+        assert!(is_readonly_op("benchmark"));
+        // 带画板参数的检视类（引擎 0.1.0 新增：spec/missing/doc-json/states/interactions/export-svg）
+        assert!(is_readonly_op("spec login"));
+        assert!(is_readonly_op("missing login"));
+        assert!(is_readonly_op("doc-json login"));
+        assert!(is_readonly_op("states login"));
+        assert!(is_readonly_op("interactions login"));
+        assert!(is_readonly_op("export-svg login"));
+        // 变更类绝不入表：入表会导致走 load 管道而静默丢弃变更
         assert!(!is_readonly_op("fix login"));
         assert!(!is_readonly_op("update login btn fill=#fff"));
+        assert!(!is_readonly_op("state login btn pressed fill=#000"));
+        assert!(!is_readonly_op("interact login btn tap navigate_to:lg"));
+        assert!(!is_readonly_op("group login g1 a b"));
+        assert!(!is_readonly_op("responsive login"));
+        assert!(!is_readonly_op(""));
+    }
+
+    /// 引擎命令面契约：白名单里每个 op 都必须在 load 管道上被引擎接受。
+    /// 引擎拒绝则说明白名单过时（该 op 已改名或下架）——本机无引擎时跳过。
+    #[tokio::test]
+    async fn readonly_whitelist_matches_engine_surface() {
+        if crate::engine_cli_binary().is_err() {
+            eprintln!("跳过：本机无引擎二进制");
+            return;
+        }
+        let rs = tokio::task::spawn_blocking(move || {
+            crate::exec_cli_pipeline(vec!["template login wl".into(), "export-mbt-human".into()])
+        })
+        .await
+        .unwrap();
+        let Ok(rs) = rs else { eprintln!("跳过：引擎未产出文档"); return };
+        let Some(mbt) = rs
+            .iter()
+            .find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
+            .and_then(|r| r.get("mbt").and_then(|v| v.as_str()).map(String::from))
+        else {
+            eprintln!("跳过：引擎未产出 mbt");
+            return;
+        };
+
+        // 每个白名单 op 的探针形态（占位符换成真实画板/节点）
+        let probes = [
+            "list", "list-templates", "list-components", "list-tools", "list-tokens",
+            "list-themes", "flows", "benchmark", "lint wl", "critique wl", "query wl",
+            "infer wl", "spec wl", "missing wl", "doc-json wl", "states wl",
+            "interactions wl", "export-svg wl", "tap wl 10 10",
+        ];
+        // 双向校验：只断言 probes ⊆ READONLY 是不够的——白名单新增一项却忘了加探针时，
+        // 那一项完全不被引擎校验，测试却仍然全绿。两个集合必须严格相等。
+        let mut probe_heads: Vec<&str> =
+            probes.iter().filter_map(|p| p.split_whitespace().next()).collect();
+        probe_heads.sort_unstable();
+        let mut whitelist: Vec<&str> = READONLY_OPS.to_vec();
+        whitelist.sort_unstable();
+        assert_eq!(
+            probe_heads, whitelist,
+            "探针集合与 READONLY_OPS 不一致：白名单加项必须同步加探针（左=探针，右=白名单）"
+        );
+        for op in probes {
+            let out = crate::exec_cli_pipeline(vec![
+                format!("load-mbt-b64 {}", b64_encode(&mbt)),
+                op.to_string(),
+            ]);
+            let out = out.unwrap_or_else(|e| panic!("{op}: 引擎调用失败 {e}"));
+            // banner / load ack 之后取最后一个非 banner 结果
+            let last = out
+                .iter()
+                .filter(|r| r.get("moonviz").is_none())
+                .next_back();
+            let Some(last) = last else { panic!("{op}: 无输出") };
+            assert!(
+                last.get("error").is_none(),
+                "{op} 在引擎上失败（白名单过时？）：{last}"
+            );
+        }
+    }
+
+    /// 引擎模板清单契约：提示词里的模板 id 集合必须与引擎 list-templates 完全一致。
+    /// 提示词漏一个模板 → Agent 永远不会选它；多一个 → Agent 会猜不存在的 id。
+    #[tokio::test]
+    async fn template_ids_match_engine() {
+        if crate::engine_cli_binary().is_err() {
+            eprintln!("跳过：本机无引擎二进制");
+            return;
+        }
+        let out = tokio::task::spawn_blocking(|| {
+            crate::exec_cli_pipeline(vec!["list-templates".into()])
+        })
+        .await
+        .unwrap()
+        .expect("list-templates 失败");
+        let arr = out
+            .iter()
+            .find(|r| r.is_array())
+            .and_then(|r| r.as_array())
+            .expect("list-templates 未返回数组");
+        let mut engine_ids: Vec<String> = arr
+            .iter()
+            .filter_map(|t| t.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect();
+        engine_ids.sort();
+
+        // 从提示词文本里抽出模板 id。ENGINE_TEMPLATES 的书写形式是 `id(中文名 尺寸)`，
+        // 以空白/`|` 切词后每个词形如 `login(登录页)` 或 `web_landing(Web落地页`——
+        // 取 `(` 之前的部分即为 id，不含 `(` 的词（尺寸、换行残片）自然被丢弃。
+        // 不要改成按"首字母是否大写"过滤中文描述：那是靠大小写巧合成立的。
+        let mut prompt_ids: Vec<String> = ENGINE_TEMPLATES
+            .split(|c: char| c.is_whitespace() || c == '|')
+            .filter_map(|tok| tok.split('(').next())
+            .map(str::trim)
+            .filter(|id| {
+                !id.is_empty()
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            })
+            .map(String::from)
+            .collect();
+        prompt_ids.sort();
+        prompt_ids.dedup();
+
+        assert_eq!(
+            prompt_ids, engine_ids,
+            "提示词模板清单与引擎不一致（差集：左=提示词，右=引擎）"
+        );
+    }
+
+    /// 提示词不得再教 Agent 使用引擎 apply 路径会拒绝的 op。
+    #[test]
+    fn prompt_avoids_apply_rejected_ops() {
+        // constrain 与独立 name op 仅存在于 CLI 直连面，apply-agent 路径返回
+        // mbt_operation_unsupported，提示词必须把它们标为不可达而非教 Agent 使用。
+        assert!(
+            INSTRUCTIONS.contains("mbt_operation_unsupported"),
+            "提示词必须告知 Agent 存在被引擎拒绝的 op"
+        );
+        assert!(
+            INSTRUCTIONS.contains("constrain"),
+            "提示词必须点名 constrain 不可达"
+        );
+        // 新语法必须在场
+        for token in ["group", "align", "restyle", "interact", "state", "missing", "spec"] {
+            assert!(INSTRUCTIONS.contains(token), "提示词缺少引擎能力：{token}");
+        }
     }
 
     #[test]
