@@ -86,13 +86,13 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
   **加任何厂商/型号都必须同步扩 `thinking_family_table` 单测**，那张表就是这个函数的契约。
 - **只读 op 白名单是 `is_readonly_op`**，它是**路由契约而非便利表**：引擎的 `apply-agent-mbt-op-b64`
   只接受变更类操作，任何没进这张表的只读 op 都会硬失败 `mbt_operation_unsupported`。
-  当前 19 项（清点类 `list`/`list-templates`/`list-components`/`list-tools`/`list-tokens`/`list-themes`/
+  当前 20 项（清点类 `list`/`list-templates`/`list-components`/`list-tools`/`list-tokens`/`list-themes`/
   `flows`/`benchmark`；检视类 `lint`/`critique`/`query`/`infer`/`spec`/`missing`/`doc-json`/`states`/
-  `interactions`/`export-svg`；模拟类 `tap`）。
+  `interactions`/`export-svg`/`export-html`；模拟类 `tap`）。
   两点坑：**`fix` 必须留在表外**——引擎在 apply 路径为它实现了"违规严格下降才提交"的还债语义，
-  走只读管道会静默丢弃变更;反之**变更类 op 绝不能进表**（`state`/`interact`/`group`/`responsive` 等），
-  否则变更被丢弃且不报错。`readonly_whitelist_matches_engine_surface` 会拿真实引擎逐个探针校验，
-  白名单过时它就会红。
+  走只读管道会静默丢弃变更;反之**变更类 op 绝不能进表**（`state`/`interact`/`group`/`responsive`/
+  `token` 等），否则变更被丢弃且不报错。`readonly_whitelist_matches_engine_surface` 会拿真实引擎
+  逐个探针校验并断言探针集合与白名单严格相等，白名单过时它就会红。
 - **`constrain` 和独立 `name` op 不可达**：它们只存在于 CLI 直连面，走 apply-agent 返回
   `mbt_operation_unsupported`。改节点名要用 `update <ab> <node> name=<id>`，不要教 Agent 用 `name`。
 - **`INSTRUCTIONS` 与 `ENGINE_TEMPLATES` 必须与引擎同步**（`template_ids_match_engine` 测试锚定 id 集合，

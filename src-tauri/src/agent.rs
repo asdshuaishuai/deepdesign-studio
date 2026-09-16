@@ -77,7 +77,12 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   | state <artboard> <node> <state_name> k=v ...   | set-state <node> <state_name> [toggle]
   | flow <from_artboard> <to_artboard> <node>
   | theme <name>  (light|dark|high_contrast|sepia|nord|sunset)
+  | token <name> <value>   (override ONE COLOR token, e.g. token primary #FF5722)
   | fix <artboard>
+- token: color tokens ONLY (primary, on_primary, secondary, surface, background, error, text_
+  primary... — full list via list-tokens, use the flat "colors" names). Spacing/radii/typography
+  tokens are NOT settable (unknown_token). The override recolors immediately, persists in the
+  document's frontmatter tokens: section, and setting the value back to its default removes it.
 - interact triggers: tap long_press swipe_left swipe_right swipe_up swipe_down scroll_end
   key_enter focus blur. interact actions: back | haptic | navigate_to:<board>
   | show_toast:<msg> | set_text:<node>:<text> | set_state:<node>:<state>
@@ -87,7 +92,10 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   list | flows | list-templates | list-components | list-tools | list-tokens | list-themes
   | lint <artboard> | critique <artboard> | query <artboard> | infer <artboard>
   | spec <artboard> | missing <artboard> | doc-json <artboard> | states <artboard>
-  | interactions <artboard> | export-svg <artboard> | tap <artboard> <x> <y> | benchmark
+  | interactions <artboard> | export-svg <artboard> | export-html <artboard>
+  | tap <artboard> <x> <y> | benchmark
+- export-html <artboard>: self-contained interactive HTML prototype (node-level tap bindings
+  + component states as CSS variants). Use it when the user wants a shareable/runnable demo.
 - update keys: w h text fill text_color stroke stroke_width radius opacity font_size weight
   shadow rotate blur blend line tracking constraint align italic dash visible layout gap
   justify padding width_mode height_mode x_mode y_mode name.
@@ -214,13 +222,13 @@ fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
 /// 走只读管道会丢弃变更。反之变更类 op（state/interact/group/responsive…）绝不能入表，
 /// 否则变更被静默丢弃且不报错。
 /// 提到模块级是为了让 `readonly_whitelist_matches_engine_surface` 能把它与探针集合严格比对。
-const READONLY_OPS: [&str; 19] = [
+const READONLY_OPS: [&str; 20] = [
     // 无参清点类
     "list", "list-templates", "list-components", "list-tools", "list-tokens", "list-themes",
     "flows", "benchmark",
     // 需 <artboard> 的检视类
     "lint", "critique", "query", "infer", "spec", "missing", "doc-json", "states",
-    "interactions", "export-svg",
+    "interactions", "export-svg", "export-html",
     // 需 <artboard> <x> <y> 的模拟类
     "tap",
 ];
@@ -429,7 +437,7 @@ fn tools_schema() -> Value {
             "type": "function",
             "function": {
                 "name": "moonviz_op",
-                "description": "Execute one MoonViz design operation (validated by AgentGate, committed to .mbt.md). Also supports read-only inspection ops (no commit): list, flows, list-templates, list-components, list-tools, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, doc-json <ab>, states <ab>, interactions <ab>, export-svg <ab>, tap <ab> <x> <y>, benchmark.",
+                "description": "Execute one MoonViz design operation (validated by AgentGate, committed to .mbt.md). Also supports read-only inspection ops (no commit): list, flows, list-templates, list-components, list-tools, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, doc-json <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html <ab>, tap <ab> <x> <y>, benchmark.",
                 "parameters": {
                     "type": "object",
                     "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -758,6 +766,7 @@ mod tests {
         assert!(is_readonly_op("states login"));
         assert!(is_readonly_op("interactions login"));
         assert!(is_readonly_op("export-svg login"));
+        assert!(is_readonly_op("export-html login"));
         // 变更类绝不入表：入表会导致走 load 管道而静默丢弃变更
         assert!(!is_readonly_op("fix login"));
         assert!(!is_readonly_op("update login btn fill=#fff"));
@@ -765,6 +774,7 @@ mod tests {
         assert!(!is_readonly_op("interact login btn tap navigate_to:lg"));
         assert!(!is_readonly_op("group login g1 a b"));
         assert!(!is_readonly_op("responsive login"));
+        assert!(!is_readonly_op("token primary #FF0000"));
         assert!(!is_readonly_op(""));
     }
 
@@ -796,7 +806,7 @@ mod tests {
             "list", "list-templates", "list-components", "list-tools", "list-tokens",
             "list-themes", "flows", "benchmark", "lint wl", "critique wl", "query wl",
             "infer wl", "spec wl", "missing wl", "doc-json wl", "states wl",
-            "interactions wl", "export-svg wl", "tap wl 10 10",
+            "interactions wl", "export-svg wl", "export-html wl", "tap wl 10 10",
         ];
         // 双向校验：只断言 probes ⊆ READONLY 是不够的——白名单新增一项却忘了加探针时，
         // 那一项完全不被引擎校验，测试却仍然全绿。两个集合必须严格相等。
@@ -892,7 +902,7 @@ mod tests {
             "提示词必须点名 constrain 不可达"
         );
         // 新语法必须在场
-        for token in ["group", "align", "restyle", "interact", "state", "missing", "spec"] {
+        for token in ["group", "align", "restyle", "interact", "state", "missing", "spec", "token", "export-html"] {
             assert!(INSTRUCTIONS.contains(token), "提示词缺少引擎能力：{token}");
         }
     }
