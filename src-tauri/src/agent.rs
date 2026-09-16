@@ -1109,6 +1109,72 @@ mod tests {
             assert!(err.contains("mbt_operation_unsupported"),
                 "cli_only 项 `{op}` 在 apply 路径应返回 unsupported，实际：{err}");
         }
+
+        // ---- 直接消费引擎输出：`list-tools` 工具注册表 ----
+        // 引擎 aefa1f6 起以 core/agent_api.mbt 为单一事实源，list-tools 输出合法的
+        // MCP tools/list JSON。注意它仍是 **MCP 命名层的策展子集**（create/copy/
+        // delete/reorder/flip/duplicate/delete-artboard/flow 等 CLI op 无 MCP 工具），
+        // 所以 CLI op 清单仍由 SKILL.md 块锚定；这里校验的是注册表健康度 +
+        // 我们教的每个 op 的 MCP 对应工具必须在场。
+        let out = crate::exec_cli_pipeline(vec!["list-tools".into()]).expect("list-tools 失败");
+        let registry = out
+            .iter()
+            .find(|r| r.is_array())
+            .and_then(|r| r.as_array())
+            .expect("list-tools 未返回 JSON 数组（注册表又坏了？）");
+        assert!(registry.len() >= 40,
+            "list-tools 只返回 {} 个工具——注册表塌缩回子集了（历史上曾只有 11 个）",
+            registry.len());
+        for t in registry {
+            for field in ["name", "description", "inputSchema"] {
+                assert!(t.get(field).is_some(), "注册表工具缺 {field} 字段：{t}");
+            }
+        }
+        let names: Vec<&str> = registry
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+            .collect();
+        // CLI op → MCP 工具对应表（仅收录确有对应的；无对应的 op 不入表）
+        let counterparts: &[(&str, &str)] = &[
+            ("template", "apply_template"),
+            ("place", "place_component"),
+            ("move", "move_node"),
+            ("update", "update_node"),
+            ("group", "group_nodes"),
+            ("ungroup", "ungroup_node"),
+            ("align", "align_nodes"),
+            ("resize-canvas", "resize_canvas"),
+            ("responsive", "generate_responsive"),
+            ("restyle", "restyle_component"),
+            ("interact", "interact"),
+            ("uninteract", "uninteract"),
+            ("interactions", "interactions"),
+            ("state", "define_state"),
+            ("set-state", "set_state"),
+            ("states", "list_states"),
+            ("theme", "apply_theme"),
+            ("token", "set_token"),
+            ("fix", "auto_fix"),
+            ("list", "list_artboards"),
+            ("list-templates", "list_templates"),
+            ("list-components", "list_components"),
+            ("list-tokens", "list_tokens"),
+            ("list-themes", "list_themes"),
+            ("lint", "lint_design"),
+            ("critique", "critique"),
+            ("query", "query_nodes"),
+            ("infer", "infer_page_type"),
+            ("spec", "generate_spec"),
+            ("missing", "infer_missing"),
+            ("export-svg", "export_svg"),
+            ("export-html", "export_html"),
+            ("benchmark", "benchmark"),
+        ];
+        for (op, tool) in counterparts {
+            assert!(names.contains(tool),
+                "CLI op `{op}` 的 MCP 对应工具 `{tool}` 不在 list-tools 注册表中——\
+                 引擎侧注册表与 op 面脱节，或映射表需更新");
+        }
     }
 
     #[test]

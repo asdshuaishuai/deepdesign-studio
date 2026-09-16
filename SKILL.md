@@ -1,9 +1,10 @@
 # MoonViz: AI-Native Prototype Design Engine
 
 > **本文件是 deepDesign 仓库的引擎能力字典（vendored 副本）。**
-> 源自 `../moonviz/SKILL.md`。上游曾不完整（缺 flow/theme/fix/token/export-html 与只读命令、
-> constrain 误标共享、MCP 工具数失实），已于上游 `555e21a` 修正——本副本的修正先于上游落地，
-> 两边内容现已收敛；本副本额外保留 deepDesign 特有部分（双门表、机器可读清单块、验证附录）。
+> 源自 `../moonviz/SKILL.md`。上游曾不完整，已于 `555e21a` 修正并收敛；此后上游又新增
+> Images 语法段（已同步并实测）。本副本额外保留 deepDesign 特有部分（双门表、机器可读
+> 清单块、验证附录）。引擎 `list-tools` 已修复为合法 JSON 注册表（46 工具），但它是
+> MCP 命名层子集——CLI op 面仍靠本文件的清单块锚定。
 > 每一条声明都对照本仓库实际分发的引擎二进制探测验证过。引擎更新后：重跑文末附录探针 →
 > 更正本文件（并与上游 diff，能同步回上游的同步回去）→ `cargo test` 的 SKILL 契约测试强制对账。
 
@@ -51,6 +52,11 @@ Structural:
 `group <ab> <group_id> <n1> <n2> ...` · `ungroup <ab> <group_id>` ·
 `align <ab> <mode> <n1> <n2> ...` · `resize-canvas <ab> <w> <h>` ·
 `responsive <ab>` · `restyle <ab> <component_id> k=v ...`
+
+Images: `place <ab> image <id>` then `update <ab> <id> text=<https://...|data:image/...> radius=<n>` —
+a non-empty URL renders a real `<image>` (rounded clip, cover-fit); empty text falls back to the
+placeholder glyph. The URL lives in the node's `text` field and round-trips through canonical MBT.
+（实测：SVG 输出 `<image href="..." preserveAspectRatio="xMidYMid slice" clip-...>`）
 
 Navigation / theme / tokens:
 `flow <from_ab> <to_ab> <node>`（写导航边）·
@@ -138,15 +144,17 @@ benchmark               性能基准
 }
 ```
 
-MCP 面与 CLI op 面同源、snake_case 命名（`update_node`/`place_component`/
-`apply_template`/`define_state`/`set_state`/`set_token`/`export_html`/`auto_fix`/
-`read_mbt`/`render_mbt`/`generate_spec`/`infer_missing`/`suggest_alignment`/
-`extract_design_system`/`component_*`/`library_*` 等，分发表在引擎 `mcp/main.mbt`）。
+MCP 面与 CLI op 面同源、snake_case 命名。工具注册表的事实源是引擎
+`core/agent_api.mbt`（46 工具、全量 inputSchema），CLI 的 `list-tools` 直接输出
+MCP `tools/list` 形态的合法 JSON（`name`/`description`/`inputSchema{properties,required}`）。
+枚举 MCP 面用 `list-tools`，不要引用写死的工具总数。
+（此项已修复：此前只倾倒 11 个且嵌套 JSON 未转义。）
 
-> ⚠️ **告警（引擎侧，待上游修）：** CLI 的 `list-tools` 当前只倾倒 11 个工具，
-> 且 `params` 字段的嵌套 JSON 未转义引号，整行不是合法 JSON。
-> 枚举 MCP 面请读 `mcp/main.mbt` 分发表，**不要**依赖 `list-tools`，
-> 也不要引用任何写死的工具总数。
+> ⚠️ **但注意层次差**：`list-tools` 是 **MCP 命名层且为策展子集**——
+> `create`/`copy`/`delete`/`reorder`/`flip`/`duplicate`/`delete-artboard`/`flow` 等
+> CLI op 没有 MCP 对应工具。**CLI op 面的完整清单仍以本文件文末的机器可读块为准**
+> （引擎 `help` 也不完整：dispatch 里 `token`/`export-html`/`infer`/`missing`/
+> `doc-json` 等 8 项不在 help 文案中）。
 
 `ddp_view` is read-only metadata for integrations; it exposes no mutation path.
 
