@@ -1,11 +1,11 @@
 # MoonViz: AI-Native Prototype Design Engine
 
 > **本文件是 deepDesign 仓库的引擎能力字典（vendored 副本）。**
-> 源自 `../moonviz/SKILL.md`，但**不是**原样拷贝——上游版本当前不完整（语法段缺
-> `flow`/`theme`/`fix`/`token`/`export-html` 与全部只读命令，且把两门都不可达的
-> `constrain` 列为共享语法）。本副本的每一条声明都对照本仓库实际分发的引擎二进制
-> 探测验证过（验证方法见文末附录），引擎仓库处于构建阶段、以二进制行为为准。
-> 引擎更新后：重跑附录探针 → 更正本文件 → `cargo test` 的 SKILL 契约测试会强制对账。
+> 源自 `../moonviz/SKILL.md`。上游曾不完整（缺 flow/theme/fix/token/export-html 与只读命令、
+> constrain 误标共享、MCP 工具数失实），已于上游 `555e21a` 修正——本副本的修正先于上游落地，
+> 两边内容现已收敛；本副本额外保留 deepDesign 特有部分（双门表、机器可读清单块、验证附录）。
+> 每一条声明都对照本仓库实际分发的引擎二进制探测验证过。引擎更新后：重跑文末附录探针 →
+> 更正本文件（并与上游 diff，能同步回上游的同步回去）→ `cargo test` 的 SKILL 契约测试强制对账。
 
 ## What This Is
 
