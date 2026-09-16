@@ -30,7 +30,7 @@ src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI chat-completions 工�
 **Rust 命令必须在 `src-tauri/` 下执行**——仓库根目录没有 `Cargo.toml`，也没有 `package.json`。
 
 ```bash
-cd src-tauri && cargo test        # 9 个测试：方言表 + 路由白名单 + base_url 策略 + 3 个引擎契约 + 3 个端到端（含 3 个静态契约断言）
+cd src-tauri && cargo test        # 10 个测试：方言表 + 路由白名单 + base_url 策略 + 4 个引擎契约（含 SKILL 字典契约）+ 3 个端到端
 cd src-tauri && cargo build
 node test_studio.cjs              # 前端状态机冒烟（在仓库根跑）
 ./dev.sh                          # debug 编译启动；引擎二进制缺失时自动 moon build
@@ -56,6 +56,10 @@ shasum -a 256 src-tauri/engine/moonviz-cli.exe ../moonviz/_build/native/release/
 直接同步即可。同步后**必须重跑 `cargo test`**——引擎契约测试会拿真实二进制校验白名单与模板清单。
 
 引擎的能力面随时可能扩，`frontend/index.html` 与 `agent.rs` 都是硬编码的，**引擎一更新就要回来对账**。
+**`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自 `../moonviz/SKILL.md` 但已对照二进制
+补全与修正（上游版本当前不完整）。引擎更新后的对账顺序：重跑 SKILL.md 文末附录的探针 →
+按结果更新 SKILL.md 的机器可读清单块 → `skill_dictionary_matches_engine_and_agent` 测试会强制
+字典 ↔ 白名单 ↔ 提示词 ↔ 引擎四者一致。**引擎仓库构建阶段只读，不改引擎，以二进制行为为准。**
 对账的权威来源不是引擎的 `help` 文案，而是实际行为：
 
 ```bash
@@ -145,7 +149,8 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
   也不是 `#[ignore]`）。看到"绿"之前先确认引擎真的在，否则等于什么都没测。
   受影响的 5 个：`agent_loop_with_mock_llm_and_real_engine`、`mid_run_llm_failure_preserves_committed_work`、
   `readonly_session_gets_render_fallback`、`readonly_whitelist_matches_engine_surface`、
-  `template_ids_match_engine`。判断方法：看有没有 "跳过" 输出，或数通过的条数是否仍是 9。
+  `template_ids_match_engine`。`skill_dictionary_matches_engine_and_agent` 无引擎时只跳过探针、
+  静态断言（字典↔白名单↔提示词）仍然生效。判断方法：看有没有 "跳过" 输出，或数通过条数是否仍是 10。
 
 ## 删前端代码前必读（真实事故，勿重演）
 

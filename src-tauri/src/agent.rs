@@ -907,6 +907,210 @@ mod tests {
         }
     }
 
+    /// 解析仓库根 SKILL.md（引擎能力字典，vendored 副本）文末的机器可读清单块。
+    /// 块形如：`mutating: a b ...` 后跟缩进续行，直到 ``` 收束。
+    fn skill_op_lists() -> (Vec<String>, Vec<String>, Vec<String>) {
+        let skill = include_str!("../../SKILL.md");
+        let mut mutating = Vec::new();
+        let mut readonly = Vec::new();
+        let mut cli_only = Vec::new();
+        let mut in_block = false;
+        let mut cur: Option<&mut Vec<String>> = None;
+        for line in skill.lines() {
+            let (key, rest) = if let Some(r) = line.strip_prefix("mutating:") {
+                in_block = true;
+                (0usize, r)
+            } else if let Some(r) = line.strip_prefix("readonly:") {
+                (1usize, r)
+            } else if let Some(r) = line.strip_prefix("cli_only:") {
+                (2usize, r)
+            } else if line.trim() == "```" && in_block {
+                break;
+            } else {
+                (usize::MAX, "")
+            };
+            if key != usize::MAX {
+                cur = Some(match key {
+                    0 => &mut mutating,
+                    1 => &mut readonly,
+                    _ => &mut cli_only,
+                });
+            }
+            if let Some(list) = cur.as_deref_mut() {
+                if !rest.is_empty() || key == usize::MAX {
+                    let src = if key == usize::MAX { line.trim() } else { rest.trim() };
+                    if !src.is_empty() {
+                        list.extend(src.split_whitespace().map(String::from));
+                    }
+                }
+            }
+        }
+        (mutating, readonly, cli_only)
+    }
+
+    /// SKILL.md 字典契约——让字典变成 load-bearing 而非文档摆设：
+    /// 1. 字典的 readonly 集合必须与 READONLY_OPS **严格相等**（双向，防单边漂移）；
+    /// 2. 字典的每个 mutating op 必须出现在 INSTRUCTIONS 提示词里（字典更新→提示词跟进）；
+    /// 3. 引擎实测：mutating op 走 apply 路径被接受（ok 或谓词拦截皆算语法接受）；
+    ///    readonly op 走 load 路径可用、走 apply 路径必须 `mbt_operation_unsupported`；
+    ///    cli_only op 走 apply 路径必须 `mbt_operation_unsupported`。
+    /// 引擎更新后任何一项失配都会红——这就是"新命令无人采纳"盲区的哨兵。
+    #[tokio::test]
+    async fn skill_dictionary_matches_engine_and_agent() {
+        let (mutating, mut readonly, cli_only) = skill_op_lists();
+        assert!(!mutating.is_empty() && !readonly.is_empty() && !cli_only.is_empty(),
+            "SKILL.md 机器可读清单块缺失或为空——文件被改动时请同步解析逻辑");
+
+        // 1) 字典 readonly ⇔ READONLY_OPS 严格相等
+        let mut skill_ro = readonly.clone();
+        skill_ro.sort();
+        skill_ro.dedup();
+        let mut wl: Vec<&str> = READONLY_OPS.to_vec();
+        wl.sort();
+        assert_eq!(skill_ro, wl,
+            "SKILL.md readonly 清单与 READONLY_OPS 不一致（左=字典，右=白名单）——两边必须一起改");
+
+        // 2) 提示词必须教会字典里的每个变更 op（词边界匹配：
+        //    子串会让 "list-tokens" 误满足 "token"，也会被顺带的解释文字糊弄过去）
+        let contains_word = |hay: &str, needle: &str| {
+            hay.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+                .any(|w| w == needle)
+        };
+        for op in &mutating {
+            assert!(contains_word(INSTRUCTIONS, op),
+                "SKILL.md 已收录变更 op `{op}`，但 INSTRUCTIONS 提示词未提及——Agent 永远用不到它");
+        }
+
+        if crate::engine_cli_binary().is_err() {
+            eprintln!("跳过引擎探针：本机无引擎二进制（静态断言已通过）");
+            return;
+        }
+
+        // 3) 引擎实测。造一篇两画板文档（delete-artboard/flow 需要）。
+        let rs = tokio::task::spawn_blocking(move || {
+            crate::exec_cli_pipeline(vec![
+                "template login lg".into(),
+                "template login lg2".into(),
+                "export-mbt-human".into(),
+            ])
+        })
+        .await
+        .unwrap();
+        let rs = rs.expect("构造探针文档失败");
+        let mbt = rs
+            .iter()
+            .find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
+            .and_then(|r| r.get("mbt").and_then(|v| v.as_str()).map(String::from))
+            .expect("引擎未产出 mbt");
+        let b = b64_encode(&mbt);
+
+        let apply_probe = |op: &str| -> String {
+            let out = crate::exec_cli_pipeline(vec![format!(
+                "apply-agent-mbt-op-b64 {b} {}",
+                b64_encode(op)
+            )])
+            .expect("引擎调用失败");
+            let last = out.last().cloned().unwrap_or(json!(null));
+            last.get("error").and_then(|v| v.as_str()).unwrap_or("OK").to_string()
+        };
+        let load_probe = |op: &str| -> String {
+            let out = crate::exec_cli_pipeline(vec![
+                format!("load-mbt-b64 {b}"),
+                op.to_string(),
+            ])
+            .expect("引擎调用失败");
+            let last = out
+                .iter()
+                .filter(|r| r.get("moonviz").is_none())
+                .next_back()
+                .cloned()
+                .unwrap_or(json!(null));
+            last.get("error").and_then(|v| v.as_str()).unwrap_or("OK").to_string()
+        };
+
+        // 变更 op → 具体探针形态（ok 或谓词/语义错误都算语法接受，唯独 unsupported 不算）
+        let mutating_probes: &[(&str, &str)] = &[
+            ("create", "create p3 200 300"),
+            ("template", "template login p4"),
+            ("place", "place lg button b1 - 10 700"),
+            ("duplicate", "duplicate lg p5"),
+            ("delete-artboard", "delete-artboard lg2"),
+            ("move", "move lg logo 3 3"),
+            ("copy", "copy lg logo logo_c 5 5"),
+            ("delete", "delete lg logo"),
+            ("reorder", "reorder lg logo front"),
+            ("flip", "flip lg logo h"),
+            ("group", "group lg gg logo subtitle"),
+            ("ungroup", "ungroup lg gg"),
+            ("align", "align lg left logo subtitle"),
+            ("resize-canvas", "resize-canvas lg 400 900"),
+            ("responsive", "responsive lg"),
+            ("restyle", "restyle lg button fill=#00ff00"),
+            ("interact", "interact lg logo tap show_toast:hi"),
+            ("uninteract", "uninteract lg logo"),
+            ("state", "state lg logo pressed fill=#000000"),
+            ("set-state", "set-state logo pressed"),
+            ("flow", "flow lg lg2 logo"),
+            ("theme", "theme dark"),
+            ("token", "token primary #FF0000"),
+            ("fix", "fix lg"),
+            ("update", "update lg logo fill=#123456"),
+        ];
+        for (head, probe) in mutating_probes {
+            assert!(mutating.iter().any(|m| m == head), "探针表含字典外的 op：{head}");
+            let err = apply_probe(probe);
+            assert!(!err.contains("mbt_operation_unsupported"),
+                "`{probe}` 被 apply 路径拒绝（{err}）——字典把它标为变更类，但引擎不认");
+        }
+        for op in &mutating {
+            assert!(mutating_probes.iter().any(|(h, _)| h == op),
+                "SKILL.md 新增变更 op `{op}` 但探针表没有它——加探针，别删断言");
+        }
+
+        // 只读 op：load 路径必须可用，apply 路径必须 unsupported（路由契约双向锁定）
+        let readonly_probes: &[(&str, &str)] = &[
+            ("list", "list"),
+            ("flows", "flows"),
+            ("list-templates", "list-templates"),
+            ("list-components", "list-components"),
+            ("list-tools", "list-tools"),
+            ("list-tokens", "list-tokens"),
+            ("list-themes", "list-themes"),
+            ("benchmark", "benchmark"),
+            ("lint", "lint lg"),
+            ("critique", "critique lg"),
+            ("query", "query lg"),
+            ("infer", "infer lg"),
+            ("spec", "spec lg"),
+            ("missing", "missing lg"),
+            ("doc-json", "doc-json lg"),
+            ("states", "states lg"),
+            ("interactions", "interactions lg"),
+            ("export-svg", "export-svg lg"),
+            ("export-html", "export-html lg"),
+            ("tap", "tap lg 10 10"),
+        ];
+        for op in &readonly {
+            let Some((_, probe)) = readonly_probes.iter().find(|(h, _)| h == op) else {
+                panic!("SKILL.md 新增只读 op `{op}` 但探针表没有它——加探针，别删断言");
+            };
+            let load_err = load_probe(probe);
+            assert_eq!(load_err, "OK", "只读 op `{probe}` 在 load 路径失败：{load_err}");
+            let apply_err = apply_probe(probe);
+            assert!(apply_err.contains("mbt_operation_unsupported"),
+                "只读 op `{probe}` 走 apply 路径应被拒绝，实际返回：{apply_err}——若引擎已把它变为变更类，请同步字典与白名单");
+        }
+        assert_eq!(readonly_probes.len(), readonly.len(),
+            "只读探针表与字典条目数不一致——探针表不得收录字典外的 op");
+
+        // cli_only：apply 路径一律 unsupported
+        for op in &cli_only {
+            let err = apply_probe(op);
+            assert!(err.contains("mbt_operation_unsupported"),
+                "cli_only 项 `{op}` 在 apply 路径应返回 unsupported，实际：{err}");
+        }
+    }
+
     #[test]
     fn base_url_policy() {
         assert!(safe_base_url("https://api.deepseek.com").is_some());
