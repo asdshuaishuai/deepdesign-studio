@@ -10,6 +10,7 @@
 //! Agent 基座 Rust 原生化后无 JS 运行时依赖（node/桥已删除）。
 
 pub mod agent;
+pub mod models;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use moonviz_ddp::{decrypt_ddp, encrypt_ddp};

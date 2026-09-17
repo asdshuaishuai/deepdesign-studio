@@ -2,6 +2,12 @@
 
 > 调研日期 2026-09-17。所有数据均为当日实测:api.json 已拉取本地核对(221 提供商 / 4.7MB),
 > 端点比对基于本仓库 `frontend/index.html` 的 `PROVIDERS` 预设与 `agent.rs::thinking_extra_body` 方言表。
+>
+> **落地状态:P1 已实现**——`scripts/sync-models.mjs` + vendored 快照 `src-tauri/models.json`
+> (11 提供商/86 模型/~48KB) + `src-tauri/src/models.rs` 的四个契约测试。
+> 实施中发现两处新的真实分歧并显性登记:MiniMax 双预设端点漂移(官方已推荐 Anthropic 兼容,
+> 切换需请求体改造,暂留 `KNOWN_DIVERGENCES`)、UI 静态模型 `MiniMax-M2.1-highspeed` 官方存在
+> 但 models.dev 快照滞后(`KNOWN_UI_EXTRAS`,快照补齐即红逼清理)。
 
 ## TL;DR
 

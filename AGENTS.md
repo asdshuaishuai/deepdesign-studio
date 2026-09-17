@@ -33,6 +33,7 @@ src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI chat-completions 工�
 cd src-tauri && cargo test        # 10 个测试：方言表 + 路由白名单 + base_url 策略 + 4 个引擎契约（含 SKILL 字典契约）+ 3 个端到端
 cd src-tauri && cargo build
 node test_studio.cjs              # 前端状态机冒烟（在仓库根跑）
+node scripts/sync-models.mjs     # 模型元数据快照同步（models.dev → src-tauri/models.json）
 ./dev.sh                          # debug 编译启动；引擎二进制缺失时自动 moon build
 ./dev.sh --fresh                  # 先 kill 旧进程 + 清 WebView 缓存
 npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 staging 引擎二进制）
@@ -54,6 +55,26 @@ shasum -a 256 src-tauri/engine/moonviz-cli.exe ../moonviz/_build/native/release/
 
 `moon build` 若报 `no work to do` 说明构建图已最新；此时 `_build` 里的产物就是当前源码的产物，
 直接同步即可。同步后**必须重跑 `cargo test`**——引擎契约测试会拿真实二进制校验白名单与模板清单。
+
+## 同步模型快照（models.dev，与引擎无关的另一条对账线）
+
+`src-tauri/models.json` 是 models.dev api.json 的**裁剪快照**（仅 11 个预设提供商 /
+86 模型，~48KB，随版本库提交）。MIT 许可，vendored 而非运行时拉取（离线桌面 + 依赖极简）。
+
+```bash
+node scripts/sync-models.mjs    # 重新生成快照（更新 fetched_at）
+cargo test                      # 三个契约测试必须仍绿
+```
+
+**分层事实源（models 线）**：快照 ⇄ 前端 `PROVIDERS` 端点与默认模型（`presets_match_snapshot`）、
+快照 ⇄ `MINIMAX_STATIC_MODELS`（`minimax_static_models_in_snapshot`）、快照结构健康
+（`snapshot_structure_is_healthy`）、溯源字段（`snapshot_has_provenance`）。
+**分歧必须显性登记**：端点漂移进 `KNOWN_DIVERGENCES`（记录上游现值 + 理由，上游再变会红）、
+快照滞后项进 `KNOWN_UI_EXTRAS`（快照补齐会红逼清理）。**协议族变化（如 MiniMax 转向
+Anthropic 兼容）意味着请求体改造，不是改 URL——人工裁决，绝不自动跟随。**
+背景与数据口径见 `docs/research/models-dev-ai-sdk.md`；线上方言（thinking/reasoning_effort/
+chat_template_kwargs）不在 models.dev 覆盖范围，仍以 `agent.rs::thinking_extra_body`
+（官方文档为准）为权威。
 
 引擎的能力面随时可能扩，`frontend/index.html` 与 `agent.rs` 都是硬编码的，**引擎一更新就要回来对账**。
 **`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自 `../moonviz/SKILL.md` 并双向同步。

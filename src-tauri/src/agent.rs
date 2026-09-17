@@ -957,7 +957,7 @@ mod tests {
     ///    cli_only op 走 apply 路径必须 `mbt_operation_unsupported`。
     #[tokio::test]
     async fn skill_dictionary_matches_engine_and_agent() {
-        let (mut readonly, cli_only) = skill_op_lists();
+        let (readonly, cli_only) = skill_op_lists();
         assert!(!readonly.is_empty() && !cli_only.is_empty(),
             "SKILL.md 机器可读清单块缺失或为空——文件被改动时请同步解析逻辑");
 

@@ -1,0 +1,272 @@
+//! 模型元数据快照（vendored models.dev 裁剪子集）
+//!
+//! 事实源是 `models.json`，由 `scripts/sync-models.mjs` 从 https://models.dev/api.json
+//! 裁剪生成（仅覆盖 `frontend/index.html` PROVIDERS 涉及的 11 个提供商）。
+//! 全量 4.7MB / 221 提供商，本快照 ~48KB——桌面应用离线可用 + 依赖极简。
+//!
+//! **数据性质（见 docs/research/models-dev-ai-sdk.md）**：models.dev 记**能力轴**
+//! （`reasoning_options` 的 toggle/effort 档位），**不含线上字段方言**——
+//! 全库无 `thinking`/`reasoning_effort`/`chat_template_kwargs`。请求体的字节
+//! 仍由 `agent.rs::thinking_extra_body` 方言表编译（以官方文档为准），本快照只做
+//! 发现与漂移对账。契约测试 `presets_match_snapshot` 把这条链锁死。
+
+use serde_json::Value;
+
+/// vendored 快照（source / license / fetched_at / providers）。
+pub const SNAPSHOT_JSON: &str = include_str!("../models.json");
+
+/// 顶层 providers 表。快照损坏（非法 JSON / 缺 providers）会在任何使用前 panic——
+/// 这是有意的：模型快照不是可降级的运行时数据，坏就应该是响亮失败。
+pub fn providers() -> &'static Value {
+    static PARSED: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    PARSED.get_or_init(|| {
+        let doc: Value = serde_json::from_str(SNAPSHOT_JSON)
+            .expect("models.json 不是合法 JSON（快照被改坏了？）");
+        doc.get("providers")
+            .cloned()
+            .expect("models.json 缺 providers 字段")
+    })
+}
+
+/// models.dev 提供商 id → 官方 base URL（快照记录值）。
+pub fn provider_endpoint(id: &str) -> Option<&'static str> {
+    providers()
+        .get(id)
+        .and_then(|p| p.get("api"))
+        .and_then(|v| v.as_str())
+}
+
+/// 该提供商下全部模型 id（快照记录）。
+pub fn provider_models(id: &str) -> Vec<&'static str> {
+    providers()
+        .get(id)
+        .and_then(|p| p.get("models"))
+        .and_then(|m| m.as_object())
+        .map(|m| m.keys().map(|k| k.as_str()).collect())
+        .unwrap_or_default()
+}
+
+/// 某模型的能力轴（reasoning_options 原样返回，None 表示快照未记录）。
+pub fn model_reasoning_options(provider: &str, model: &str) -> Option<&'static Value> {
+    providers()
+        .get(provider)
+        .and_then(|p| p.get("models"))
+        .and_then(|m| m.get(model))
+        .and_then(|m| m.get("reasoning_options"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// frontend/index.html 的 PROVIDERS 键 → models.dev 提供商 id。
+    /// 加预设时两端一起改；`presets_match_snapshot` 会校验映射完整性。
+    const PROVIDER_MAP: [(&str, &str); 11] = [
+        ("deepseek", "deepseek"),
+        ("glm", "zhipuai"),
+        ("glm-coding", "zhipuai-coding-plan"),
+        ("zai", "zai"),
+        ("zai-coding", "zai-coding-plan"),
+        ("kimi", "moonshotai-cn"),
+        ("kimi-plan", "kimi-for-coding"),
+        ("minimax", "minimax-cn"),
+        ("minimax-intl", "minimax"),
+        ("stepfun", "stepfun"),
+        ("stepfun-plan", "stepfun-step-plan"),
+    ];
+
+    /// 端点漂移白名单：models.dev 记录值与前端预设不一致、且**不自动跟随**的项。
+    /// 每条须带 models.dev 当前值（变了就红，逼重新裁决）与理由。
+    /// 裁决规则：协议族变化（openai-compatible → anthropic）意味着请求体格式要改
+    /// （Messages API vs Chat Completions），不是改 URL 的事，必须人工核实后再动预设。
+    const KNOWN_DIVERGENCES: [(&str, &str, &str); 2] = [
+        (
+            "minimax",
+            "https://api.minimaxi.com/anthropic/v1",
+            "MiniMax 官方同时提供 OpenAI 兼容(/v1)与 Anthropic 兼容(/anthropic)双协议且推荐后者；\
+             切换需改请求体格式，非 URL 之改。且 models.dev 的 CN 值本身把域名与 /v1 混拼\
+             （官方 CN Anthropic 基址为 api.minimaxi.com/anthropic），需人工核实后再决",
+        ),
+        (
+            "minimax-intl",
+            "https://api.minimax.io/anthropic/v1",
+            "MiniMax 官方推荐 Anthropic 兼容路径（prompt cache 等优势）；本仓库仍是 \
+             OpenAI 兼容预设，切换需请求体改造，暂留分歧",
+        ),
+    ];
+
+    /// 从 frontend/index.html 解析 PROVIDERS 行（零依赖手写解析：
+    /// 锚定 `baseUrl:'…'` 与 `model:'…'` 紧邻书写形式，提取同行的键）。
+    /// PROVIDERS 表是契约的一部分，写法若变（比如换 JSON 结构），这里解析为空、
+    /// `presets_match_snapshot` 立即红，不会静默放过。
+    fn frontend_presets() -> Vec<(String, String, String)> {
+        let html = include_str!("../../frontend/index.html");
+        let mut out = Vec::new();
+        for line in html.lines() {
+            let l = line.trim();
+            if !l.contains("baseUrl:") || !l.contains("model:") {
+                continue;
+            }
+            let key_end = l.find(':').unwrap_or(0);
+            let key = l[..key_end].trim().trim_matches('\'').to_string();
+            let base = between(l, "baseUrl:'", "'");
+            let model = between(l, "model:'", "'");
+            if let (Some(base), Some(model)) = (base, model) {
+                if !key.is_empty() && key.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
+                    out.push((key, base.to_string(), model.to_string()));
+                }
+            }
+        }
+        out
+    }
+
+    /// 从 frontend/index.html 解析 MINIMAX_STATIC_MODELS 数组。
+    fn frontend_minimax_models() -> Vec<String> {
+        let html = include_str!("../../frontend/index.html");
+        let start = match html.find("MINIMAX_STATIC_MODELS=[") {
+            Some(i) => i,
+            None => return Vec::new(),
+        };
+        let end = html[start..].find(']').map(|i| start + i).unwrap_or(html.len());
+        html[start..end]
+            .split('\'')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn between<'a>(s: &'a str, open: &str, close: &str) -> Option<&'a str> {
+        let i = s.find(open)? + open.len();
+        let j = s[i..].find(close)? + i;
+        Some(&s[i..j])
+    }
+
+    #[test]
+    fn presets_match_snapshot() {
+        let presets = frontend_presets();
+        assert_eq!(
+            presets.len(),
+            PROVIDER_MAP.len(),
+            "frontend PROVIDERS 条目数({})与 PROVIDER_MAP({})不一致——加预设两端都要改",
+            presets.len(),
+            PROVIDER_MAP.len()
+        );
+
+        for (key, base_url, model) in &presets {
+            let Some(md_id) = PROVIDER_MAP.iter().find(|(k, _)| k == key).map(|(_, v)| *v) else {
+                panic!("frontend 预设 `{key}` 没有 models.dev 映射——请更新 PROVIDER_MAP");
+            };
+
+            // 1) 快照里该提供商必须存在
+            let md_api = provider_endpoint(md_id)
+                .unwrap_or_else(|| panic!("快照缺提供商 {md_id}（上游改名？同步 PROVIDER_MAP）"));
+
+            // 2) 端点一致，或在已知分歧白名单内（且记录值与快照当前值一致——
+            //    上游再漂移必须回来重新裁决，不能静默放过）
+            if md_api != base_url.as_str() {
+                let div = KNOWN_DIVERGENCES.iter().find(|(k, _, _)| k == key);
+                match div {
+                    Some((_, recorded, reason)) => {
+                        assert_eq!(
+                            md_api, *recorded,
+                            "`{key}` 的 models.dev 值又变了：记录 {recorded}，现值 {md_api}——\
+                             重新裁决并更新 KNOWN_DIVERGENCES"
+                        );
+                        assert!(!reason.is_empty(), "`{key}` 分歧缺少理由");
+                    }
+                    None => panic!(
+                        "预设 `{key}` 端点漂移未被记录：\n  前端 {base_url}\n  models.dev {md_api}\n\
+                         核查官方文档后：改预设，或加 KNOWN_DIVERGENCES（带理由）"
+                    ),
+                }
+            }
+
+            // 3) 预设默认模型必须在快照里有（防手写 model id 拼错/已下架）
+            let models = provider_models(md_id);
+            assert!(
+                models.iter().any(|m| *m == model),
+                "预设 `{key}` 的默认模型 {model} 不在 {md_id} 的快照模型清单里\n  \
+                 快照内含：{:?}\n核查后改预设或重跑 scripts/sync-models.mjs",
+                &models[..models.len().min(10)]
+            );
+        }
+    }
+
+    /// UI 静态清单里、快照暂缺但官方文档确认存在的模型（models.dev 社区数据滞后）。
+    /// 双向断言：快照一旦收录该项，白名单就过期，测试红逼你清理。
+    const KNOWN_UI_EXTRAS: [(&str, &str); 1] = [(
+        "MiniMax-M2.1-highspeed",
+        "官方文档确认存在（M2.1 highspeed, 204K ctx）；models.dev 快照滞后未收录",
+    )];
+
+    #[test]
+    fn minimax_static_models_in_snapshot() {
+        let ui_models = frontend_minimax_models();
+        assert!(!ui_models.is_empty(), "MINIMAX_STATIC_MODELS 解析为空（前端写法变了？）");
+        for m in &ui_models {
+            let in_cn = provider_models("minimax-cn").iter().any(|x| *x == m);
+            let in_intl = provider_models("minimax").iter().any(|x| *x == m);
+            if in_cn || in_intl {
+                // 快照已收录 → 若它同时还在额外清单里，说明白名单过期了
+                if let Some((_, reason)) = KNOWN_UI_EXTRAS.iter().find(|(k, _)| k == m) {
+                    panic!("快照已收录 {m}——把 KNOWN_UI_EXTRAS 里的条目移除（原理由：{reason}）");
+                }
+            } else {
+                let extra = KNOWN_UI_EXTRAS.iter().find(|(k, _)| k == m);
+                match extra {
+                    Some((_, reason)) => assert!(!reason.is_empty(), "{m} 缺少理由"),
+                    None => panic!(
+                        "MINIMAX_STATIC_MODELS 里的 {m} 在 minimax-cn / minimax 快照中都不存在，\
+                         也未登记为快照滞后项——核查官方文档后：删 UI 条目，或加 KNOWN_UI_EXTRAS（带理由）"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn snapshot_structure_is_healthy() {
+        let p = providers();
+        assert!(p.is_object(), "providers 不是对象");
+        let total: usize = p
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|prov| prov.get("models").and_then(|m| m.as_object()).map(|m| m.len()).unwrap_or(0))
+            .sum();
+        assert!(total >= 60, "快照模型总数 {total} 低于 60——sync 脚本裁剪逻辑坏了？");
+
+        for (pid, prov) in p.as_object().unwrap() {
+            let api = prov.get("api").and_then(|v| v.as_str()).unwrap_or("");
+            assert!(api.starts_with("http"), "提供商 {pid} 的 api 非法：{api}");
+            assert!(
+                prov.get("npm").and_then(|v| v.as_str()).is_some_and(|n| n.starts_with("@ai-sdk/")),
+                "提供商 {pid} 缺 @ai-sdk/* 协议族标记（npm 字段）——上游 schema 变了"
+            );
+            for (mid, m) in prov.get("models").and_then(|m| m.as_object()).into_iter().flatten() {
+                assert!(m.get("reasoning").is_some_and(|v| v.is_boolean()), "{pid}/{mid} 缺 reasoning 布尔");
+                assert!(m.get("tool_call").is_some_and(|v| v.is_boolean()), "{pid}/{mid} 缺 tool_call 布尔");
+                let reasoning = m.get("reasoning").and_then(|v| v.as_bool()).unwrap_or(false);
+                if m.get("reasoning_options").is_some() {
+                    assert!(reasoning, "{pid}/{mid} 有 reasoning_options 但 reasoning=false（schema 自相矛盾）");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn snapshot_has_provenance() {
+        let doc: Value = serde_json::from_str(SNAPSHOT_JSON).unwrap();
+        let fetched = doc.get("fetched_at").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            fetched.len() == 10 && fetched.as_bytes()[4] == b'-',
+            "fetched_at 非法：{fetched}（应为 YYYY-MM-DD；重跑 scripts/sync-models.mjs）"
+        );
+        assert_eq!(
+            doc.get("source").and_then(|v| v.as_str()),
+            Some("https://models.dev/api.json"),
+            "快照 source 变了——注明新来源"
+        );
+    }
+}
