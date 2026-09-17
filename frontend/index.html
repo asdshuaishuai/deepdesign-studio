@@ -2459,20 +2459,39 @@ function registryModelInfo(baseUrl,model){
 }
 /* 按快照能力轴收紧思考等级：effort 型→auto+实测档位；仅 toggle 型→auto/off；
  * 快照未收录→不改动（保持全档，由 Rust 方言表兜底映射）。 */
-function thinkingOptionsFor(info){
+/* 按快照能力轴收紧思考等级（仅对 OpenAI 兼容协议）：
+ * effort 型→auto+实测档位；仅 toggle 型→auto/off；未知→null（不收紧）。
+ * **Anthropic 协议不收紧**——快照的 toggle/effort 轴是 OpenAI 方言的，
+ * 与 Anthropic 的 thinking{budget_tokens} 阶梯正交；MiniMax 家族在
+ * Anthropic 上支持全档 budget，收紧会让整个预算阶梯不可达。 */
+function thinkingOptionsFor(info,baseUrl){
   if(!info||!info.reasoning_options)return null;
+  if(/anthropic/i.test(baseUrl||''))return null;
   const opts=info.reasoning_options;
   const eff=(opts.find(o=>o.type==='effort')||{}).values||[];
   if(eff.length)return ['auto',...eff.filter(v=>v in THINK_LABEL)];
   if(opts.some(o=>o.type==='toggle'))return ['auto','off'];
   return null;
 }
+function restoreThinkingOptions(sel,keepValue){
+  if(!sel)return;
+  const cur=keepValue!==undefined?keepValue:sel.value;
+  const full=Object.keys(THINK_LABEL);
+  sel.innerHTML=full.map(v=>`<option value="${v}">${THINK_LABEL[v]}</option>`).join('');
+  sel.value=full.includes(cur)?cur:'auto';
+}
 function fillModelHints(){
   const box=$('agent-model-hint');if(!box)return;
   const baseUrl=$('agent-base-url').value.trim(),model=$('agent-model').value.trim();
   if(!modelRegistry||!baseUrl||!model){box.textContent='';return;}
   const info=registryModelInfo(baseUrl,model);
-  if(!info){box.innerHTML='<span class="warn">快照未收录该模型——可手动输入，但能力与思考档位无法校验</span>';return;}
+  if(!info){
+    // 未收录端点：恢复全档位（否则从收紧过的模型切到自定义端点后，
+    // low/medium/high/max 会永久不可达）
+    restoreThinkingOptions($('agent-thinking'));
+    box.innerHTML='<span class="warn">快照未收录该模型——可手动输入，但能力与思考档位无法校验</span>';
+    return;
+  }
   const parts=[];
   if(info.limit&&info.limit.context)parts.push('上下文 '+Math.round(info.limit.context/1000)+'K');
   parts.push('工具调用 '+(info.tool_call?'✓':'✗'));
@@ -2480,12 +2499,15 @@ function fillModelHints(){
   let html=parts.join(' · ');
   if(!info.tool_call)html+=' <span class="warn">— 不支持工具调用，Agent 循环会失效</span>';
   box.innerHTML=html;
-  const allowed=thinkingOptionsFor(info),sel=$('agent-thinking');
+  const allowed=thinkingOptionsFor(info,baseUrl),sel=$('agent-thinking');
   if(allowed&&sel){
     const cur=sel.value;
-    sel.innerHTML=allowed.map(v=>`<option value="${v}">${THINK_LABEL[v]||v}</option>`).join('');
+    sel.innerHTML=allowed.map(v=>`<option value="${v}">${THINK_LABEL[v]}</option>`).join('');
     sel.value=allowed.includes(cur)?cur:'auto';
   }
+  // clamp 结果写回 agentConfig：否则 saveSettings 会把面板显示之外的历史值
+  // （如收紧前保存的 high）重新存回去，UI 与配置失联
+  if(sel&&typeof agentConfig==='object')agentConfig.thinkingLevel=sel.value;
 }
 function applyProvider(p){
   const c=PROVIDERS[p];if(!c)return;
@@ -2500,7 +2522,15 @@ function refreshAppearanceControls(){
   const m=$('app-mode');if(m)m.value=document.body.dataset.mode==='dark'?'dark':'light';
   const c=$('theme-cur');if(c)c.textContent={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[document.body.dataset.theme]||'';
 }
-function openSettings(){loadAgentConfig();if(!modelRegistry)loadModelRegistry();fillModelHints();refreshAppearanceControls();$('agent-base-url').value=agentConfig.baseUrl||'';$('agent-api-key').value=agentConfig.apiKey||'';$('agent-model').value=agentConfig.model;$('agent-thinking').value=agentConfig.thinkingLevel||'auto';$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
+function openSettings(){
+  loadAgentConfig();if(!modelRegistry)loadModelRegistry();
+  refreshAppearanceControls();
+  $('agent-base-url').value=agentConfig.baseUrl||'';
+  $('agent-api-key').value=agentConfig.apiKey||'';
+  $('agent-model').value=agentConfig.model;
+  $('agent-thinking').value=agentConfig.thinkingLevel||'auto';
+  // 在输入赋值之后再算提示：先算会读到上一轮的旧输入值
+  fillModelHints();$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
 async function askFxSdk(instruction){
   const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto'};

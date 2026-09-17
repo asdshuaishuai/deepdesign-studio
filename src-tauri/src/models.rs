@@ -178,6 +178,7 @@ mod tests {
             PRESET_PROVIDER_MAP.len()
         );
 
+        let mut divergence_hits: Vec<String> = Vec::new();
         for (key, base_url, model) in &presets {
             let Some(md_id) = provider_map().iter().find(|(k, _)| k == key).map(|(_, v)| *v) else {
                 panic!("frontend 预设 `{key}` 没有 models.dev 映射——请更新 PRESET_PROVIDER_MAP");
@@ -192,6 +193,7 @@ mod tests {
             //    这不是语义差异），或在已知分歧白名单内（且记录值与快照当前值
             //    一致——上游再漂移必须回来重新裁决，不能静默放过）
             if strip_v1(md_api) != strip_v1(base_url.as_str()) {
+                divergence_hits.push(key.clone());
                 let div = KNOWN_DIVERGENCES.iter().find(|(k, _, _)| k == key);
                 match div {
                     Some((_, recorded, reason)) => {
@@ -209,7 +211,6 @@ mod tests {
                 }
             }
 
-            // 3) 预设默认模型必须在快照里有（防手写 model id 拼错/已下架）
             let models = provider_models(md_id);
             assert!(
                 models.iter().any(|m| *m == model),
@@ -218,6 +219,19 @@ mod tests {
                 &models[..models.len().min(10)]
             );
         }
+        // 反向对账：每个 KNOWN_DIVERGENCES 条目都必须真的命中——
+        // 预设若与快照重新对齐而白名单没清，死条目静默失守（镜像 UI_EXTRAS 的双向设计）
+        for (k, _, _) in KNOWN_DIVERGENCES {
+            assert!(
+                divergence_hits.iter().any(|h| h == k),
+                "KNOWN_DIVERGENCES 里的 `{k}` 已与快照对齐（漂移消失）——请移除该条目"
+            );
+        }
+        assert_eq!(
+            divergence_hits.len(),
+            KNOWN_DIVERGENCES.len(),
+            "漂移条目数与白名单不一致——两边必须一起维护"
+        );
     }
 
     /// UI 静态清单里、快照暂缺但官方文档确认存在的模型（models.dev 社区数据滞后）。

@@ -30,7 +30,7 @@ src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI chat-completions 工�
 **Rust 命令必须在 `src-tauri/` 下执行**——仓库根目录没有 `Cargo.toml`，也没有 `package.json`。
 
 ```bash
-cd src-tauri && cargo test        # 10 个测试：方言表 + 路由白名单 + base_url 策略 + 4 个引擎契约（含 SKILL 字典契约）+ 3 个端到端
+cd src-tauri && cargo test        # 20 个测试：方言表(含双协议) + 协议探测/转换/归一化单测 + 路由白名单 + base_url 策略 + 5 个引擎契约（SKILL 字典 + 模型快照）+ 4 个端到端（含 Anthropic 多轮 e2e）
 cd src-tauri && cargo build
 node test_studio.cjs              # 前端状态机冒烟（在仓库根跑）
 node scripts/sync-models.mjs     # 模型元数据快照同步（models.dev → src-tauri/models.json）
@@ -63,7 +63,7 @@ shasum -a 256 src-tauri/engine/moonviz-cli.exe ../moonviz/_build/native/release/
 
 ```bash
 node scripts/sync-models.mjs    # 重新生成快照（更新 fetched_at）
-cargo test                      # 三个契约测试必须仍绿
+cargo test                      # 5 个模型快照契约测试必须仍绿
 ```
 
 **分层事实源（models 线）**：快照 ⇄ 前端 `PROVIDERS` 端点与默认模型（`presets_match_snapshot`）、
@@ -112,7 +112,7 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
 
 ## Agent 基座约定（`agent.rs`）
 
-- **思考等级方言表是 `thinking_extra_body(model, level)`**，按模型名分部匹配：GLM-5.3 强制思考（仅 low/high/max）、
+- **思考等级方言表是 `thinking_extra_body(model, level, protocol)`**（三参含协议），按模型名分部匹配：GLM-5.3 强制思考（仅 low/high/max）、
   GLM-5.2 及更早开关+全档、Kimi k3 恒开（off→none）、Kimi k2.x 仅开关、MiniMax 仅开关、
   StepFun 三档无开关、DeepSeek 开关+全档、Qwen 仅 vLLM 方言 off、未知模型直传 OpenAI 标准字段。
   档位归一：`off/auto/low/medium/high/max`，旧值 `on`→`high`，未知→`auto`。

@@ -132,7 +132,13 @@ pub enum Protocol {
 /// 也顺带兼容官方 Anthropic 端点。
 fn protocol_for(base_url: &str) -> Protocol {
     let b = base_url.to_ascii_lowercase();
-    if b.contains("/anthropic") || b.contains("api.anthropic.com") {
+    let t = b.trim_end_matches('/');
+    // 必须是路径尾部的 anthropic 段（含快照记录的 .../anthropic/v1 形态）：
+    // 用 contains 会把 /anthropic-proxy 这类代理路径误判成 Messages 协议。
+    // host 精确比对——contains("api.anthropic.com") 会被 api.anthropic.com.evil.net 这类
+    // 前缀伪装命中（与 safe_base_url 同级的 DNS 前缀攻击面）
+    let host = t.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
+    if host == "api.anthropic.com" || t.ends_with("/anthropic") || t.ends_with("/anthropic/v1") {
         Protocol::Anthropic
     } else {
         Protocol::OpenAi
@@ -699,7 +705,13 @@ async fn chat_once(
             if let Some(extra) = thinking_extra {
                 body["thinking"] = extra["thinking"].clone();
             }
-            let url = format!("{}/v1/messages", base_url.trim_end_matches('/'));
+            // 剥掉尾部 /v1 再拼：用户可能粘贴 models.dev 记录值（.../anthropic/v1），
+            // 不剥会出现 /anthropic/v1/v1/messages 的双 /v1
+            let base_no_v1 = base_url
+                .trim_end_matches('/')
+                .strip_suffix("/v1")
+                .unwrap_or_else(|| base_url.trim_end_matches('/'));
+            let url = format!("{base_no_v1}/v1/messages");
             client
                 .post(&url)
                 .header("x-api-key", api_key)
@@ -722,7 +734,26 @@ async fn chat_once(
     let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("llm_response_invalid:{e}"))?;
     match protocol {
         Protocol::OpenAi => Ok(parsed),
-        Protocol::Anthropic => Ok(normalize_anthropic_response(&parsed)),
+        Protocol::Anthropic => {
+            // Anthropic 兼容网关（含 MiniMax /anthropic 代理）可能以 200 返回
+            // {"type":"error","error":{...}}（过载/计费/审核）。不拦的话会被
+            // 归一化成空回合，主循环误报"LLM did not call any tools"。
+            if parsed.get("type").and_then(|v| v.as_str()) == Some("error")
+                || parsed.get("error").is_some()
+            {
+                let msg = parsed
+                    .pointer("/error/message")
+                    .or_else(|| parsed.pointer("/error"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let kind = parsed
+                    .pointer("/error/type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("api_error");
+                return Err(format!("llm_api_error:{kind}:{msg}"));
+            }
+            Ok(normalize_anthropic_response(&parsed))
+        }
     }
 }
 
@@ -958,6 +989,14 @@ mod tests {
         assert_eq!(protocol_for("https://api.anthropic.com"), Protocol::Anthropic);
         // 大小写不敏感
         assert_eq!(protocol_for("https://api.minimax.io/ANTHROPIC"), Protocol::Anthropic);
+        // 快照记录值形态（尾部带 /v1）也识别
+        assert_eq!(protocol_for("https://api.minimax.io/anthropic/v1"), Protocol::Anthropic);
+        // 负例：/anthropic 只在路径尾部才算——代理网关名不得误判
+        assert_eq!(protocol_for("https://proxy.com/anthropic-proxy/v1"), Protocol::OpenAi);
+        assert_eq!(protocol_for("https://gw.corp/api/anthropic-gateway/v1"), Protocol::OpenAi);
+        // 负例：host 前缀伪装不得命中
+        assert_eq!(protocol_for("https://anthropic.example.com/v1"), Protocol::OpenAi);
+        assert_eq!(protocol_for("https://api.anthropic.com.evil.net/v1"), Protocol::OpenAi);
     }
 
     #[test]
@@ -973,6 +1012,10 @@ mod tests {
         );
         assert_eq!(thinking_extra_body("MiniMax-M3", "max", Protocol::Anthropic),
             Some(json!({"thinking": {"type": "enabled", "budget_tokens": 32768}})));
+        assert_eq!(
+            thinking_extra_body("MiniMax-M3", "medium", Protocol::Anthropic),
+            Some(json!({"thinking": {"type": "enabled", "budget_tokens": 8192}}))
+        );
         // off/auto → 不注入（Anthropic 省略即关闭）
         assert_eq!(thinking_extra_body("MiniMax-M3", "off", Protocol::Anthropic), None);
         assert_eq!(thinking_extra_body("MiniMax-M3", "auto", Protocol::Anthropic), None);
@@ -1595,9 +1638,19 @@ mod tests {
     }
 
     /// 可复用 mock LLM：按顺序回放脚本化响应体，读完整请求后返回。
-    async fn spawn_mock_llm(rounds: Vec<Value>) -> (u16, tokio::task::JoinHandle<()>) {
+    /// mock OpenAI/Anthropic 端点：按 rounds 依次返回预设响应体，
+    /// 同时把每轮收到的**请求体原文**捕获进 bodies（测试可断言线上形态）。
+    async fn spawn_mock_llm(
+        rounds: Vec<Value>,
+    ) -> (
+        u16,
+        tokio::task::JoinHandle<()>,
+        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
+        let bodies = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let bodies_w = bodies.clone();
         let handle = tokio::spawn(async move {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             for body in rounds {
@@ -1623,6 +1676,15 @@ mod tests {
                         }
                     }
                 }
+                // 捕获请求行 + 请求体（路径与线上形态断言都需要）
+                let s = String::from_utf8_lossy(&raw).into_owned();
+                let req_line = s.lines().next().unwrap_or("").to_string();
+                if let Some(pos) = s.find("\r\n\r\n") {
+                    bodies_w
+                        .lock()
+                        .unwrap()
+                        .push(format!("{req_line}\n{}", &s[pos + 4..]));
+                }
                 let body_str = serde_json::to_string(&body).unwrap();
                 let resp = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -1632,27 +1694,37 @@ mod tests {
                 let _ = sock.write_all(resp.as_bytes()).await;
             }
         });
-        (port, handle)
+        (port, handle, bodies)
     }
 
-    /// Anthropic 协议端到端：mock 返回 Messages 形态（tool_use 块），
-    /// base_url 带 /anthropic 触发协议探测，归一化后主循环照常跑通全链路。
+    /// Anthropic 协议端到端（多轮 + 线上形态断言）：mock 返回 Messages 形态的
+    /// tool_use 块，base_url 带 /anthropic 触发协议探测。除跑通全链路外，
+    /// 断言**发出去的请求**：URL 路径（无双 /v1）、budget<max_tokens、
+    /// system 提取、连续 tool 消息批处理为单条 user 消息、tool_call id 往返。
     #[tokio::test]
     async fn agent_loop_anthropic_protocol_with_mock_llm_and_real_engine() {
         if crate::engine_cli_binary().is_err() {
             eprintln!("跳过：本机无引擎二进制");
             return;
         }
-        let (port, mock) = spawn_mock_llm(vec![
-            // 第一轮：Anthropic 形态的 tool_use（无 text 块也合法）
+        // 第一轮：同消息两个 tool_use（触发两 tool 结果的批处理路径）
+        // 第二轮：单个 tool_use；第三轮：文本总结
+        let (port, mock, bodies) = spawn_mock_llm(vec![
             serde_json::json!({
                 "content": [
                     {"type": "tool_use", "id": "tu1", "name": "moonviz_op",
-                     "input": {"op": "template login rt"}}
+                     "input": {"op": "template login rt"}},
+                    {"type": "tool_use", "id": "tu2", "name": "moonviz_op",
+                     "input": {"op": "fix rt"}}
                 ],
                 "stop_reason": "tool_use"
             }),
-            // 第二轮：文本总结
+            serde_json::json!({
+                "content": [
+                    {"type": "tool_use", "id": "tu3", "name": "read_mbt", "input": {}}
+                ],
+                "stop_reason": "tool_use"
+            }),
             serde_json::json!({
                 "content": [{"type": "text", "text": "已建好登录页 rt。"}],
                 "stop_reason": "end_turn"
@@ -1660,22 +1732,87 @@ mod tests {
         ])
         .await;
         let out = run(
-            "建一个登录页",
+            "建一个登录页并修复",
             None,
             "sk-test",
             "MiniMax-M3",
-            &format!("http://127.0.0.1:{port}/anthropic"),
+            // 基址带 /v1 尾缀——正是用户粘贴 models.dev 快照值的形态，
+        // 锁死"双 /v1"拼装回归（base_no_v1 strip 逻辑）
+        &format!("http://127.0.0.1:{port}/anthropic/v1"),
             "high",
         )
         .await;
         mock.abort();
+
+        // ---- 结果契约 ----
         assert_eq!(out["ok"], json!(true), "{out}");
-        assert_eq!(out["ops"], json!(["template login rt"]), "Anthropic tool_use 应被归一化为可执行调用");
+        assert_eq!(
+            out["ops"],
+            json!(["template login rt", "fix rt"]),
+            "两个 tool_use 应都被归一化并执行"
+        );
         assert_eq!(out["stopReason"], json!("done"));
         assert_eq!(out["text"], json!("已建好登录页 rt。"));
         let mbt = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
         assert!(mbt.contains("rt"), "canonical mbt 应含画板 rt");
-        assert!(out["render"]["artboards"].is_array(), "render 兜底");
+
+        // ---- 线上形态断言（mock 捕获的真实请求）----
+        let bs = bodies.lock().unwrap();
+        assert_eq!(bs.len(), 3, "应发生 3 轮请求，实际 {}", bs.len());
+
+        // 1) URL：POST /anthropic/v1/messages——恰好一个 /v1（双 /v1 拼装回归锁）
+        assert!(
+            bs[0].starts_with("POST /anthropic/v1/messages "),
+            "Anthropic 请求路径错误：{}",
+            bs[0].lines().next().unwrap_or("")
+        );
+
+        let b1: Value = serde_json::from_str(bs[0].lines().nth(1).unwrap_or("{}")).unwrap();
+        // 2) system 提取为顶层字段，messages 内无 system 角色
+        assert!(b1.get("system").and_then(|v| v.as_str()).is_some(), "system 应在顶层");
+        let msgs = b1["messages"].as_array().unwrap();
+        assert!(
+            !msgs.iter().any(|m| m.get("role").and_then(|r| r.as_str()) == Some("system")),
+            "messages 内不应有 system 角色"
+        );
+        // 3) thinking.budget_tokens < max_tokens（Anthropic 硬约束）+ high 档预算值
+        let budget = b1["thinking"]["budget_tokens"].as_u64().expect("thinking.budget_tokens");
+        let max_tokens = b1["max_tokens"].as_u64().expect("max_tokens");
+        assert_eq!(budget, 16384, "high 档应为 16384");
+        assert!(budget < max_tokens, "budget {budget} 必须小于 max_tokens {max_tokens}");
+
+        // 4) 第二轮请求：两个 tool 结果必须批处理进**单条** user 消息，id 原样往返
+        let b2: Value = serde_json::from_str(bs[1].lines().nth(1).unwrap_or("{}")).unwrap();
+        let msgs2 = b2["messages"].as_array().unwrap();
+        let tool_user_msgs: Vec<&Value> = msgs2
+            .iter()
+            .filter(|m| {
+                m.get("role").and_then(|r| r.as_str()) == Some("user")
+                    && m.get("content")
+                        .and_then(|c| c.as_array())
+                        .is_some_and(|a| a.iter().any(|blk| blk.get("type").and_then(|t| t.as_str()) == Some("tool_result")))
+            })
+            .collect();
+        assert_eq!(tool_user_msgs.len(), 1, "连续 tool 消息必须批处理为单条 user 消息");
+        let blocks = tool_user_msgs[0]["content"].as_array().unwrap();
+        let ids: Vec<&str> = blocks
+            .iter()
+            .filter_map(|blk| blk.get("tool_use_id").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["tu1", "tu2"], "tool_call id 必须原样往返");
+        // assistant 消息里应有两个 tool_use 块（归一化→转换的往返锁）
+        let asst = msgs2
+            .iter()
+            .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("assistant"))
+            .expect("应有 assistant 消息");
+        let tu: Vec<&str> = asst["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|blk| blk.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
+            .filter_map(|blk| blk.get("id").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(tu, vec!["tu1", "tu2"], "assistant 消息应含两个 tool_use 块");
     }
 
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。
@@ -1686,7 +1823,7 @@ mod tests {
             return;
         }
         // mock 只服务第一轮（bootstrap tool_call），之后 listener 关闭 → 第二轮连接被拒
-        let (port, mock) = spawn_mock_llm(vec![serde_json::json!({
+        let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
             "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
                 {"id": "c1", "type": "function", "function": {"name": "moonviz_op",
                  "arguments": "{\"op\": \"template login lg\"}"}}
@@ -1723,7 +1860,7 @@ mod tests {
         };
         let Some(mbt) = mbt_b64 else { eprintln!("跳过：引擎未产出 mbt"); return };
 
-        let (port, mock) = spawn_mock_llm(vec![
+        let (port, mock, _bodies) = spawn_mock_llm(vec![
             serde_json::json!({
                 "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
                     {"id": "c1", "type": "function", "function": {"name": "read_mbt", "arguments": "{}"}}
