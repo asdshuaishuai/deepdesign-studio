@@ -69,9 +69,15 @@ const INTERACTIVE_SURFACE=[
   // 但函数缺失会让预设点击后模型清单与提示静默失效）
   'loadModelRegistry','registryProviderFor','registryModelIds','presetRegistryIds',
   'registryModelInfo','thinkingOptionsFor','fillModelHints',
+  // restoreThinkingOptions 与 THINK_LABEL 是档位恢复路径的承重符号——
+  // 缺失时点预设后 select 静默不收窄/不恢复（9f48220 同类盲区，勿删）
+  'restoreThinkingOptions',
 ];
+const SURFACE_CONSTS=['THINK_LABEL'];
 // 断言条目数：否则删一个名字会同时缩短清单与提示信息，防线静默变弱
-assert.equal(INTERACTIVE_SURFACE.length,34,'交互层清单条目数变了——增删都必须是有意的');
+assert.equal(INTERACTIVE_SURFACE.length,35,'交互层清单条目数变了——增删都必须是有意的');
+const missingConsts=SURFACE_CONSTS.filter(n=>!new RegExp('(const|let|var)\\s+'+n+'\\b').test(script));
+assert.deepEqual(missingConsts,[],`承重常量未定义：${missingConsts}`);
 const missingSurface=INTERACTIVE_SURFACE.filter(n=>!defined.has(n));
 assert.deepEqual(missingSurface,[],
   `交互层函数未定义：${missingSurface}（历史上因批量删死代码误删，会静默失效）`);

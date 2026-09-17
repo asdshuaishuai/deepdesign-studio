@@ -14,6 +14,30 @@ use serde_json::Value;
 
 /// 端点比对归一：忽略尾部 `/v1`（Anthropic SDK 自行追加 `/v1/messages`，
 /// models.dev 把带 /v1 的基址记进 api 字段——路径约定差异而非语义差异）。
+/// 按预设 URL 推断我们走的协议族（与 agent.rs::protocol_for 同规则）。
+#[cfg(test)]
+fn our_family(base_url: &str) -> &'static str {
+    let b = base_url.to_ascii_lowercase();
+    let t = b.trim_end_matches('/');
+    let host = t.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
+    if host == "api.anthropic.com" || t.ends_with("/anthropic") || t.ends_with("/anthropic/v1") {
+        "@ai-sdk/anthropic"
+    } else {
+        "@ai-sdk/openai-compatible"
+    }
+}
+
+/// 已知协议族分歧：快照 npm 家族与我们预设 URL 推断的不一致、且**不改线**的项。
+/// 规则（本文件的承诺）：协议族变化意味着请求体改造（Messages vs Chat Completions），
+/// 不是改 URL 的事——必须人工裁决。三条全是"快照说 anthropic、我们仍是 OpenAI wire"，
+/// 切换需请求体层逐模型验证，暂留。
+#[cfg(test)]
+const KNOWN_FAMILY_DIVERGENCES: [(&str, &str); 3] = [
+    ("minimax", "快照 minimax-cn npm=@ai-sdk/anthropic；本预设仍是 OpenAI 兼容 /v1——双协议支持已落地，用户可切同 id 的 Anthropic 预设"),
+    ("minimax-intl", "快照 minimax npm=@ai-sdk/anthropic；同上"),
+    ("kimi-plan", "快照 kimi-for-coding npm=@ai-sdk/anthropic；订阅端点可能已要求 Messages 格式——未验证前不改线"),
+];
+
 #[cfg(test)]
 fn strip_v1(u: &str) -> &str {
     let t = u.trim_end_matches('/');
@@ -207,6 +231,26 @@ mod tests {
                     None => panic!(
                         "预设 `{key}` 端点漂移未被记录：\n  前端 {base_url}\n  models.dev {md_api}\n\
                          核查官方文档后：改预设，或加 KNOWN_DIVERGENCES（带理由）"
+                    ),
+                }
+            }
+
+            // 2.5) 协议族比对：快照 npm 字段（@ai-sdk/anthropic vs openai-compatible）
+            // 与我们按 URL 推断的家族不一致时必须登记——否则"URL 没漂移但线上
+            // 协议已换"完全隐形（kimi-plan 就是这样：端点一致、家族已变）。
+            let md_npm = providers()
+                .get(md_id)
+                .and_then(|p| p.get("npm"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let ours = our_family(base_url);
+            if !md_npm.is_empty() && md_npm != ours {
+                let fam = KNOWN_FAMILY_DIVERGENCES.iter().find(|(k, _)| k == key);
+                match fam {
+                    Some((_, reason)) => assert!(!reason.is_empty(), "`{key}` 家族分歧缺少理由"),
+                    None => panic!(
+                        "预设 `{key}` 协议族漂移未被记录：\n  我们按 URL 推断 {ours}\n  models.dev npm {md_npm}\n\
+                         核查官方文档后：改预设协议（涉及请求体改造），或加 KNOWN_FAMILY_DIVERGENCES（带理由）"
                     ),
                 }
             }

@@ -8,14 +8,14 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 
 ```
 frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）
-src-tauri/src/lib.rs       Tauri 命令层：exec_cli / save_ddp / open_ddp / invoke_fx_sdk / diagnostics
+src-tauri/src/lib.rs       Tauri 命令层：exec_cli / save_ddp / open_ddp / invoke_fx_sdk / diagnostics / model_registry
 src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI chat-completions 工具调用 × 引擎管道）
 ../moonviz                兄弟仓库：MoonBit 引擎源码 + ddp crate（引擎二进制从这里来）
 ```
 
 必须守住的边界：
 
-- **前端只能经 `window.__TAURI__.core.invoke` 调上面 5 个命令**，没有 HTTP 层，不要引入 fetch/axios。
+- **前端只能经 `window.__TAURI__.core.invoke` 调上面 6 个命令**，没有 HTTP 层，不要引入 fetch/axios。
 - **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、进程编排、DDP 加解密。
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
 - **人类操作与 Agent 操作走不同引擎入口**，两条门的能力面不同（详见下文「引擎双门」表），
@@ -58,7 +58,7 @@ shasum -a 256 src-tauri/engine/moonviz-cli.exe ../moonviz/_build/native/release/
 
 ## 同步模型快照（models.dev，与引擎无关的另一条对账线）
 
-`src-tauri/models.json` 是 models.dev api.json 的**裁剪快照**（仅 11 个预设提供商 /
+`src-tauri/models.json` 是 models.dev api.json 的**裁剪快照**（13 个预设映射到 11 个唯一提供商 /
 86 模型，~48KB，随版本库提交）。MIT 许可，vendored 而非运行时拉取（离线桌面 + 依赖极简）。
 
 ```bash
@@ -115,6 +115,8 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
 - **思考等级方言表是 `thinking_extra_body(model, level, protocol)`**（三参含协议），按模型名分部匹配：GLM-5.3 强制思考（仅 low/high/max）、
   GLM-5.2 及更早开关+全档、Kimi k3 恒开（off→none）、Kimi k2.x 仅开关、MiniMax 仅开关、
   StepFun 三档无开关、DeepSeek 开关+全档、Qwen 仅 vLLM 方言 off、未知模型直传 OpenAI 标准字段。
+  **Anthropic 协议半区**：仅 MiniMax 家族有明确 thinking 语义——`thinking{type:enabled,budget_tokens}`
+  (low 2048/medium 8192/high 16384/max 32768)，off/auto 省略即关闭；其余模型不注入。
   档位归一：`off/auto/low/medium/high/max`，旧值 `on`→`high`，未知→`auto`。
   **加任何厂商/型号都必须同步扩 `thinking_family_table` 单测**，那张表就是这个函数的契约。
 - **双协议支持（MiniMax Anthropic Messages）**：`protocol_for(base_url)` 按 `/anthropic` 路径段
@@ -185,10 +187,10 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
     动这些标记、改函数名、或把签名写成非 `function name(` 形式，都会让它**静默取到错东西**。
 - Rust 端到端测试在**本机无引擎二进制时静默跳过**（`eprintln!("跳过：...")` + `return`，不是 ignored，
   也不是 `#[ignore]`）。看到"绿"之前先确认引擎真的在，否则等于什么都没测。
-  受影响的 5 个：`agent_loop_with_mock_llm_and_real_engine`、`mid_run_llm_failure_preserves_committed_work`、
+  受影响的 6 个：`agent_loop_with_mock_llm_and_real_engine`、`mid_run_llm_failure_preserves_committed_work`、
   `readonly_session_gets_render_fallback`、`readonly_whitelist_matches_engine_surface`、
-  `template_ids_match_engine`。`skill_dictionary_matches_engine_and_agent` 无引擎时只跳过探针、
-  静态断言（字典↔白名单↔提示词）仍然生效。判断方法：看有没有 "跳过" 输出，或数通过条数是否仍是 10。
+  `template_ids_match_engine`、`agent_loop_anthropic_protocol_with_mock_llm_and_real_engine`。`skill_dictionary_matches_engine_and_agent` 无引擎时只跳过探针、
+  静态断言（字典↔白名单↔提示词）仍然生效。判断方法：看有没有 "跳过" 输出，或数通过条数是否仍是 20。
 
 ## 删前端代码前必读（真实事故，勿重演）
 
@@ -196,7 +198,7 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
 其中 **14 个仍被引用**（约 40 处调用点）。后果：应用能正常启动，但一点画布就 `ReferenceError`——
 **选择功能结构性失效**（`select()` 是唯一写入真实节点 id 的地方，它没了则 `selected` 恒为 `null`，
 inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处中断，
-新建画板/模板/快速开始全部误报失败，打开 DDP 直接损坏，原生菜单静默变哑。修复见 `9b8804f` 恢复。
+新建画板/模板/快速开始全部误报失败，打开 DDP 直接损坏，原生菜单静默变哑。恢复代码取自已发布的前一提交 `9b8804f`,落地提交是 `c93117d`。
 
 从这次事故总结的硬性规则：
 

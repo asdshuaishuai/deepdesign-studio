@@ -878,10 +878,10 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </label>
     </div>
     <div class="settings-sec">AI 端点（Agent）</div>
-    <p class="settings-note">Agent 基于 @open-agent-loops/core（原生 OpenAI 兼容），操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点（OpenAI chat 兼容格式）。</p>
+    <p class="settings-note">Agent 基于 @open-agent-loops/core，操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点：URL 含 <code>/anthropic</code> 走 Anthropic Messages 协议（x-api-key），其余按 OpenAI chat 兼容格式处理。</p>
     <div class="settings-grid">
       <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="glm-coding" onclick="applyProvider('glm-coding')">GLM Coding</button><button type="button" class="prov-chip" data-prov="zai" onclick="applyProvider('zai')">z.ai</button><button type="button" class="prov-chip" data-prov="zai-coding" onclick="applyProvider('zai-coding')">z.ai Coding</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi API</button><button type="button" class="prov-chip" data-prov="kimi-plan" onclick="applyProvider('kimi-plan')">Kimi 订阅</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="minimax-intl" onclick="applyProvider('minimax-intl')">MiniMax 国际</button><button type="button" class="prov-chip" data-prov="minimax-anthropic" onclick="applyProvider('minimax-anthropic')">MiniMax(Anthropic)</button><button type="button" class="prov-chip" data-prov="minimax-anthropic-intl" onclick="applyProvider('minimax-anthropic-intl')">MiniMax(Anthropic 国际)</button><button type="button" class="prov-chip" data-prov="stepfun" onclick="applyProvider('stepfun')">StepFun</button><button type="button" class="prov-chip" data-prov="stepfun-plan" onclick="applyProvider('stepfun-plan')">StepFun 订阅</button></label>
-      <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = https://api.deepseek.com（DeepSeek 默认）；支持任意 OpenAI 兼容端点，本地 http 仅限内网地址"></label>
+      <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = https://api.deepseek.com（DeepSeek 默认）；支持任意 OpenAI 兼容端点，或 .../anthropic 端点（自动走 Messages 协议）；本地 http 仅限内网地址"></label>
       <label class="wide">API Token<input id="agent-api-key" type="password" autocomplete="off" placeholder="仅本机保存；留空则用环境变量 AI_GATEWAY_API_KEY；订阅计划填专属 Key（MiniMax 为 sk-cp- 前缀）"></label>
       <label class="wide">Model ID
         <span style="display:flex;gap:6px">
@@ -2429,7 +2429,9 @@ async function loadModelRegistry(){
 }
 function registryProviderFor(baseUrl){
   if(!modelRegistry||!baseUrl)return null;
-  const norm=u=>u.replace(/\/+$/,''),want=norm(baseUrl);
+  // 与 Rust strip_v1 对齐：忽略尾部 /v1（Anthropic SDK 自行追加 /v1/messages，
+  // models.dev 把带 /v1 的基址记进 api 字段）——不剥会让粘贴快照值匹配失败
+  const norm=u=>{const t=u.replace(/\/+$/,'');return t.replace(/\/v1$/,'');},want=norm(baseUrl);
   for(const[id,prov]of Object.entries(modelRegistry.providers||{})){
     if(norm(prov.api||'')===want)return{id,provider:prov};
   }
@@ -2457,8 +2459,6 @@ function registryModelInfo(baseUrl,model){
   const m=(p.provider.models||{})[model];
   return m?Object.assign({},m,{provider:p.id}):null;
 }
-/* 按快照能力轴收紧思考等级：effort 型→auto+实测档位；仅 toggle 型→auto/off；
- * 快照未收录→不改动（保持全档，由 Rust 方言表兜底映射）。 */
 /* 按快照能力轴收紧思考等级（仅对 OpenAI 兼容协议）：
  * effort 型→auto+实测档位；仅 toggle 型→auto/off；未知→null（不收紧）。
  * **Anthropic 协议不收紧**——快照的 toggle/effort 轴是 OpenAI 方言的，
@@ -2468,9 +2468,13 @@ function thinkingOptionsFor(info,baseUrl){
   if(!info||!info.reasoning_options)return null;
   if(/anthropic/i.test(baseUrl||''))return null;
   const opts=info.reasoning_options;
+  const hasToggle=opts.some(o=>o.type==='toggle');
   const eff=(opts.find(o=>o.type==='effort')||{}).values||[];
-  if(eff.length)return ['auto',...eff.filter(v=>v in THINK_LABEL)];
-  if(opts.some(o=>o.type==='toggle'))return ['auto','off'];
+  const levels=['auto',...eff.filter(v=>v in THINK_LABEL)];
+  // 双轴模型（如 deepseek-flash、kimi-for-coding：toggle+effort）——off 必须保留：
+  // 方言表为它们实现了 off 路径（DeepSeek thinking.type=disabled、Kimi effort=none）
+  if(eff.length)return hasToggle?[...levels,'off']:levels;
+  if(hasToggle)return ['auto','off'];
   return null;
 }
 function restoreThinkingOptions(sel,keepValue){
@@ -2504,6 +2508,10 @@ function fillModelHints(){
     const cur=sel.value;
     sel.innerHTML=allowed.map(v=>`<option value="${v}">${THINK_LABEL[v]}</option>`).join('');
     sel.value=allowed.includes(cur)?cur:'auto';
+  }else if(sel){
+    // 不收窄（Anthropic 协议或空轴）→ 必须恢复全档：
+    // 否则从收窄过的模型切过来时档位粘滞，Anthropic 上唯一能关思考的 off 会丢失
+    restoreThinkingOptions(sel);
   }
   // clamp 结果写回 agentConfig：否则 saveSettings 会把面板显示之外的历史值
   // （如收紧前保存的 high）重新存回去，UI 与配置失联

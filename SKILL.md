@@ -3,7 +3,7 @@
 > **本文件是 deepDesign 仓库的引擎能力字典（vendored 副本）。**
 > 源自 `../moonviz/SKILL.md`。上游曾不完整，已于 `555e21a` 修正并收敛；此后上游又新增
 > Images 语法段（已同步并实测）。本副本额外保留 deepDesign 特有部分（双门表、机器可读
-> 清单块、验证附录）。引擎 `list-tools` 已修复为合法 JSON 注册表（46 工具），但它是
+> 清单块、验证附录）。引擎 `list-tools` 已修复为合法 JSON 注册表（47 工具），但它是
 > MCP 命名层子集——CLI op 面仍靠本文件的清单块锚定。
 > 每一条声明都对照本仓库实际分发的引擎二进制探测验证过。引擎更新后：重跑文末附录探针 →
 > 更正本文件（并与上游 diff，能同步回上游的同步回去）→ `cargo test` 的 SKILL 契约测试强制对账。
@@ -149,7 +149,7 @@ benchmark               性能基准
 ```
 
 MCP 面与 CLI op 面同源、snake_case 命名。工具注册表的事实源是引擎
-`core/agent_api.mbt`（46 工具、全量 inputSchema），CLI 的 `list-tools` 直接输出
+`core/agent_api.mbt`（47 工具、全量 inputSchema），CLI 的 `list-tools` 直接输出
 MCP `tools/list` 形态的合法 JSON（`name`/`description`/`inputSchema{properties,required}`）。
 枚举 MCP 面用 `list-tools`，不要引用写死的工具总数。
 （此项已修复：此前只倾倒 11 个且嵌套 JSON 未转义。）

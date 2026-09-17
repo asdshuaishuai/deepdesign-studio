@@ -20,6 +20,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url))); // deepDesign/
 const SOURCE = 'https://models.dev/api.json';
 
 // frontend/index.html 的 PROVIDERS 键 → models.dev 提供商 id
+// 必须与 src-tauri/src/models.rs 的 PRESET_PROVIDER_MAP 完全一致（presets_match_snapshot 锚定后者，本表是第三份副本——加预设三处一起改）
 const PROVIDER_MAP = {
   deepseek: 'deepseek',
   glm: 'zhipuai',
@@ -30,6 +31,8 @@ const PROVIDER_MAP = {
   'kimi-plan': 'kimi-for-coding',
   minimax: 'minimax-cn',
   'minimax-intl': 'minimax',
+  'minimax-anthropic': 'minimax-cn',
+  'minimax-anthropic-intl': 'minimax',
   stepfun: 'stepfun',
   'stepfun-plan': 'stepfun-step-plan',
 };

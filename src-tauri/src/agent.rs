@@ -1,7 +1,8 @@
 //! 进程内 Agent 基座：OpenAI chat-completions 工具循环 × MoonViz 引擎管道。
 //!
 //! 取代原 node + agent-bridge.mjs 子进程桥（85MB JS 运行时）。
-//! 请求体为 OpenAI chat wire format（json! 字面量），thinking 家族等非标
+//! 请求体为 OpenAI chat wire format 或 Anthropic Messages wire（协议按 base_url 探测，
+//! json! 字面量），thinking 家族等非标
 //! 字段在构造时直接注入；引擎调用复用 exec_cli 完整管道（用户组件库
 //! restore/snapshot 写回、AgentGate 校验、canonical .mbt.md 提交）。
 //! 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text}。
@@ -127,9 +128,10 @@ pub enum Protocol {
     Anthropic,
 }
 
-/// 由 base_url 推断协议：含 `/anthropic` 路径段或 api.anthropic.com 即 Anthropic Messages。
-/// 这覆盖 MiniMax 官方文档的配置方式（ANTHROPIC_BASE_URL=.../anthropic），
-/// 也顺带兼容官方 Anthropic 端点。
+/// 由 base_url 推断协议：路径尾部为 `/anthropic`（或 `/anthropic/v1`）、host 精确等于
+/// api.anthropic.com 时走 Anthropic Messages。尾部匹配而非 contains——`/anthropic-proxy`
+/// 这类代理路径不得误判；host 精确比对防 api.anthropic.com.evil.net 前缀伪装。
+/// 覆盖 MiniMax 官方文档配置方式（ANTHROPIC_BASE_URL=.../anthropic）与官方 Anthropic 端点。
 fn protocol_for(base_url: &str) -> Protocol {
     let b = base_url.to_ascii_lowercase();
     let t = b.trim_end_matches('/');
@@ -276,7 +278,8 @@ fn normalize_anthropic_response(v: &Value) -> Value {
 /// - Kimi k3 / kimi-for-coding（platform.kimi.com + kimi.com/code）：恒开思考无开关——
 ///   off→effort none（路由到无思考版），等级 low/high/max（medium 降级 high）
 /// - Kimi k2.x：thinking.type 开关（k2.6）；等级档不传（未定义）
-/// - MiniMax M2/M3：仅 thinking.type adaptive(默认)/disabled，无等级（M2.x disabled 忽略）
+/// - MiniMax M2/M3（OpenAI 协议）：仅 thinking.type adaptive(默认)/disabled，无等级（M2.x disabled 忽略）
+/// - MiniMax（Anthropic 协议）：thinking{type:enabled,budget_tokens} 全档 2048/8192/16384/32768，off/auto 省略即关闭
 /// - StepFun（platform.stepfun.com，含 Step Plan step_plan/v1）：effort low/medium/high
 ///   （max 降级 high），无开关
 /// - Qwen：DashScope 兼容模式对未知字段严格——仅 vLLU 自部署方言 off 开关
@@ -660,7 +663,8 @@ fn safe_base_url(u: &str) -> Option<String> {
     }
 }
 
-/// 单次 chat-completions 请求（OpenAI wire format + 非标字段注入）。
+/// 单次 LLM 请求：按 protocol_for 分流——OpenAI Chat Completions（bearer）或
+/// Anthropic Messages（x-api-key + anthropic-version）；后者归一化为 OpenAI 形状返回。
 async fn chat_once(
     client: &reqwest::Client,
     base_url: &str,
@@ -897,14 +901,32 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Value {
     let Some(base) = safe_base_url(base_url) else {
         return json!({"ok": false, "error": "base_url_must_be_https"});
     };
-    let url = format!("{}/models", base.trim_end_matches('/'));
+    // 协议分叉（与 chat_once 一致）：Anthropic 端点列模型在 /v1/models 且用
+    // x-api-key；OpenAI 兼容端点保持 {base}/models + bearer。
+    // 前端另有快照兜底，但端点可用时不该用错协议去问。
+    let protocol = protocol_for(&base);
+    let base_no_v1 = base
+        .trim_end_matches('/')
+        .strip_suffix("/v1")
+        .unwrap_or_else(|| base.trim_end_matches('/'));
+    let url = match protocol {
+        Protocol::OpenAi => format!("{}/models", base.trim_end_matches('/')),
+        Protocol::Anthropic => format!("{base_no_v1}/v1/models"),
+    };
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build();
     let Ok(client) = client else {
         return json!({"ok": false, "error": "client_build_failed"});
     };
-    let resp = match client.get(&url).bearer_auth(api_key).send().await {
+    let request = match protocol {
+        Protocol::OpenAi => client.get(&url).bearer_auth(api_key),
+        Protocol::Anthropic => client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01"),
+    };
+    let resp = match request.send().await {
         Ok(r) => r,
         Err(e) => return json!({"ok": false, "error": format!("models_fetch_failed:{e}")}),
     };
@@ -975,6 +997,46 @@ mod tests {
         assert_eq!(thinking_extra_body("deepseek-flash", "on", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
         // 未知模型：OpenAI 标准字段直传
         assert_eq!(thinking_extra_body("some-model", "high", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
+    }
+
+    /// list_models 也必须协议分叉：Anthropic 端点列模型在 /v1/models + x-api-key，
+    /// OpenAI 端点保持 {base}/models + bearer（此前只分裂了 chat_once）。
+    #[tokio::test]
+    async fn list_models_uses_correct_protocol() {
+        let (port, mock, bodies) = spawn_mock_llm(vec![
+            json!({"data": [{"id": "MiniMax-M3"}, {"id": "MiniMax-M2.1"}]}),
+        ])
+        .await;
+        // Anthropic 端点（快照记录值形态：尾部带 /v1）
+        let out = list_models(&format!("http://127.0.0.1:{port}/anthropic/v1"), "sk-test").await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        let ids = out["models"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|m| m.get("id").and_then(|v| v.as_str())).collect::<Vec<_>>())
+            .unwrap_or_default();
+        assert_eq!(ids, vec!["MiniMax-M3", "MiniMax-M2.1"]);
+        let bs = bodies.lock().unwrap();
+        assert!(
+            bs[0].starts_with("GET /anthropic/v1/models "),
+            "Anthropic 端点应请求 /anthropic/v1/models，实际：{}",
+            bs[0].lines().next().unwrap_or("")
+        );
+
+        // OpenAI 端点回归：/models 路径不变
+        let (port2, mock2, bodies2) = spawn_mock_llm(vec![
+            json!({"data": [{"id": "deepseek-flash"}]}),
+        ])
+        .await;
+        let out2 = list_models(&format!("http://127.0.0.1:{port2}/v1"), "sk-test").await;
+        mock2.abort();
+        assert_eq!(out2["ok"], json!(true), "{out2}");
+        let bs2 = bodies2.lock().unwrap();
+        assert!(
+            bs2[0].starts_with("GET /v1/models "),
+            "OpenAI 端点应请求 /v1/models，实际：{}",
+            bs2[0].lines().next().unwrap_or("")
+        );
     }
 
     #[test]
@@ -1639,7 +1701,7 @@ mod tests {
 
     /// 可复用 mock LLM：按顺序回放脚本化响应体，读完整请求后返回。
     /// mock OpenAI/Anthropic 端点：按 rounds 依次返回预设响应体，
-    /// 同时把每轮收到的**请求体原文**捕获进 bodies（测试可断言线上形态）。
+    /// 同时把每轮收到的**请求行 + 请求体**捕获进 bodies（测试可断言 URL 路径与线上形态）。
     async fn spawn_mock_llm(
         rounds: Vec<Value>,
     ) -> (
@@ -1665,12 +1727,15 @@ mod tests {
                             let s = String::from_utf8_lossy(&raw).into_owned();
                             if let Some(pos) = s.find("\r\n\r\n") {
                                 let body_start = pos + 4;
-                                if let Some(len) = s
+                                match s
                                     .lines()
                                     .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().to_string()))
                                     .and_then(|v| v.parse::<usize>().ok())
                                 {
-                                    if raw.len() >= body_start + len { break; }
+                                    // 有 body：等收齐（POST）
+                                    Some(len) => { if raw.len() >= body_start + len { break; } }
+                                    // 无 body（GET，如 list_models）：header 读完即响应
+                                    None => break,
                                 }
                             }
                         }
