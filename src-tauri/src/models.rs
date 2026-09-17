@@ -11,6 +11,14 @@
 //! 发现与漂移对账。契约测试 `presets_match_snapshot` 把这条链锁死。
 
 use serde_json::Value;
+
+/// 端点比对归一：忽略尾部 `/v1`（Anthropic SDK 自行追加 `/v1/messages`，
+/// models.dev 把带 /v1 的基址记进 api 字段——路径约定差异而非语义差异）。
+#[cfg(test)]
+fn strip_v1(u: &str) -> &str {
+    let t = u.trim_end_matches('/');
+    t.strip_suffix("/v1").unwrap_or(t)
+}
 #[cfg(test)]
 use serde_json::json; // 仅测试代码使用（build 与 test 对 use 的可见性不同，条件导入避免误报）
 
@@ -49,7 +57,7 @@ pub fn provider_models(id: &str) -> Vec<&'static str> {
 }
 
 /// frontend PROVIDERS 键 → models.dev 提供商 id（前端经 model_registry 命令消费）。
-pub const PRESET_PROVIDER_MAP: [(&str, &str); 11] = [
+pub const PRESET_PROVIDER_MAP: [(&str, &str); 13] = [
     ("deepseek", "deepseek"),
     ("glm", "zhipuai"),
     ("glm-coding", "zhipuai-coding-plan"),
@@ -59,6 +67,9 @@ pub const PRESET_PROVIDER_MAP: [(&str, &str); 11] = [
     ("kimi-plan", "kimi-for-coding"),
     ("minimax", "minimax-cn"),
     ("minimax-intl", "minimax"),
+    // Anthropic Messages 双协议端点（官方推荐路径；同一个 models.dev 提供商）
+    ("minimax-anthropic", "minimax-cn"),
+    ("minimax-anthropic-intl", "minimax"),
     ("stepfun", "stepfun"),
     ("stepfun-plan", "stepfun-step-plan"),
 ];
@@ -176,9 +187,11 @@ mod tests {
             let md_api = provider_endpoint(md_id)
                 .unwrap_or_else(|| panic!("快照缺提供商 {md_id}（上游改名？同步 PROVIDER_MAP）"));
 
-            // 2) 端点一致，或在已知分歧白名单内（且记录值与快照当前值一致——
-            //    上游再漂移必须回来重新裁决，不能静默放过）
-            if md_api != base_url.as_str() {
+            // 2) 端点一致（忽略 /v1 路径约定差异——Anthropic SDK 自行追加
+            //    /v1/messages，models.dev 把带 /v1 的基址记进 api 字段，
+            //    这不是语义差异），或在已知分歧白名单内（且记录值与快照当前值
+            //    一致——上游再漂移必须回来重新裁决，不能静默放过）
+            if strip_v1(md_api) != strip_v1(base_url.as_str()) {
                 let div = KNOWN_DIVERGENCES.iter().find(|(k, _, _)| k == key);
                 match div {
                     Some((_, recorded, reason)) => {
@@ -278,7 +291,7 @@ mod tests {
             .iter()
             .map(|(k, v)| ((*k).to_string(), json!((*v))))
             .collect();
-        assert_eq!(map.len(), 11);
+        assert_eq!(map.len(), 13);
         // 映射的每个 models.dev id 必须在快照里有
         for v in map.values() {
             let id = v.as_str().unwrap();

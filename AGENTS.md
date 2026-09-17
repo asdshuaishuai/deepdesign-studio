@@ -117,6 +117,15 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
   StepFun 三档无开关、DeepSeek 开关+全档、Qwen 仅 vLLM 方言 off、未知模型直传 OpenAI 标准字段。
   档位归一：`off/auto/low/medium/high/max`，旧值 `on`→`high`，未知→`auto`。
   **加任何厂商/型号都必须同步扩 `thinking_family_table` 单测**，那张表就是这个函数的契约。
+- **双协议支持（MiniMax Anthropic Messages）**：`protocol_for(base_url)` 按 `/anthropic` 路径段
+  或 `api.anthropic.com` 探测协议。`chat_once` 内做格式转换并**归一化为 OpenAI 形状返回**，
+  主循环因此零改动：Anthropic 侧的消息转换（`to_anthropic_messages`，连续 tool 消息必须合并为
+  单条 user 消息里的多个 tool_result 块、system 提取为顶层字段）、工具 schema 转换
+  （`input_schema`）、响应归一（`normalize_anthropic_response`，tool_use 块 → tool_calls，
+  arguments 回填为 JSON 字符串）。auth 用 `x-api-key` + `anthropic-version: 2023-06-01`。
+  thinking 在 Anthropic 协议上表达为 `thinking{type:enabled,budget_tokens}`（仅 MiniMax 家族；
+  off/auto 省略即关闭；budget 必须小于 max_tokens，按预算预留余量）。
+  前端 13 个预设含 4 个 MiniMax（2 条 OpenAI 兼容 + 2 条 Anthropic 兼容，官方推荐路径）。
 - **只读 op 白名单是 `is_readonly_op`**，它是**路由契约而非便利表**：引擎的 `apply-agent-mbt-op-b64`
   只接受变更类操作，任何没进这张表的只读 op 都会硬失败 `mbt_operation_unsupported`。
   当前 20 项（清点类 `list`/`list-templates`/`list-components`/`list-tools`/`list-tokens`/`list-themes`/

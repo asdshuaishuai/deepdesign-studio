@@ -119,6 +119,146 @@ fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
 }
 
+/// LLM 线上协议。OpenAI Chat Completions 与 Anthropic Messages 两套请求/响应格式。
+/// MiniMax 双协议支持：OpenAI 兼容端点（/v1）与 Anthropic 兼容端点（/anthropic，官方推荐）。
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Protocol {
+    OpenAi,
+    Anthropic,
+}
+
+/// 由 base_url 推断协议：含 `/anthropic` 路径段或 api.anthropic.com 即 Anthropic Messages。
+/// 这覆盖 MiniMax 官方文档的配置方式（ANTHROPIC_BASE_URL=.../anthropic），
+/// 也顺带兼容官方 Anthropic 端点。
+fn protocol_for(base_url: &str) -> Protocol {
+    let b = base_url.to_ascii_lowercase();
+    if b.contains("/anthropic") || b.contains("api.anthropic.com") {
+        Protocol::Anthropic
+    } else {
+        Protocol::OpenAi
+    }
+}
+
+/// OpenAI messages 数组 → Anthropic messages + system 提取。
+/// 关键约束（Anthropic API 硬性要求）：连续的 role:"tool" 消息必须**合并为单条
+/// user 消息**里的多个 tool_result 块；system 不进 messages 而是顶层字段。
+fn to_anthropic_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
+    let mut system = Vec::new();
+    let mut out: Vec<Value> = Vec::new();
+    let mut pending_tool_results: Vec<Value> = Vec::new();
+    let flush = |out: &mut Vec<Value>, pending: &mut Vec<Value>| {
+        if !pending.is_empty() {
+            out.push(json!({"role": "user", "content": pending.clone()}));
+            pending.clear();
+        }
+    };
+    for m in messages {
+        let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        match role {
+            "system" => {
+                if let Some(t) = m.get("content").and_then(|v| v.as_str()) {
+                    system.push(t.to_string());
+                }
+            }
+            "tool" => {
+                // 归入待合并的 tool_result 批次
+                let tid = m.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
+                let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                pending_tool_results.push(json!({
+                    "type": "tool_result",
+                    "tool_use_id": tid,
+                    "content": content,
+                }));
+            }
+            "assistant" => {
+                flush(&mut out, &mut pending_tool_results);
+                let mut blocks = Vec::new();
+                if let Some(t) = m.get("content").and_then(|v| v.as_str()) {
+                    if !t.is_empty() {
+                        blocks.push(json!({"type": "text", "text": t}));
+                    }
+                }
+                if let Some(tcs) = m.get("tool_calls").and_then(|v| v.as_array()) {
+                    for c in tcs {
+                        let id = c.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let name = c.pointer("/function/name").and_then(|v| v.as_str()).unwrap_or("");
+                        let args_raw = c.pointer("/function/arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+                        let input: Value = serde_json::from_str(args_raw).unwrap_or(json!({}));
+                        blocks.push(json!({"type": "tool_use", "id": id, "name": name, "input": input}));
+                    }
+                }
+                out.push(json!({"role": "assistant", "content": blocks}));
+            }
+            "user" => {
+                flush(&mut out, &mut pending_tool_results);
+                let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                out.push(json!({"role": "user", "content": content}));
+            }
+            _ => {}
+        }
+    }
+    flush(&mut out, &mut pending_tool_results);
+    (if system.is_empty() { None } else { Some(system.join("\n\n")) }, out)
+}
+
+/// OpenAI tools schema → Anthropic tools schema（name/description/input_schema）。
+fn anthropic_tools() -> Value {
+    let fns = tools_schema();
+    let arr = fns.as_array().cloned().unwrap_or_default();
+    let out: Vec<Value> = arr
+        .iter()
+        .filter_map(|t| {
+            let f = t.get("function")?;
+            Some(json!({
+                "name": f.get("name")?,
+                "description": f.get("description").cloned().unwrap_or(json!("")),
+                "input_schema": f.get("parameters").cloned().unwrap_or(json!({"type":"object"})),
+            }))
+        })
+        .collect();
+    json!(out)
+}
+
+/// Anthropic 响应 → OpenAI 形状（主循环只认这一种）。
+/// content 块里 text 拼为 content 字符串，tool_use 块转为 tool_calls
+/// （arguments 回填为 JSON **字符串**，与 OpenAI 一致）。
+fn normalize_anthropic_response(v: &Value) -> Value {
+    let mut text = String::new();
+    let mut tool_calls: Vec<Value> = Vec::new();
+    if let Some(blocks) = v.get("content").and_then(|c| c.as_array()) {
+        for b in blocks {
+            match b.get("type").and_then(|t| t.as_str()) {
+                Some("text") => {
+                    if let Some(t) = b.get("text").and_then(|x| x.as_str()) {
+                        text.push_str(t);
+                    }
+                }
+                Some("tool_use") => {
+                    let id = b.get("id").and_then(|x| x.as_str()).unwrap_or("");
+                    let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("");
+                    let input = b.get("input").cloned().unwrap_or(json!({}));
+                    let args = serde_json::to_string(&input).unwrap_or_else(|_| "{}".into());
+                    tool_calls.push(json!({
+                        "id": id,
+                        "type": "function",
+                        "function": {"name": name, "arguments": args},
+                    }));
+                }
+                _ => {}
+            }
+        }
+    }
+    json!({
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": text,
+                "tool_calls": tool_calls,
+            }
+        }]
+    })
+}
+
 /// 思考控制（逐家官方文档核对，2026-09；等级=OpenAI 标准 reasoning_effort，
 /// 开关=body 顶层 thinking.type）：
 /// - DeepSeek（api-docs.deepseek.com）：effort low/high/max（min/medium/xhigh/ultra
@@ -136,7 +276,7 @@ fn instructions() -> String {
 /// - Qwen：DashScope 兼容模式对未知字段严格——仅 vLLU 自部署方言 off 开关
 ///
 /// 档位归一：off / auto / low / medium / high / max；旧值 on → high；未知 → auto。
-fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
+fn thinking_extra_body(model: &str, level: &str, protocol: Protocol) -> Option<Value> {
     let level = match level {
         "off" => "off",
         "on" | "high" => "high",
@@ -145,10 +285,29 @@ fn thinking_extra_body(model: &str, level: &str) -> Option<Value> {
         "max" => "max",
         _ => "auto",
     };
+    let m = model.to_ascii_lowercase();
+    // Anthropic 协议：思考以 thinking{type:enabled,budget_tokens} 表达。
+    // 目前只有 MiniMax 家族在 anthropic 端点上有明确的 thinking 语义（官方文档：
+    // "Supports thinking blocks"）；其余模型（含官方 Claude）不注入，保持请求最小化。
+    if protocol == Protocol::Anthropic {
+        if level == "auto" || !m.contains("minimax") {
+            return None;
+        }
+        if level == "off" {
+            return None; // Anthropic：省略 thinking 即关闭
+        }
+        let budget = match level {
+            "low" => 2048,
+            "medium" => 8192,
+            "high" => 16384,
+            "max" => 32768,
+            _ => 16384,
+        };
+        return Some(json!({"thinking": {"type": "enabled", "budget_tokens": budget}}));
+    }
     if level == "auto" {
         return None;
     }
-    let m = model.to_ascii_lowercase();
 
     // GLM-5.3 家族（含 5.3-flash，bigmodel/z.ai 同构）：强制思考，仅 low/high/max
     if m.contains("glm-5.3") || m.contains("glm-5.3-flash") {
@@ -504,19 +663,51 @@ async fn chat_once(
     thinking: &str,
     messages: &[Value],
 ) -> Result<Value, String> {
-    let mut body = json!({"model": model, "messages": messages, "tools": tools_schema()});
-    if let Some(extra) = thinking_extra_body(model, thinking) {
-        if let (Some(obj), Some(extra_obj)) = (body.as_object_mut(), extra.as_object()) {
-            for (k, v) in extra_obj {
-                obj.insert(k.clone(), v.clone());
+    let protocol = protocol_for(base_url);
+    let req = match protocol {
+        Protocol::OpenAi => {
+            let mut body = json!({"model": model, "messages": messages, "tools": tools_schema()});
+            if let Some(extra) = thinking_extra_body(model, thinking, Protocol::OpenAi) {
+                if let (Some(obj), Some(extra_obj)) = (body.as_object_mut(), extra.as_object()) {
+                    for (k, v) in extra_obj {
+                        obj.insert(k.clone(), v.clone());
+                    }
+                }
             }
+            let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+            client.post(&url).bearer_auth(api_key).json(&body)
         }
-    }
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let resp = client
-        .post(&url)
-        .bearer_auth(api_key)
-        .json(&body)
+        Protocol::Anthropic => {
+            let thinking_extra = thinking_extra_body(model, thinking, Protocol::Anthropic);
+            // budget_tokens 必须小于 max_tokens（Anthropic 硬约束）：按预算预留余量
+            let budget = thinking_extra
+                .as_ref()
+                .and_then(|v| v.pointer("/thinking/budget_tokens"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let max_tokens = if budget > 0 { budget + 4096 } else { 8192 };
+            let (system, msgs) = to_anthropic_messages(messages);
+            let mut body = json!({
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": msgs,
+                "tools": anthropic_tools(),
+            });
+            if let Some(sys) = system {
+                body["system"] = json!(sys);
+            }
+            if let Some(extra) = thinking_extra {
+                body["thinking"] = extra["thinking"].clone();
+            }
+            let url = format!("{}/v1/messages", base_url.trim_end_matches('/'));
+            client
+                .post(&url)
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&body)
+        }
+    };
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("llm_request_failed:{e}"))?;
@@ -528,7 +719,11 @@ async fn chat_once(
     if !status.is_success() {
         return Err(format!("llm_http_{}:{}", status.as_u16(), text.chars().take(200).collect::<String>()));
     }
-    serde_json::from_str(&text).map_err(|e| format!("llm_response_invalid:{e}"))
+    let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("llm_response_invalid:{e}"))?;
+    match protocol {
+        Protocol::OpenAi => Ok(parsed),
+        Protocol::Anthropic => Ok(normalize_anthropic_response(&parsed)),
+    }
 }
 
 /// 主循环：chat → tool_calls → 引擎执行 → 回填 → 直至 assistant 总结或 maxSteps。
@@ -709,46 +904,140 @@ mod tests {
     #[test]
     fn thinking_family_table() {
         // auto：任何模型都不注入
-        assert_eq!(thinking_extra_body("GLM-5.3", "auto"), None);
+        assert_eq!(thinking_extra_body("GLM-5.3", "auto", Protocol::OpenAi), None);
         // GLM-5.3 / 5.3-flash（bigmodel 与 z.ai 同构）：强制思考，off/low→low、medium/high→high、max→max
-        assert_eq!(thinking_extra_body("glm-5.3", "off"), Some(json!({"reasoning_effort": "low"})));
-        assert_eq!(thinking_extra_body("GLM-5.3-Flash", "low"), Some(json!({"reasoning_effort": "low"})));
-        assert_eq!(thinking_extra_body("glm-5.3", "medium"), Some(json!({"reasoning_effort": "high"})));
-        assert_eq!(thinking_extra_body("glm-5.3", "max"), Some(json!({"reasoning_effort": "max"})));
+        assert_eq!(thinking_extra_body("glm-5.3", "off", Protocol::OpenAi), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("GLM-5.3-Flash", "low", Protocol::OpenAi), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("glm-5.3", "medium", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("glm-5.3", "max", Protocol::OpenAi), Some(json!({"reasoning_effort": "max"})));
         // GLM-5.2：开关 + 全档
-        assert_eq!(thinking_extra_body("glm-5.2", "off"), Some(json!({"thinking": {"type": "disabled"}})));
-        assert_eq!(thinking_extra_body("glm-5.2", "max"), Some(json!({"reasoning_effort": "max"})));
-        assert_eq!(thinking_extra_body("glm-5.2", "medium"), Some(json!({"reasoning_effort": "medium"})));
+        assert_eq!(thinking_extra_body("glm-5.2", "off", Protocol::OpenAi), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("glm-5.2", "max", Protocol::OpenAi), Some(json!({"reasoning_effort": "max"})));
+        assert_eq!(thinking_extra_body("glm-5.2", "medium", Protocol::OpenAi), Some(json!({"reasoning_effort": "medium"})));
         // Kimi k3 / kimi-for-coding（订阅）：恒开，off→none，medium→high
-        assert_eq!(thinking_extra_body("kimi-k3", "off"), Some(json!({"reasoning_effort": "none"})));
-        assert_eq!(thinking_extra_body("kimi-k3", "medium"), Some(json!({"reasoning_effort": "high"})));
-        assert_eq!(thinking_extra_body("kimi-k3", "max"), Some(json!({"reasoning_effort": "max"})));
-        assert_eq!(thinking_extra_body("kimi-for-coding", "low"), Some(json!({"reasoning_effort": "low"})));
-        assert_eq!(thinking_extra_body("k3-256k", "high"), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("kimi-k3", "off", Protocol::OpenAi), Some(json!({"reasoning_effort": "none"})));
+        assert_eq!(thinking_extra_body("kimi-k3", "medium", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("kimi-k3", "max", Protocol::OpenAi), Some(json!({"reasoning_effort": "max"})));
+        assert_eq!(thinking_extra_body("kimi-for-coding", "low", Protocol::OpenAi), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("k3-256k", "high", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
         // Kimi k2.x：仅开关，等级不传
-        assert_eq!(thinking_extra_body("kimi-k2.6", "off"), Some(json!({"thinking": {"type": "disabled"}})));
-        assert_eq!(thinking_extra_body("kimi-k2.6", "high"), None);
-        assert_eq!(thinking_extra_body("kimi-k2.7-code", "off"), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("kimi-k2.6", "off", Protocol::OpenAi), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("kimi-k2.6", "high", Protocol::OpenAi), None);
+        assert_eq!(thinking_extra_body("kimi-k2.7-code", "off", Protocol::OpenAi), Some(json!({"thinking": {"type": "disabled"}})));
         // DeepSeek：开关 + effort（medium 服务端映射）
-        assert_eq!(thinking_extra_body("deepseek-flash", "off"), Some(json!({"thinking": {"type": "disabled"}})));
-        assert_eq!(thinking_extra_body("deepseek-flash", "medium"), Some(json!({"reasoning_effort": "medium"})));
-        assert_eq!(thinking_extra_body("deepseek-v4-pro", "high"), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("deepseek-flash", "off", Protocol::OpenAi), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("deepseek-flash", "medium", Protocol::OpenAi), Some(json!({"reasoning_effort": "medium"})));
+        assert_eq!(thinking_extra_body("deepseek-v4-pro", "high", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
         // MiniMax：仅开关
-        assert_eq!(thinking_extra_body("MiniMax-M3", "off"), Some(json!({"thinking": {"type": "disabled"}})));
-        assert_eq!(thinking_extra_body("MiniMax-M3", "high"), None);
-        assert_eq!(thinking_extra_body("MiniMax-M2.7", "max"), None);
+        assert_eq!(thinking_extra_body("MiniMax-M3", "off", Protocol::OpenAi), Some(json!({"thinking": {"type": "disabled"}})));
+        assert_eq!(thinking_extra_body("MiniMax-M3", "high", Protocol::OpenAi), None);
+        assert_eq!(thinking_extra_body("MiniMax-M2.7", "max", Protocol::OpenAi), None);
         // StepFun（含 Step Plan）：三档 effort，off→low，max→high
-        assert_eq!(thinking_extra_body("step-3.7-flash", "low"), Some(json!({"reasoning_effort": "low"})));
-        assert_eq!(thinking_extra_body("step-3.7-flash", "off"), Some(json!({"reasoning_effort": "low"})));
-        assert_eq!(thinking_extra_body("step-3.7-flash", "medium"), Some(json!({"reasoning_effort": "medium"})));
-        assert_eq!(thinking_extra_body("step-3.5-flash", "max"), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("step-3.7-flash", "low", Protocol::OpenAi), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("step-3.7-flash", "off", Protocol::OpenAi), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("step-3.7-flash", "medium", Protocol::OpenAi), Some(json!({"reasoning_effort": "medium"})));
+        assert_eq!(thinking_extra_body("step-3.5-flash", "max", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
         // Qwen：仅 vLLM 方言 off
-        assert_eq!(thinking_extra_body("qwen3-max", "off"), Some(json!({"chat_template_kwargs": {"enable_thinking": false}})));
-        assert_eq!(thinking_extra_body("qwen3-max", "high"), None);
+        assert_eq!(thinking_extra_body("qwen3-max", "off", Protocol::OpenAi), Some(json!({"chat_template_kwargs": {"enable_thinking": false}})));
+        assert_eq!(thinking_extra_body("qwen3-max", "high", Protocol::OpenAi), None);
         // 旧值 on → high
-        assert_eq!(thinking_extra_body("deepseek-flash", "on"), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("deepseek-flash", "on", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
         // 未知模型：OpenAI 标准字段直传
-        assert_eq!(thinking_extra_body("some-model", "high"), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("some-model", "high", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
+    }
+
+    #[test]
+    fn protocol_detection() {
+        assert_eq!(protocol_for("https://api.deepseek.com"), Protocol::OpenAi);
+        assert_eq!(protocol_for("https://api.minimax.cn/v1"), Protocol::OpenAi);
+        assert_eq!(protocol_for("https://open.bigmodel.cn/api/paas/v4"), Protocol::OpenAi);
+        // MiniMax 官方推荐的 Anthropic 兼容端点（含路径段）
+        assert_eq!(protocol_for("https://api.minimax.io/anthropic"), Protocol::Anthropic);
+        assert_eq!(protocol_for("https://api.minimaxi.com/anthropic"), Protocol::Anthropic);
+        // 官方 Anthropic
+        assert_eq!(protocol_for("https://api.anthropic.com"), Protocol::Anthropic);
+        // 大小写不敏感
+        assert_eq!(protocol_for("https://api.minimax.io/ANTHROPIC"), Protocol::Anthropic);
+    }
+
+    #[test]
+    fn anthropic_thinking_dialect() {
+        // MiniMax 家族在 anthropic 端点上：thinking{enabled,budget_tokens}
+        assert_eq!(
+            thinking_extra_body("MiniMax-M3", "high", Protocol::Anthropic),
+            Some(json!({"thinking": {"type": "enabled", "budget_tokens": 16384}}))
+        );
+        assert_eq!(
+            thinking_extra_body("MiniMax-M3", "low", Protocol::Anthropic),
+            Some(json!({"thinking": {"type": "enabled", "budget_tokens": 2048}}))
+        );
+        assert_eq!(thinking_extra_body("MiniMax-M3", "max", Protocol::Anthropic),
+            Some(json!({"thinking": {"type": "enabled", "budget_tokens": 32768}})));
+        // off/auto → 不注入（Anthropic 省略即关闭）
+        assert_eq!(thinking_extra_body("MiniMax-M3", "off", Protocol::Anthropic), None);
+        assert_eq!(thinking_extra_body("MiniMax-M3", "auto", Protocol::Anthropic), None);
+        // 非 MiniMax 模型在 anthropic 上不注入（官方 Claude 无档位知识）
+        assert_eq!(thinking_extra_body("claude-4", "high", Protocol::Anthropic), None);
+        // OpenAI 协议行为不变（回归锁）
+        assert_eq!(
+            thinking_extra_body("MiniMax-M3", "off", Protocol::OpenAi),
+            Some(json!({"thinking": {"type": "disabled"}}))
+        );
+    }
+
+    #[test]
+    fn anthropic_message_conversion() {
+        let msgs = vec![
+            json!({"role": "system", "content": "sys prompt"}),
+            json!({"role": "user", "content": "hi"}),
+            json!({"role": "assistant", "content": "let me", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "read_mbt", "arguments": "{}"}},
+                {"id": "c2", "type": "function", "function": {"name": "moonviz_op", "arguments": "{\"op\": \"lint lg\"}"}}
+            ]}),
+            json!({"role": "tool", "tool_call_id": "c1", "content": "{\"ok\":true}"}),
+            json!({"role": "tool", "tool_call_id": "c2", "content": "{\"ok\":true}"}),
+        ];
+        let (system, out) = to_anthropic_messages(&msgs);
+        assert_eq!(system.as_deref(), Some("sys prompt"));
+        // user + assistant + 1 条合并后的 tool_result user 消息 = 3 条
+        assert_eq!(out.len(), 3, "连续 tool 消息必须合并为单条 user 消息");
+        // assistant 消息：text 块 + 2 个 tool_use 块
+        let a = &out[1];
+        assert_eq!(a["role"], "assistant");
+        let blocks = a["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[1]["type"], "tool_use");
+        assert_eq!(blocks[1]["id"], "c1");
+        assert_eq!(blocks[1]["name"], "read_mbt");
+        assert_eq!(blocks[2]["input"]["op"], "lint lg");
+        // tool 结果合并为单条 user 消息，含两个 tool_result 块
+        let u = &out[2];
+        assert_eq!(u["role"], "user");
+        let trs = u["content"].as_array().unwrap();
+        assert_eq!(trs.len(), 2);
+        assert_eq!(trs[0]["type"], "tool_result");
+        assert_eq!(trs[0]["tool_use_id"], "c1");
+    }
+
+    #[test]
+    fn anthropic_response_normalization() {
+        let anthropic = json!({
+            "content": [
+                {"type": "text", "text": "I will check"},
+                {"type": "tool_use", "id": "tu1", "name": "moonviz_op", "input": {"op": "lint lg"}}
+            ],
+            "stop_reason": "tool_use"
+        });
+        let norm = normalize_anthropic_response(&anthropic);
+        let msg = norm.pointer("/choices/0/message").unwrap();
+        assert_eq!(msg["content"], "I will check");
+        let tcs = msg["tool_calls"].as_array().unwrap();
+        assert_eq!(tcs.len(), 1);
+        assert_eq!(tcs[0]["id"], "tu1");
+        assert_eq!(tcs[0]["function"]["name"], "moonviz_op");
+        // arguments 必须是 JSON 字符串（OpenAI 形状，主循环按此解析）
+        assert_eq!(tcs[0]["function"]["arguments"], "{\"op\":\"lint lg\"}");
     }
 
     #[test]
@@ -1344,6 +1633,49 @@ mod tests {
             }
         });
         (port, handle)
+    }
+
+    /// Anthropic 协议端到端：mock 返回 Messages 形态（tool_use 块），
+    /// base_url 带 /anthropic 触发协议探测，归一化后主循环照常跑通全链路。
+    #[tokio::test]
+    async fn agent_loop_anthropic_protocol_with_mock_llm_and_real_engine() {
+        if crate::engine_cli_binary().is_err() {
+            eprintln!("跳过：本机无引擎二进制");
+            return;
+        }
+        let (port, mock) = spawn_mock_llm(vec![
+            // 第一轮：Anthropic 形态的 tool_use（无 text 块也合法）
+            serde_json::json!({
+                "content": [
+                    {"type": "tool_use", "id": "tu1", "name": "moonviz_op",
+                     "input": {"op": "template login rt"}}
+                ],
+                "stop_reason": "tool_use"
+            }),
+            // 第二轮：文本总结
+            serde_json::json!({
+                "content": [{"type": "text", "text": "已建好登录页 rt。"}],
+                "stop_reason": "end_turn"
+            }),
+        ])
+        .await;
+        let out = run(
+            "建一个登录页",
+            None,
+            "sk-test",
+            "MiniMax-M3",
+            &format!("http://127.0.0.1:{port}/anthropic"),
+            "high",
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(out["ops"], json!(["template login rt"]), "Anthropic tool_use 应被归一化为可执行调用");
+        assert_eq!(out["stopReason"], json!("done"));
+        assert_eq!(out["text"], json!("已建好登录页 rt。"));
+        let mbt = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
+        assert!(mbt.contains("rt"), "canonical mbt 应含画板 rt");
+        assert!(out["render"]["artboards"].is_array(), "render 兜底");
     }
 
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。
