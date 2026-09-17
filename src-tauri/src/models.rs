@@ -11,6 +11,8 @@
 //! 发现与漂移对账。契约测试 `presets_match_snapshot` 把这条链锁死。
 
 use serde_json::Value;
+#[cfg(test)]
+use serde_json::json; // 仅测试代码使用（build 与 test 对 use 的可见性不同，条件导入避免误报）
 
 /// vendored 快照（source / license / fetched_at / providers）。
 pub const SNAPSHOT_JSON: &str = include_str!("../models.json");
@@ -46,6 +48,29 @@ pub fn provider_models(id: &str) -> Vec<&'static str> {
         .unwrap_or_default()
 }
 
+/// frontend PROVIDERS 键 → models.dev 提供商 id（前端经 model_registry 命令消费）。
+pub const PRESET_PROVIDER_MAP: [(&str, &str); 11] = [
+    ("deepseek", "deepseek"),
+    ("glm", "zhipuai"),
+    ("glm-coding", "zhipuai-coding-plan"),
+    ("zai", "zai"),
+    ("zai-coding", "zai-coding-plan"),
+    ("kimi", "moonshotai-cn"),
+    ("kimi-plan", "kimi-for-coding"),
+    ("minimax", "minimax-cn"),
+    ("minimax-intl", "minimax"),
+    ("stepfun", "stepfun"),
+    ("stepfun-plan", "stepfun-step-plan"),
+];
+
+/// 完整快照文档（含 source/fetched_at/providers），供 Tauri 命令下发给前端。
+pub fn snapshot_document() -> &'static Value {
+    static DOC: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    DOC.get_or_init(|| {
+        serde_json::from_str(SNAPSHOT_JSON).expect("models.json 不是合法 JSON")
+    })
+}
+
 /// 某模型的能力轴（reasoning_options 原样返回，None 表示快照未记录）。
 pub fn model_reasoning_options(provider: &str, model: &str) -> Option<&'static Value> {
     providers()
@@ -59,21 +84,10 @@ pub fn model_reasoning_options(provider: &str, model: &str) -> Option<&'static V
 mod tests {
     use super::*;
 
-    /// frontend/index.html 的 PROVIDERS 键 → models.dev 提供商 id。
-    /// 加预设时两端一起改；`presets_match_snapshot` 会校验映射完整性。
-    const PROVIDER_MAP: [(&str, &str); 11] = [
-        ("deepseek", "deepseek"),
-        ("glm", "zhipuai"),
-        ("glm-coding", "zhipuai-coding-plan"),
-        ("zai", "zai"),
-        ("zai-coding", "zai-coding-plan"),
-        ("kimi", "moonshotai-cn"),
-        ("kimi-plan", "kimi-for-coding"),
-        ("minimax", "minimax-cn"),
-        ("minimax-intl", "minimax"),
-        ("stepfun", "stepfun"),
-        ("stepfun-plan", "stepfun-step-plan"),
-    ];
+    /// 复用导出的映射（单一来源，防两处漂移）。
+    fn provider_map() -> &'static [(&'static str, &'static str)] {
+        &PRESET_PROVIDER_MAP
+    }
 
     /// 端点漂移白名单：models.dev 记录值与前端预设不一致、且**不自动跟随**的项。
     /// 每条须带 models.dev 当前值（变了就红，逼重新裁决）与理由。
@@ -147,15 +161,15 @@ mod tests {
         let presets = frontend_presets();
         assert_eq!(
             presets.len(),
-            PROVIDER_MAP.len(),
-            "frontend PROVIDERS 条目数({})与 PROVIDER_MAP({})不一致——加预设两端都要改",
+            provider_map().len(),
+            "frontend PROVIDERS 条目数({})与 PRESET_PROVIDER_MAP({})不一致——加预设两端都要改",
             presets.len(),
-            PROVIDER_MAP.len()
+            PRESET_PROVIDER_MAP.len()
         );
 
         for (key, base_url, model) in &presets {
-            let Some(md_id) = PROVIDER_MAP.iter().find(|(k, _)| k == key).map(|(_, v)| *v) else {
-                panic!("frontend 预设 `{key}` 没有 models.dev 映射——请更新 PROVIDER_MAP");
+            let Some(md_id) = provider_map().iter().find(|(k, _)| k == key).map(|(_, v)| *v) else {
+                panic!("frontend 预设 `{key}` 没有 models.dev 映射——请更新 PRESET_PROVIDER_MAP");
             };
 
             // 1) 快照里该提供商必须存在
@@ -252,6 +266,27 @@ mod tests {
                     assert!(reasoning, "{pid}/{mid} 有 reasoning_options 但 reasoning=false（schema 自相矛盾）");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn registry_command_payload_is_complete() {
+        // 前端拿到的 payload：providers（快照）+ provider_map（预设键→models.dev id）
+        let doc = snapshot_document();
+        assert_eq!(doc.get("providers").and_then(|p| p.as_object()).map(|m| m.len()), Some(11));
+        let map: serde_json::Map<String, Value> = PRESET_PROVIDER_MAP
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), json!((*v))))
+            .collect();
+        assert_eq!(map.len(), 11);
+        // 映射的每个 models.dev id 必须在快照里有
+        for v in map.values() {
+            let id = v.as_str().unwrap();
+            assert!(provider_endpoint(id).is_some(), "provider_map 的 {id} 不在快照中");
+        }
+        // 快照里每个 provider 都应有模型
+        for id in map.values().map(|v| v.as_str().unwrap()) {
+            assert!(!provider_models(id).is_empty(), "{id} 模型清单为空");
         }
     }
 

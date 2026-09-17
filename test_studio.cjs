@@ -65,9 +65,13 @@ const INTERACTIVE_SURFACE=[
   'nativeMenuAction','openShortcuts','closeShortcuts',
   // 悬浮 Agent
   'openAgentPop','closeAgentPop','sendAgent','trackAgent',
+  // 模型注册表消费（models.dev 快照；快照缺失时设置面板降级为手输，
+  // 但函数缺失会让预设点击后模型清单与提示静默失效）
+  'loadModelRegistry','registryProviderFor','registryModelIds','presetRegistryIds',
+  'registryModelInfo','thinkingOptionsFor','fillModelHints',
 ];
 // 断言条目数：否则删一个名字会同时缩短清单与提示信息，防线静默变弱
-assert.equal(INTERACTIVE_SURFACE.length,27,'交互层清单条目数变了——增删都必须是有意的');
+assert.equal(INTERACTIVE_SURFACE.length,34,'交互层清单条目数变了——增删都必须是有意的');
 const missingSurface=INTERACTIVE_SURFACE.filter(n=>!defined.has(n));
 assert.deepEqual(missingSurface,[],
   `交互层函数未定义：${missingSurface}（历史上因批量删死代码误删，会静默失效）`);

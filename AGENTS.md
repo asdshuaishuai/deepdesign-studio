@@ -77,6 +77,12 @@ chat_template_kwargs）不在 models.dev 覆盖范围，仍以 `agent.rs::thinki
 （官方文档为准）为权威。
 
 引擎的能力面随时可能扩，`frontend/index.html` 与 `agent.rs` 都是硬编码的，**引擎一更新就要回来对账**。
+**前端消费层**：`model_registry` Tauri 命令把快照下发给设置面板——模型 datalist、
+能力标签（上下文/工具调用/结构化，不支持工具调用会警告，Agent 循环需要工具调用）、
+思考等级档位按 `reasoning_options` 收紧（GLM-5.3 类→auto/low/high/max，Kimi k2.6 类→
+auto/off），`fetchFxModels` 端点拉取失败时回退到快照清单（MiniMax 静态清单为最后手段）。
+快照不可用时全部降级为手输，不影响主流程。
+
 **`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自 `../moonviz/SKILL.md` 并双向同步。
 分层事实源：**变更 op 层由引擎 `list-ops` 输出直接接管**（OpEntry 注册表，含 usage/category/gates，
 测试直接消费并与探针表双向比对——引擎新增 op 而无人采纳会红）；**readonly / cli_only 两层暂无

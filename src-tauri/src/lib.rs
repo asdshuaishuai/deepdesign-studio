@@ -330,6 +330,23 @@ async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::V
     Ok(agent::run(instruction, mbt_b64, &key, model, base_url, thinking).await)
 }
 
+/// 模型元数据注册表（vendored models.dev 快照）下发给前端：
+/// 设置面板据此展示可用模型、能力标签（tool_call/structured_output/上下文长度）
+/// 与思考等级档位约束，无需运行时联网。
+#[tauri::command]
+fn model_registry() -> serde_json::Value {
+    let map: serde_json::Map<String, serde_json::Value> = models::PRESET_PROVIDER_MAP
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), serde_json::json!((*v))))
+        .collect();
+    serde_json::json!({
+        "ok": true,
+        "providers": models::snapshot_document().get("providers").cloned().unwrap_or(serde_json::json!({})),
+        "provider_map": map,
+        "fetched_at": models::snapshot_document().get("fetched_at").cloned().unwrap_or(serde_json::json!("")),
+    })
+}
+
 /// 跨平台 home 目录：Windows 用 USERPROFILE，Unix 用 HOME。
 fn home_dir() -> String {
     std::env::var("USERPROFILE")
@@ -357,7 +374,8 @@ pub fn run() {
             invoke_fx_sdk,
             save_ddp,
             open_ddp,
-            diagnostics
+            diagnostics,
+            model_registry
         ])
         .setup(|app| {
             build_native_menus(app)?;
