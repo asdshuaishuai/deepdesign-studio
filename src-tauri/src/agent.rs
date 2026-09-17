@@ -908,22 +908,22 @@ mod tests {
     }
 
     /// 解析仓库根 SKILL.md（引擎能力字典，vendored 副本）文末的机器可读清单块。
-    /// 块形如：`mutating: a b ...` 后跟缩进续行，直到 ``` 收束。
-    fn skill_op_lists() -> (Vec<String>, Vec<String>, Vec<String>) {
+    /// 块只含 readonly / cli_only 两层——**变更 op 层已由引擎 `list-ops` 输出接管**
+    /// （引擎 8c03a7e 起 OpEntry 注册表是事实源，usage 与分发器逐字一致，
+    /// 本仓库不再手工列举变更 op）。
+    /// 块形如：`readonly: a b ...` 后跟缩进续行，直到 ``` 收束。
+    fn skill_op_lists() -> (Vec<String>, Vec<String>) {
         let skill = include_str!("../../SKILL.md");
-        let mut mutating = Vec::new();
         let mut readonly = Vec::new();
         let mut cli_only = Vec::new();
         let mut in_block = false;
         let mut cur: Option<&mut Vec<String>> = None;
         for line in skill.lines() {
-            let (key, rest) = if let Some(r) = line.strip_prefix("mutating:") {
+            let (key, rest) = if let Some(r) = line.strip_prefix("readonly:") {
                 in_block = true;
                 (0usize, r)
-            } else if let Some(r) = line.strip_prefix("readonly:") {
-                (1usize, r)
             } else if let Some(r) = line.strip_prefix("cli_only:") {
-                (2usize, r)
+                (1usize, r)
             } else if line.trim() == "```" && in_block {
                 break;
             } else {
@@ -931,8 +931,7 @@ mod tests {
             };
             if key != usize::MAX {
                 cur = Some(match key {
-                    0 => &mut mutating,
-                    1 => &mut readonly,
+                    0 => &mut readonly,
                     _ => &mut cli_only,
                 });
             }
@@ -945,20 +944,21 @@ mod tests {
                 }
             }
         }
-        (mutating, readonly, cli_only)
+        (readonly, cli_only)
     }
 
     /// SKILL.md 字典契约——让字典变成 load-bearing 而非文档摆设：
     /// 1. 字典的 readonly 集合必须与 READONLY_OPS **严格相等**（双向，防单边漂移）；
-    /// 2. 字典的每个 mutating op 必须出现在 INSTRUCTIONS 提示词里（字典更新→提示词跟进）；
-    /// 3. 引擎实测：mutating op 走 apply 路径被接受（ok 或谓词拦截皆算语法接受）；
-    ///    readonly op 走 load 路径可用、走 apply 路径必须 `mbt_operation_unsupported`；
+    /// 2. 变更 op 清单直接消费引擎 `list-ops` 输出（OpEntry 注册表）：
+    ///    探针表必须与 list-ops 集合严格相等——引擎新增 op 而本仓库没加探针即红，
+    ///    这就是"新命令无人采纳"盲区的哨兵；每个 op 还须走 apply 路径实测被接受、
+    ///    且在 INSTRUCTIONS 提示词里被教会（词边界匹配）；
+    /// 3. readonly op 走 load 路径可用、走 apply 路径必须 `mbt_operation_unsupported`；
     ///    cli_only op 走 apply 路径必须 `mbt_operation_unsupported`。
-    /// 引擎更新后任何一项失配都会红——这就是"新命令无人采纳"盲区的哨兵。
     #[tokio::test]
     async fn skill_dictionary_matches_engine_and_agent() {
-        let (mutating, mut readonly, cli_only) = skill_op_lists();
-        assert!(!mutating.is_empty() && !readonly.is_empty() && !cli_only.is_empty(),
+        let (mut readonly, cli_only) = skill_op_lists();
+        assert!(!readonly.is_empty() && !cli_only.is_empty(),
             "SKILL.md 机器可读清单块缺失或为空——文件被改动时请同步解析逻辑");
 
         // 1) 字典 readonly ⇔ READONLY_OPS 严格相等
@@ -970,16 +970,11 @@ mod tests {
         assert_eq!(skill_ro, wl,
             "SKILL.md readonly 清单与 READONLY_OPS 不一致（左=字典，右=白名单）——两边必须一起改");
 
-        // 2) 提示词必须教会字典里的每个变更 op（词边界匹配：
-        //    子串会让 "list-tokens" 误满足 "token"，也会被顺带的解释文字糊弄过去）
+        // 词边界匹配：子串会让 "list-tokens" 误满足 "token"，也会被顺带的解释文字糊弄过去
         let contains_word = |hay: &str, needle: &str| {
             hay.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
                 .any(|w| w == needle)
         };
-        for op in &mutating {
-            assert!(contains_word(INSTRUCTIONS, op),
-                "SKILL.md 已收录变更 op `{op}`，但 INSTRUCTIONS 提示词未提及——Agent 永远用不到它");
-        }
 
         if crate::engine_cli_binary().is_err() {
             eprintln!("跳过引擎探针：本机无引擎二进制（静态断言已通过）");
@@ -1028,6 +1023,34 @@ mod tests {
             last.get("error").and_then(|v| v.as_str()).unwrap_or("OK").to_string()
         };
 
+        // ---- 变更 op 清单的事实源：引擎 `list-ops`（OpEntry 注册表）----
+        // 此前清单来自 SKILL.md 手工块——引擎新增 op 而无人更新块时完全不可见。
+        // 现在直接消费引擎输出：探针表必须与 list-ops 集合严格相等（双向）。
+        let out = crate::exec_cli_pipeline(vec!["list-ops".into()]).expect("list-ops 失败");
+        let op_registry = out
+            .iter()
+            .find(|r| r.is_array())
+            .and_then(|r| r.as_array())
+            .expect("list-ops 未返回 JSON 数组（注册表坏了？）");
+        assert!(op_registry.len() >= 25,
+            "list-ops 只返回 {} 个 op——注册表塌缩了（应 ≥25）",
+            op_registry.len());
+        let mut engine_mutating: Vec<String> = Vec::new();
+        for e in op_registry {
+            let op = e.get("op").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            assert!(!op.is_empty(), "list-ops 条目缺 op 字段：{e}");
+            let agent_gate = e.get("gates")
+                .and_then(|g| g.get("agent"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            assert!(agent_gate, "list-ops 里 `{op}` 的 gates.agent=false——Agent 不可达，需另行分类");
+            let usage = e.get("usage").and_then(|v| v.as_str()).unwrap_or_default();
+            assert!(!usage.is_empty(), "list-ops 里 `{op}` 缺 usage");
+            engine_mutating.push(op);
+        }
+        engine_mutating.sort();
+        engine_mutating.dedup();
+
         // 变更 op → 具体探针形态（ok 或谓词/语义错误都算语法接受，唯独 unsupported 不算）
         let mutating_probes: &[(&str, &str)] = &[
             ("create", "create p3 200 300"),
@@ -1056,15 +1079,20 @@ mod tests {
             ("fix", "fix lg"),
             ("update", "update lg logo fill=#123456"),
         ];
+        let mut probe_heads: Vec<&str> =
+            mutating_probes.iter().map(|(h, _)| *h).collect();
+        probe_heads.sort_unstable();
+        let probe_set: Vec<&str> = probe_heads.clone();
+        let engine_refs: Vec<&str> = engine_mutating.iter().map(|s| s.as_str()).collect();
+        assert_eq!(probe_set, engine_refs,
+            "探针表与引擎 list-ops 集合不一致（左=探针，右=引擎）——\
+             引擎新增 op 必须加探针并写进提示词，别删断言");
         for (head, probe) in mutating_probes {
-            assert!(mutating.iter().any(|m| m == head), "探针表含字典外的 op：{head}");
             let err = apply_probe(probe);
             assert!(!err.contains("mbt_operation_unsupported"),
-                "`{probe}` 被 apply 路径拒绝（{err}）——字典把它标为变更类，但引擎不认");
-        }
-        for op in &mutating {
-            assert!(mutating_probes.iter().any(|(h, _)| h == op),
-                "SKILL.md 新增变更 op `{op}` 但探针表没有它——加探针，别删断言");
+                "`{probe}` 被 apply 路径拒绝（{err}）——list-ops 标它为 Agent 可达变更 op，但引擎不认");
+            assert!(contains_word(INSTRUCTIONS, head),
+                "引擎 list-ops 已收录 `{head}`，但 INSTRUCTIONS 提示词未教它——Agent 永远用不到");
         }
 
         // 只读 op：load 路径必须可用，apply 路径必须 unsupported（路由契约双向锁定）

@@ -40,7 +40,11 @@ apply-agent-mbt-op-b64 <mbt-base64> <operation-base64>
 实测结论：同一篇文档经人类门逐 op 全通过，整篇提交给 Agent 门仍可能被
 `mbt_gate_block:...:no_sibling_overlap` 拒绝——这是设计意图（Agent 门更严），不是 bug。
 
-## Operation grammar (Agent and Human share it)
+## Operation grammar (mutating ops — Agent and Human share them)
+
+Machine-readable source of truth: `list-ops`（CLI）/ `list_ops`（MCP）输出完整 op 面
+JSON（`op`/`usage`/`category`/`gates`/`description`，当前 25 op）——本节是它的可读
+注解，须同步维护。只读命令见下文 Read-only 节（那两层暂无引擎输出，靠文末清单块锚定）。
 
 Structural:
 `create <name> [w] [h]` · `template <id> <name> [w] [h]` ·
@@ -228,9 +232,8 @@ Rules: `.mbt.md` component source exists only inside the engine/local library; o
 ## 附录：op 清单（机器可读，`cargo test` 消费此块）
 
 ```
-mutating: create template place duplicate delete-artboard move copy delete
-  reorder flip group ungroup align resize-canvas responsive restyle interact
-  uninteract state set-state flow theme token fix update
+# mutating 层不再手工列举——事实源是引擎 `list-ops` 输出（25 op，
+# cargo test 的 SKILL 契约测试直接消费它并与探针表双向比对）。
 readonly: list flows list-templates list-components list-tools list-tokens
   list-themes lint critique query infer spec missing doc-json states
   interactions export-svg export-html tap benchmark
@@ -245,6 +248,7 @@ cli_only: constrain name save load export-mbt-human export-mbt-agent
 
 ```bash
 E=src-tauri/engine/moonviz-cli.exe
+printf 'list-ops\nexit\n' | $E                     # 变更 op 注册表（事实源）
 printf 'help\nexit\n' | $E                       # 命令总览
 printf 'list-templates\nexit\n' | $E             # 模板全集
 printf 'list-components\nexit\n' | $E            # 组件全集（52）

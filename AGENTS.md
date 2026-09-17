@@ -56,11 +56,13 @@ shasum -a 256 src-tauri/engine/moonviz-cli.exe ../moonviz/_build/native/release/
 直接同步即可。同步后**必须重跑 `cargo test`**——引擎契约测试会拿真实二进制校验白名单与模板清单。
 
 引擎的能力面随时可能扩，`frontend/index.html` 与 `agent.rs` 都是硬编码的，**引擎一更新就要回来对账**。
-**`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自 `../moonviz/SKILL.md` 但已对照二进制
-补全与修正（上游版本当前不完整）。引擎更新后的对账顺序：重跑 SKILL.md 文末附录的探针 →
-按结果更新 SKILL.md 的机器可读清单块 → `skill_dictionary_matches_engine_and_agent` 测试会强制
-字典 ↔ 白名单 ↔ 提示词 ↔ 引擎四者一致。**引擎仓库构建阶段只读，不改引擎，以二进制行为为准。**
-对账的权威来源不是引擎的 `help` 文案，而是实际行为：
+**`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自 `../moonviz/SKILL.md` 并双向同步。
+分层事实源：**变更 op 层由引擎 `list-ops` 输出直接接管**（OpEntry 注册表，含 usage/category/gates，
+测试直接消费并与探针表双向比对——引擎新增 op 而无人采纳会红）；**readonly / cli_only 两层暂无
+引擎输出**，由 SKILL.md 文末清单块锚定并与 `READONLY_OPS` 严格相等。引擎更新后的对账顺序：
+重跑 SKILL.md 文末附录的探针 → `list-ops` 有新 op 就加探针 + 写进提示词 → 更新 SKILL.md 两层清单 →
+`skill_dictionary_matches_engine_and_agent` 强制全链一致。**引擎仓库构建阶段只读，不改引擎，
+以二进制行为为准。**对账的权威来源不是引擎的 `help` 文案，而是实际行为：
 
 ```bash
 printf 'help\nexit\n' | src-tauri/engine/moonviz-cli.exe          # 命令总览
