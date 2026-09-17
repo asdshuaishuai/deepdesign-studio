@@ -2418,6 +2418,9 @@ async function loadModelRegistry(){
   try{
     const d=await window.__TAURI__.core.invoke('model_registry');
     if(d&&d.ok)modelRegistry=d;
+    // 首开面板时注册表可能后到：加载完成即刷新提示与档位
+    const m=$('settings-modal');
+    if(m&&m.style.display==='flex')fillModelHints();
   }catch(_){/* 注册表不可用不影响主流程，设置面板仍可手输 */}
 }
 function registryProviderFor(baseUrl){
