@@ -148,10 +148,38 @@ mod tests {
     /// 锚定 `baseUrl:'…'` 与 `model:'…'` 紧邻书写形式，提取同行的键）。
     /// PROVIDERS 表是契约的一部分，写法若变（比如换 JSON 结构），这里解析为空、
     /// `presets_match_snapshot` 立即红，不会静默放过。
+    /// 从 frontend/index.html 解析 PROVIDERS 预设表。
+    /// **锚定 `const PROVIDERS={` 块（花括号配平找块尾）**——不扫全文件：
+    /// 全文件扫描时 `let agentConfig={baseUrl:'',…}`、`saveSettings` 等同形行会被
+    /// 误当预设，此前只靠"键必须全小写"这一巧合挡掉；一旦有人把 agentConfig
+    /// 改成小写，presets_match_snapshot 就会为无关原因变红。锚定后块外行
+    /// 天然不入解析，块内键非法则直接 fail loud。
     fn frontend_presets() -> Vec<(String, String, String)> {
         let html = include_str!("../../frontend/index.html");
+        let anchor = "const PROVIDERS={";
+        let start = html
+            .find(anchor)
+            .unwrap_or_else(|| panic!("前端未找到 `{anchor}`——预设表写法变了，请同步本解析"))
+            + anchor.len();
+        // 花括号配平定位块尾
+        let mut depth = 1usize;
+        let mut end = html.len();
+        for (i, c) in html[start..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = start + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let block = &html[start..end];
         let mut out = Vec::new();
-        for line in html.lines() {
+        for line in block.lines() {
             let l = line.trim();
             if !l.contains("baseUrl:") || !l.contains("model:") {
                 continue;
@@ -161,9 +189,11 @@ mod tests {
             let base = between(l, "baseUrl:'", "'");
             let model = between(l, "model:'", "'");
             if let (Some(base), Some(model)) = (base, model) {
-                if !key.is_empty() && key.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
-                    out.push((key, base.to_string(), model.to_string()));
-                }
+                assert!(
+                    !key.is_empty() && key.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+                    "PROVIDERS 块内条目键非法：{key:?}（应为 kebab-case）"
+                );
+                out.push((key, base.to_string(), model.to_string()));
             }
         }
         out
