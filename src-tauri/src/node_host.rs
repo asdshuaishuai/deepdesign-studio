@@ -10,7 +10,30 @@
 //! classic wasm 无 WasmGC 要求，任何现代 node 均可驱动。
 
 /// 单发调用：返回 wasm 导出函数的结果对象。
+/// 进程类失败（spawn/输出缺失，并行测试下 node 争抢的瞬态错误）重试一次；
+/// 引擎返回的 JSON 错误不在此层——那是业务结果，原样透传不重试。
 pub(super) async fn call(fn_name: &str, mbt: &str, op: &str) -> Result<serde_json::Value, String> {
+    let first = call_once(fn_name, mbt, op).await;
+    match first {
+        Ok(v) => Ok(v),
+        Err(e) if is_transport_error(&e) => {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            call_once(fn_name, mbt, op).await
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// 仅进程/传输类错误重试：node 启动失败、无输出、超时。JSON 解析失败也可能是
+/// 输出被截断的传输症状，一并重试；业务层错误（引擎返回的错误对象）不会走到这。
+fn is_transport_error(e: &str) -> bool {
+    e.starts_with("node_host_spawn_failed")
+        || e.starts_with("node_host_no_output")
+        || e.starts_with("node_host_bad_json")
+        || e == "engine_timeout"
+}
+
+async fn call_once(fn_name: &str, mbt: &str, op: &str) -> Result<serde_json::Value, String> {
     let fn_name = fn_name.to_string();
     let mbt = mbt.to_string();
     let op = op.to_string();
