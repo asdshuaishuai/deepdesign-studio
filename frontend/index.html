@@ -950,7 +950,8 @@ let engineExports=null,engineFailed='',engineReady=null;
 let engWriteOff=0,engLastMem=0;
 function engReadStr(ptr){
   const mem=new DataView(engineExports.memory.buffer);
-  const len=mem.getUint32(ptr-4,true)&0x0FFFFFFF;
+  // 钳制到内存边界：腐坏指针/长度不再放大成巨型读取
+  const len=Math.min(mem.getUint32(ptr-4,true)&0x0FFFFFFF,(engineExports.memory.buffer.byteLength-ptr)/2);
   let s='';
   for(let i=0;i<len;i++)s+=String.fromCharCode(mem.getUint16(ptr+i*2,true));
   return s;
@@ -971,14 +972,28 @@ function engWriteStr(s){
   engWriteOff=ptr+need+4096;
   return ptr;
 }
+let engineBytes=null;
+// 内存棘轮回收：引擎的 bump 堆只增不减（实测 ~250 次变更 op 后线性内存达数百 MB），
+// 长会话必然 OOM。超过阈值时用缓存的 wasm 字节重建实例（毫秒级）——引擎是
+// 无状态的（每次调用传完整 canonical 文本），重建零语义影响。
+const ENGINE_RECYCLE_BYTES=192*1024*1024;
+function engineRecycleIfNeeded(){
+  if(!engineExports)return;
+  if(engineExports.memory.buffer.byteLength>ENGINE_RECYCLE_BYTES&&engineBytes){
+    engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
+    engWriteOff=engineExports.memory.buffer.byteLength+65536;
+    engLastMem=engineExports.memory.buffer.byteLength;
+  }
+}
 function loadEngine(){
   if(engineReady)return engineReady;
   engineReady=(async()=>{
     try{
       const r=await fetch('vendor/moonviz.wasm');
       if(!r.ok)throw new Error('wasm fetch HTTP '+r.status);
-      engineExports=new WebAssembly.Instance(new WebAssembly.Module(await r.arrayBuffer()),{}).exports;
-      engWriteOff=engineExports.memory.buffer.byteLength+4096;
+      engineBytes=await r.arrayBuffer();   // 缓存字节供回收重建
+      engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
+      engWriteOff=engineExports.memory.buffer.byteLength+65536;
       engLastMem=engineExports.memory.buffer.byteLength;
     }catch(err){engineFailed=String(err&&err.message||err);}
   })();
@@ -989,6 +1004,7 @@ async function engApply(gate,mbt,op){
   if(stub&&stub.apply)return stub.apply(gate,mbt,op);
   await loadEngine();
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  engineRecycleIfNeeded();
   const t0=performance.now();
   const out=JSON.parse(engReadStr(engineExports[gate==='agent'?'apply_agent_op':'apply_human_op'](engWriteStr(mbt),engWriteStr(op))));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
@@ -999,6 +1015,7 @@ async function engRender(mbt){
   if(stub&&stub.render)return stub.render(mbt);
   await loadEngine();
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  engineRecycleIfNeeded();
   const t0=performance.now();
   const out=JSON.parse(engReadStr(engineExports.render_mbt(engWriteStr(mbt))));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
@@ -1042,6 +1059,7 @@ if(IS_TAURI&&window.__TAURI__.event){
     try{
       await loadEngine();
       if(!engineExports)throw new Error(engineFailed||'engine_wasm_unavailable');
+      engineRecycleIfNeeded();
       const fn=p.fn;
       if(fn==='list_components'){
         out={ok:true,components:allComps||[]};
@@ -1145,7 +1163,7 @@ async function renderStage(){
     wrap.className='frame-wrap'+(isActive?' active':'');
     wrap.dataset.frame=id;
     wrap.dataset.displayScale=String(s);
-    wrap.innerHTML=`<div class="frame-chrome"><div class="fc-dots"><i></i><i></i><i></i></div><span class="fc-name">${id}</span><span class="fc-size">${sess.w} × ${sess.h}</span></div>
+    wrap.innerHTML=`<div class="frame-chrome"><div class="fc-dots"><i></i><i></i><i></i></div><span class="fc-name">${escHtml(id)}</span><span class="fc-size">${sess.w} × ${sess.h}</span></div>
       <div class="frame-body" id="fb-${id}" style="width:${Math.round(sess.w*s)}px;height:${Math.round(sess.h*s)}px"></div>`;
     stage.appendChild(wrap);
     const chrome=wrap.querySelector('.frame-chrome');
@@ -1249,7 +1267,9 @@ function renderFlowWires(stage){
 function escapeCss(v){return String(v).replace(/[^a-zA-Z0-9_-]/g,'_');}
 /* HTML 文本转义：节点/画板 id 来自引擎文档，而文档可能是外部打开的 .ddp——
  * 拼进 innerHTML 前必须转义，不要假设 id 一定是 ASCII（引擎目前并不清洗 id）。 */
-const escHtml=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const escHtml=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// 属性上下文专用：input value="..." 里只需引号与 &（<> 在属性值内无害但一并转更稳）
+const escAttr=v=>String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
 
 /* 连接模式优先级高于 Frame 切换：捕获阶段截断普通 onclick */
 function bindFlowTargetCapture(){
@@ -1319,7 +1339,7 @@ function renderFlows(){
   const el=$('flow-list');
   $('flow-cnt').textContent=flows.length;
   if(!flows.length){el.innerHTML='<div class="hintbox">暂无跳转。选中按钮后对 Agent 说「<b>链接 p2</b>」，或 ⌘K → <b>flow p1 p2 节点</b></div>';return;}
-  el.innerHTML=flows.map(f=>`<div class="flowrow">⛓ <span>${f.from}</span><span class="arr">→</span><b style="color:var(--acc)">${f.to}</b><span style="color:var(--tx3)">${f.trigger}</span></div>`).join('');
+  el.innerHTML=flows.map(f=>`<div class="flowrow">⛓ <span>${escHtml(f.from)}</span><span class="arr">→</span><b style="color:var(--acc)">${escHtml(f.to)}</b><span style="color:var(--tx3)">${escHtml(f.trigger)}</span></div>`).join('');
 }
 
 /* ---------- 图层树 ---------- */
@@ -1332,7 +1352,7 @@ async function renderLayers(){
       const d=document.createElement('div');
       d.className='layerrow'+(r.id===selected?' on':'');
       const ic={frame:'▢',text:'T',rect:'▣',image:'▣',group:'◈'}[r.kind]||'◻';
-      d.innerHTML=`<span class="lic">${ic}</span><span class="lnm">${r.id}</span>`;
+      d.innerHTML=`<span class="lic">${ic}</span><span class="lnm">${escHtml(r.id)}</span>`;
       d.onclick=()=>select(r.id,null);el.appendChild(d);
     });
     if(!rows.length)el.innerHTML='<div class="hintbox">空画板</div>';return;
@@ -1457,7 +1477,9 @@ function select(nid,ev){
   selected=nid;
   document.querySelectorAll('#stage g.sel-hint').forEach(g=>g.classList.remove('sel-hint'));
   if(nid){
-    const g=document.querySelector(`#fb-${active} g[id="n_${nid}"]`);
+    // 节点 id 是不可信字符串（引擎不清洗），含引号/括号会令模板选择器抛 SyntaxError——
+    // 用属性匹配 + CSS.escape 构造，任意 id 均安全
+    const g=document.querySelector(CSS.escape?`#${CSS.escape('fb-'+active)} g[id=${JSON.stringify('n_'+nid)}]`:`#fb-${active} g[id="n_${nid}"]`);
     if(g)g.classList.add('sel-hint');
   }
   updateSel();renderInspector();
@@ -1710,7 +1732,7 @@ async function sendAgent(){
     const r=await askFxSdk(ctx);
     showSteps(r.ops.map(x=>'op→ '+x));
     if(!r.ops.length){res.style.display='block';res.className='ap-result err';res.textContent='未生成可执行操作';$('ap-send').disabled=false;return;}
-    try{applyMbtResult(r.render);}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用渲染结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;return;}
+    try{await serializeProject(()=>applyMbtResult(r.render));}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用渲染结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;return;}
     document.querySelectorAll('#ap-plan .step').forEach(s=>s.classList.add('done'));
     res.style.display='block';res.className='ap-result ok';
     const cut=r.stopReason==='max_turns'?'（已达步数上限）':(r.stopReason==='error'?'（中途出错，已保留完成部分）':'');
@@ -1814,9 +1836,6 @@ async function runGlobalPrompt(){
   const t=inp.value.trim();if(!t)return;
   // Keep the prompt draft until the user replaces it.
   // 新建页面意图 → 新会话
-  const mk=(tid,w,h,label)=>{
-    showCmdBarless(tid,w,h);
-  };
   if(/修复|fix|优化/.test(t)&&baseCmd){await runOp(`fix ${active}`,'agent');trackAgent(t,[`fix ${active}`]);return;}
   if(/深色|dark/i.test(t)){await runOp('theme dark','agent');trackAgent(t,['theme dark']);return;}
   if(/浅色|light|白/.test(t)){await runOp('theme light','agent');trackAgent(t,['theme light']);return;}
@@ -2073,16 +2092,16 @@ function renderInspector(){
   const segBtns=(key,cur,pairs,cb)=>pairs.map(p=>{const[v,l]=p.split(':');return `<button class="${cur===v?'on':''}" onclick="${cb}('${key}','${v}')">${l}</button>`;}).join('');
   const previous=body.dataset.node;const drafts=previous===active+'/'+selected?Array.from(body.querySelectorAll('input')).filter(i=>i.value!==i.defaultValue).map(i=>[i.id,i.value]):[];body.dataset.node=active+'/'+selected;
   body.innerHTML=`
-    <div class="nodecard"><div><div class="lbl">当前选中节点</div><div class="val">${n.id}</div></div><span class="tag">${n.component&&n.component!=='frame'?n.component:n.kind}</span></div>
+    <div class="nodecard"><div><div class="lbl">当前选中节点</div><div class="val">${escHtml(n.id)}</div></div><span class="tag">${escHtml(n.component&&n.component!=='frame'?n.component:n.kind)}</span></div>
     <div class="frow"><label>位置</label><input type="number" id="p-x" value="${Math.round(n.rect.x)}"><input type="number" id="p-y" value="${Math.round(n.rect.y)}"></div>
     <div class="frow"><label>尺寸</label><input type="number" id="p-w" value="${Math.round(n.rect.w)}"><input type="number" id="p-h" value="${Math.round(n.rect.h)}"></div>
-    <div class="frow"><label>文本</label><input type="text" id="p-text" style="grid-column:2/4" value="${(n.text||'').replace(/"/g,'&quot;')}"></div>
-    <div class="frow"><label>填充</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-fill-c" value="${normColor(n.style.fill)}"><input type="text" id="p-fill" value="${n.style.fill}"></span></div>
-    <div class="frow"><label>文字色</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-tc-c" value="${normColor(n.style.text_color)}"><input type="text" id="p-tc" value="${n.style.text_color}"></span></div>
+    <div class="frow"><label>文本</label><input type="text" id="p-text" style="grid-column:2/4" value="${escAttr(n.text||'')}"></div>
+    <div class="frow"><label>填充</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-fill-c" value="${normColor(n.style.fill)}"><input type="text" id="p-fill" value="${escAttr(n.style.fill)}"></span></div>
+    <div class="frow"><label>文字色</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-tc-c" value="${normColor(n.style.text_color)}"><input type="text" id="p-tc" value="${escAttr(n.style.text_color)}"></span></div>
     <div class="frow"><label>圆角/透明</label><input type="number" id="p-r" value="${n.style.radius}"><input type="number" id="p-op" value="${n.style.opacity}" step="0.1" min="0" max="1"></div>
     <div class="frow"><label>阴影</label><span class="segshadow" style="grid-column:2/4">${['none','e1','e2','e3'].map(v=>`<button data-v="${v}" class="${sh===v?'on':''}" onclick="setShadow('${v}')"><span class="demo"></span>${v}</button>`).join('')}</span></div>
     <div class="frow"><label>字号/描边</label><input type="number" id="p-fs" value="${n.style.font_size}"><input type="number" id="p-sw" value="${n.style.stroke_width||0}" step="0.5"></div>
-    <div class="frow"><label>描边色</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-st-c" value="${normColor(n.style.stroke==='none'?'#000000':n.style.stroke)}"><input type="text" id="p-stroke" value="${n.style.stroke}"></span></div>
+    <div class="frow"><label>描边色</label><span class="colorpair" style="grid-column:2/4"><input type="color" id="p-st-c" value="${normColor(n.style.stroke==='none'?'#000000':n.style.stroke)}"><input type="text" id="p-stroke" value="${escAttr(n.style.stroke)}"></span></div>
     <div class="frow"><label>对齐</label><span class="seg2" style="grid-column:2/4">${segBtns('align',al,['left:左','center:中','right:右'],'setProp')}</span></div>
     <div class="frow"><label>斜体/线型</label><span class="seg2"><button class="${it==='italic'?'on':''}" onclick="setProp('italic','${it==='italic'?'false':'true'}')">I 斜体</button></span><span class="seg2">${segBtns('dash',ds,['solid:实','dashed:虚','dotted:点'],'setProp')}</span></div>
     <div class="frow"><label>可见性</label><span class="seg2" style="grid-column:2/4"><button class="${vis?'on':''}" onclick="setProp('visible','${vis?'false':'true'}')">${vis?'● 可见':'○ 已隐藏'}</button></span></div>
@@ -2510,6 +2529,9 @@ function openSettings(){
   $('agent-base-url').value=agentConfig.baseUrl||'';
   $('agent-api-key').value=agentConfig.apiKey||'';
   $('agent-model').value=agentConfig.model;
+  // 先恢复全档再赋值：否则上一轮收窄的 option 集会把存储值（如 max）打成空串，
+  // fillModelHints 随后钳到 auto 并写回——存储配置被静默降级
+  restoreThinkingOptions($('agent-thinking'),agentConfig.thinkingLevel);
   $('agent-thinking').value=agentConfig.thinkingLevel||'auto';
   // 在输入赋值之后再算提示：先算会读到上一轮的旧输入值
   fillModelHints();$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
@@ -2541,6 +2563,7 @@ async function fetchFxModels(){
     else if(/minimax/i.test(baseUrl)){ids=MINIMAX_STATIC_MODELS.slice();toast('/models 不可用，已填入 MiniMax 静态清单');}
     else{toast('获取失败：'+((data&&data.error)||'empty'));return;}
   }else{toast('已获取 '+ids.length+' 个模型');}
+  fillModelHints();
   const dl=$('fx-model-list');dl.innerHTML='';
   ids.forEach(id=>{const o=document.createElement('option');o.value=id;dl.appendChild(o);});
   const cur=$('agent-model').value.trim();

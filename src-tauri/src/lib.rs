@@ -6,11 +6,11 @@
 //! - 后端 (Rust): DDP 加解密（vendored moonviz-ddp）+ agent（进程内
 //!   Agent 循环：OpenAI/Anthropic 工具调用 × 引擎事件桥）
 //!
-//! 引擎是 MoonViz 的 WasmGC 产物（frontend/vendor/moonviz.wasm，sync-engine.mjs
-//! 从官方发布件拉取）。唯一事实源是 `.mbt.md`；DDP 只是它的认证加密表示，
-//! Rust 不解释视觉语义。无引擎子进程、无 JS 运行时依赖、无 MoonBit 工具链。
-//! 终局路线（待引擎上游出字节边界 wasm 变体后）：wasmtime 纯 Rust 宿主，
-//! 彻底移除事件桥——见 docs/upstream-engine-ask.md。
+//! 引擎是 MoonViz 的标准 classic wasm 产物（frontend/vendor/moonviz.wasm，
+//! sync-engine.mjs 从 GitHub Releases 拉取 + sha512 + 契约探针）。唯一事实源是
+//! `.mbt.md`；DDP 只是它的认证加密表示，Rust 不解释视觉语义。无引擎子进程、
+//! 无 MoonBit 工具链。classic wasm 宿主中立（wasmtime 可加载）——终局 wasmtime
+//! 纯 Rust 宿主不再阻塞于上游变体，见 docs/upstream-engine-ask.md。
 
 pub mod agent;
 mod node_host;

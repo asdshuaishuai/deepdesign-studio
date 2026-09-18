@@ -47,8 +47,8 @@ docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体
 ```bash
 cd src-tauri && cargo test        # 测试：方言表/协议/归一化单测 + base_url 策略 + wasm 契约（node 宿主跑真产物）+ 4 个端到端（mock LLM）+ 模型快照契约
 cd src-tauri && cargo build
-node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（在仓库根跑，需 node ≥24）
-node scripts/sync-engine.mjs      # 引擎产物同步（npm → frontend/vendor/；先跑这个）
+node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（在仓库根跑，classic wasm 无 node 版本门槛）
+node scripts/sync-engine.mjs      # 引擎产物同步（GitHub Releases classic wasm → frontend/vendor/；先跑这个）
 node scripts/sync-models.mjs     # 模型元数据快照同步（models.dev → src-tauri/models.json）
 ./dev.sh                          # debug 编译启动（Windows 用 Git Bash，或手动 npx @tauri-apps/cli dev）
 npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 sync-engine）
@@ -60,8 +60,7 @@ npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 sync-engi
 ## 同步引擎更新（引擎发布新版本后必做）
 
 引擎以**预编译 wasm 产物**集成，不依赖兄弟仓库、不装 MoonBit 工具链。升级引擎 =
-改 `scripts/sync-engine.mjs` 顶部的 `ENGINE_VERSION` / `TARBALL_SHA512`（registry
-元数据 dist.integrity），然后：
+改 `scripts/sync-engine.mjs` 顶部的 `ENGINE_VERSION` / `WASM_SHA512`（release 资产 sha512），然后：
 
 ```bash
 node scripts/sync-engine.mjs    # 下载 → sha512 校验 → 契约探针（导出面/模板/组件逐个 place 验证）→ frontend/vendor/
@@ -102,9 +101,9 @@ auto/off），`fetchFxModels` 端点拉取失败时回退到快照清单（MiniM
 快照不可用时全部降级为手输，不影响主流程。
 
 **`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自引擎仓库 `SKILL.md`。
-分层事实源：**变更 op 层由引擎 `list-ops` 输出直接接管**（OpEntry 注册表，含 usage/category/gates，
-测试直接消费并与探针表双向比对——引擎新增 op 而无人采纳会红）；**readonly / cli_only 两层暂无
-引擎输出**，由 SKILL.md 文末清单块锚定并与 `READONLY_OPS` 严格相等。**引擎仓库只读，不改引擎，
+分层事实源：**变更 op 层由 `list-ops`（wasm 直调导出）提供注册表**（sync-engine 探针校验 ≥25）；
+readonly 路由由 agent.rs 的 `READONLY_OPS` 表锚定（`readonly_routing` 单测；SKILL.md 文末
+清单块是文档镜像，不再有契约测试锚定——skill_dictionary 测试已随 wasm 重构删除）。**引擎仓库只读，不改引擎，
 以产物行为为准。**对账的权威来源不是引擎的 `help` 文案，而是实际行为：
 
 ```bash
@@ -210,17 +209,18 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
 
 - `test_studio.cjs` 有**两道防线**，改测试前先分清：
   - **静态防线（4 道断言）**：内联 HTML 处理器引用的函数必须有定义；`INTERACTIVE_SURFACE`
-    清单（27 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
+    清单（35 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
     `lib.rs` 的原生菜单 id 必须全部被 `nativeMenuAction` 映射。这几道是**为历史事故专门加的**（见下）。
   - **动态防线**：靠字符串切片取真实状态机——`indexOf("const APP_VER")` 到
     `indexOf('async function execCli')` 划区段，再 `indexOf('function NAME(')` 逐函数抽。
     动这些标记、改函数名、或把签名写成非 `function name(` 形式，都会让它**静默取到错东西**。
-- Rust 端到端测试在**本机无引擎二进制时静默跳过**（`eprintln!("跳过：...")` + `return`，不是 ignored，
-  也不是 `#[ignore]`）。看到"绿"之前先确认引擎真的在，否则等于什么都没测。
-  受影响的 6 个：`agent_loop_with_mock_llm_and_real_engine`、`mid_run_llm_failure_preserves_committed_work`、
-  `readonly_session_gets_render_fallback`、`readonly_whitelist_matches_engine_surface`、
-  `template_ids_match_engine`、`agent_loop_anthropic_protocol_with_mock_llm_and_real_engine`。`skill_dictionary_matches_engine_and_agent` 无引擎时只跳过探针、
-  静态断言（字典↔白名单↔提示词）仍然生效。判断方法：看有没有 "跳过" 输出，或数通过条数是否仍是 20。
+- Rust 端到端测试的跳过门已收紧：**wasm 产物缺失 → 合法跳过**（eprintln 提示）；
+  **产物在场但宿主/编解码调用失败 → panic**（静默跳过曾把 codec 损坏伪装成绿灯，变异实验实证）。
+  受影响的 8 个引擎门测试：`wasm_engine_surface_contract`、`template_ids_match_engine`、
+  `agent_loop_with_mock_llm_and_real_engine`、`agent_loop_anthropic_protocol_with_mock_llm_and_real_engine`、
+  `agent_loop_readonly_op_via_session_api`、`session_api_host_contract`、
+  `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`。
+  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数仍是 22。
 
 ## 删前端代码前必读（真实事故，勿重演）
 

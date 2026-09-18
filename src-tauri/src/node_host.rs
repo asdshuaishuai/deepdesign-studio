@@ -7,7 +7,7 @@
 //!
 //! 请求载荷写入临时文件——进程参数只有固定的程序名（node）、脚本路径与
 //! 我们生成的临时文件路径，不携带任何文档内容；每次调用独立进程、无状态。
-//! 需要 node ≥ 24（WasmGC + js-string builtins）。
+//! classic wasm 无 WasmGC 要求，任何现代 node 均可驱动。
 
 /// 单发调用：返回 wasm 导出函数的结果对象。
 pub(super) async fn call(fn_name: &str, mbt: &str, op: &str) -> Result<serde_json::Value, String> {

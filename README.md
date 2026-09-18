@@ -7,41 +7,43 @@ AI 原生原型设计工具的桌面客户端（Tauri 2）。基于 [MoonViz](ht
 ```
 前端 (frontend/index.html, 纯静态)
   ├─ 多画板画布 / 组件库 / decl 源码视图 / 演示模式
-  └─ 全部经 Tauri invoke（无 HTTP 层）
+  ├─ 内嵌标准 wasm 引擎（WebView 内进程执行）
+  └─ 全部经 Tauri invoke（无应用后端 HTTP 层）
 Rust 后端 (src-tauri)
-  ├─ exec_cli — 引擎管道（用户组件库 restore/snapshot 写回）
-  ├─ agent   — 进程内 Agent 循环（OpenAI chat-completions 工具调用）
-  └─ save_ddp/open_ddp — DDP 加密容器读写
-引擎 (engine/moonviz-cli.exe, 随包分发)
-  └─ MoonViz CLI 独立二进制，stdin/stdout JSON 行协议
+  ├─ engine 事件桥 — agent 循环经结构化事件驱动前端 wasm
+  ├─ agent   — 进程内 Agent 循环（OpenAI / Anthropic 双协议工具调用）
+  └─ save_ddp/open_ddp — DDP 加密容器读写（vendored codec）
+引擎 (frontend/vendor/moonviz.wasm, 标准产物)
+  └─ GitHub Releases 的 classic wasm（纯 WASM MVP、宿主中立、零 import）
+     字符串经宿主线性内存编解码；session API 覆盖检视命令
 ```
 
 Agent 基座为 Rust 进程内实现（`src-tauri/src/agent.rs`）——无 JS 运行时、无子进程桥。
-LLM 走任意 OpenAI 兼容端点，内置 11 个服务商预设（DeepSeek / GLM bigmodel+z.ai 双平台 /
-Kimi API+订阅双线 / MiniMax 国内+国际 / StepFun 按量+订阅），思考等级按各家官方方言
-（`reasoning_effort` / `thinking.type`）模型感知降级。
+LLM 走任意 OpenAI 兼容或 Anthropic 兼容端点（MiniMax 双协议支持），内置 13 个服务商预设，
+思考等级按各家官方方言模型感知降级；模型元数据由 models.dev 裁剪快照供给并契约锁定。
 
 ## 开发
 
 ```bash
-./dev.sh            # debug 编译并启动（引擎二进制缺失时自动构建）
+node scripts/sync-engine.mjs   # 拉取标准 wasm 引擎产物（首次必跑）
+./dev.sh                       # debug 编译并启动
 ```
 
-前置：Rust + Tauri CLI + Node（仅构建期脚本）+ 兄弟目录 MoonViz 仓库（引擎源码）。
-
-```bash
-# 打包（引擎二进制自动 staging 进 resources）
-tauri build
-```
+前置：Rust + Tauri CLI + Node（构建期脚本与测试宿主）。仓库自包含——引擎是预编译
+wasm 产物、DDP codec 已 vendored，clone 后两步即可构建，无需 MoonBit 工具链或引擎源码。
 
 ## 测试
 
-后端先行：`cargo test` 含 mock-LLM × 真实引擎二进制的端到端循环（bootstrap、中途失败
-保留工作、只读会话 render 兜底）。前端状态机冒烟：`node test_studio.cjs`。
+```bash
+cd src-tauri && cargo test    # 22 个测试（含 4 个 mock-LLM × 真 wasm 端到端）
+node test_studio.cjs          # 前端状态机冒烟 + wasm 产物契约
+```
+
+引擎门测试：wasm 产物缺失时合法跳过；产物在场但宿主/编解码损坏时必须失败。
 
 ## 打包产物
 
-- macOS：`.app` / `.dmg`（含内嵌引擎二进制，用户无需 MoonBit 工具链）
-- Windows：NSIS 安装包（GitHub Actions，`.github/workflows/windows-build.yml`）
+- macOS：`.app` / `.dmg`；Windows：NSIS 安装包（GitHub Actions，`.github/workflows/windows-build.yml`）
 
-更多：[docs/menus.md](docs/menus.md)（菜单文案与动作映射）。
+更多：[AGENTS.md](AGENTS.md)（仓库指令与对账流程）、[SKILL.md](SKILL.md)（引擎能力字典）、
+[docs/menus.md](docs/menus.md)（菜单映射）。

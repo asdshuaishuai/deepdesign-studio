@@ -1,6 +1,6 @@
 //! 进程内 Agent 基座：OpenAI/Anthropic 工具调用循环 × MoonViz wasm 引擎。
 //!
-//! 引擎是预编译 WasmGC 产物（frontend/vendor/moonviz.wasm），本模块经
+//! 引擎是标准 classic wasm 产物（frontend/vendor/moonviz.wasm，宿主中立），本模块经
 //! `EngineHost`（Rusty V8 进程内宿主，与前端画布各自持有实例、只交换
 //! canonical 文本）调用：变更 op → apply_agent_op（与 CLI apply-agent-mbt-op-b64
 //! 同一分发器，AgentGate），空项目起步 → 种子文档 + apply_human_op 引导。
@@ -516,7 +516,7 @@ impl<'a> EngineState<'a> {
         if is_readonly_op(op) {
             let head = op.split_whitespace().next().unwrap_or("");
             let args = op[head.len()..].trim();
-            let (fn_name, session) = match head {
+            let (fn_name, _session) = match head {
                 // session API（宿主包装生命周期）
                 "list" => ("session_list_artboards", true),
                 "lint" => ("session_lint", true),
@@ -547,8 +547,13 @@ impl<'a> EngineState<'a> {
                 }
                 _ => return json!({"ok": false, "error": format!("unknown_readonly_op:{head}")}),
             };
-            let _ = session; // 宿主按 fn 名前缀自行判断 session 包装
+            // 宿主按 fn 名前缀自行判断 session 包装（元组第二元素因此不用）
             let r = self.call(fn_name, &mbt, args).await;
+            // 与变更路径同构的诚实契约：引擎侧失败不得记为已执行的成功 op
+            // （r 可能是 {ok:false,error:unknown_artboard:...}）
+            if r.get("ok") == Some(&json!(false)) {
+                return json!({"ok": false, "op": op, "error": r.get("error").cloned().unwrap_or(json!("readonly_failed"))});
+            }
             self.ops.push(op.to_string());
             return json!({"ok": true, "op": op, "result": r});
         }
@@ -1196,7 +1201,7 @@ mod tests {
     #[tokio::test]
     async fn wasm_engine_surface_contract() {
         let Ok(v) = ENGINE.call("version_info", "", "").await else {
-            eprintln!("跳过：V8 宿主不可用");
+            eprintln!("跳过：wasm 产物缺失");
             return;
         };
         if v.get("ok") != Some(&json!(true)) {
@@ -1232,7 +1237,7 @@ mod tests {
     #[tokio::test]
     async fn template_ids_match_engine() {
         let Ok(out) = ENGINE.call("list_templates", "", "").await else {
-            eprintln!("跳过：V8 宿主不可用");
+            eprintln!("跳过：wasm 产物缺失");
             return;
         };
         let Some(arr) = out.as_array() else {
@@ -1309,11 +1314,32 @@ mod tests {
     }
 
     /// 引擎（node 宿主 × 真 wasm 产物）可用性探针：不可用即跳过，绿不是假绿。
+    /// 引擎就绪门。**产物缺失 → 合法跳过**（eprintln + return）；
+    /// **产物在场但调用失败 → panic**——wasm 坏了或宿主/编解码损坏必须红，
+    /// 静默跳过会把真回归伪装成绿灯（变异实验实证过这一掩蔽路径）。
     async fn engine_ready() -> bool {
-        matches!(
-            ENGINE.call("version_info", "", "").await,
-            Ok(v) if v.get("ok") == Some(&json!(true))
-        )
+        let wasm = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("frontend")
+            .join("vendor")
+            .join("moonviz.wasm");
+        match ENGINE.call("version_info", "", "").await {
+            Ok(v) if v.get("ok") == Some(&json!(true)) => true,
+            _ if !wasm.is_file() => {
+                eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
+                false
+            }
+            // 并行测试下多个 node 宿主进程争抢，首呼可能瞬态失败——重试一次再判死刑
+            bad => {
+                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                match ENGINE.call("version_info", "", "").await {
+                    Ok(v) if v.get("ok") == Some(&json!(true)) => true,
+                    bad2 => panic!(
+                        "wasm 产物在场但引擎调用两次均失败（宿主或编解码损坏，这是回归不是环境缺失）：{bad2:?}（首呼 {bad:?}）"
+                    ),
+                }
+            }
+        }
     }
 
     /// 端到端 back 任务测试：mock OpenAI 端点（脚本化两轮 tool_calls）× 真实 wasm 引擎。
@@ -1321,7 +1347,7 @@ mod tests {
     #[tokio::test]
     async fn agent_loop_with_mock_llm_and_real_engine() {
         if !engine_ready().await {
-            eprintln!("跳过：V8 宿主或 wasm 产物不可用（node ≥24 + node scripts/sync-engine.mjs）");
+            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
             return;
         }
         // mock /chat/completions：第 1 轮返回 bootstrap 工具调用，第 2 轮返回总结
@@ -1586,7 +1612,7 @@ mod tests {
     #[tokio::test]
     async fn agent_loop_readonly_op_via_session_api() {
         if !engine_ready().await {
-            eprintln!("跳过：V8 宿主或 wasm 产物不可用（node ≥24 + node scripts/sync-engine.mjs）");
+            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
             return;
         }
         let (port, mock, bodies) = spawn_mock_llm(vec![

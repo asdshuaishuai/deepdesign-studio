@@ -18,7 +18,7 @@
 //      list_templates / export_html / version_info）全部在场；
 //   2. 模板 id 集合与 src-tauri/src/agent.rs 的 ENGINE_TEMPLATES 一致；
 //   3. 组件快照逐个 place 探针——引擎不认的 id 一律不写入快照。
-// Node < 24（无 WasmGC + js-string builtins）时跳过检查并给出警告，只落 wasm 文件。
+// 本机无法实例化 wasm 时降级为警告只落文件；实例化成功后探针失败则硬退出（引擎回归）。
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -34,7 +34,7 @@ const ENGINE_VERSION = '0.1.1-fix';
 const RELEASE_TAG = `engine-v${ENGINE_VERSION}`;
 // 资产名里的 wasm 版本（与 release tag 后缀不同——tag 是 -fix 补丁，资产仍 0.1.1）
 const WASM_ARTIFACT_VERSION = '0.1.1';
-// 资产文件名（标准 classic wasm；wasm-gc 变体叫 moonviz-wasm-gc-*）
+// 资产文件名（标准 classic wasm；变体叫 moonviz-wasm-gc-*，本仓库不用）
 const WASM_ASSET = `moonviz-wasm-classic-${WASM_ARTIFACT_VERSION}.wasm`;
 // 标准 wasm SDK：GitHub Releases 的 WasmGC 直链 .wasm（非 tarball）
 const WASM_URL =
@@ -128,7 +128,7 @@ async function download() {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// classic wasm：零 import，标准实例化；字符串经内存编解码（与 engine-host.mjs 同构）
+// classic wasm：零 import，标准实例化；字符串经内存编解码（三宿主同构）
 function instantiate(bytes) {
   return new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
 }
@@ -142,11 +142,11 @@ function makeStrCodec(ex) {
   // 写入区安全不变量：引擎的 bump 堆顶**永远不超过当前内存大小**（超了它就会先 grow）。
   // 所以只要写入区位于「当前内存大小 + 余量」之上，就绝不会被引擎堆覆盖。
   // 引擎增长过内存（其堆顶上移）时，把写入区重新锚到当前内存之上。
-  let writeOff = INITIAL + 4096;
+  let writeOff = INITIAL + 65536;
   let lastSize = INITIAL;
   const readStr = (ptr) => {
     const mem = new DataView(ex.memory.buffer);
-    const len = mem.getUint32(ptr - 4, true) & 0x0FFFFFFF;
+    const len = Math.min(mem.getUint32(ptr - 4, true) & 0x0FFFFFFF, (ex.memory.buffer.byteLength - ptr) / 2);
     let s = '';
     for (let i = 0; i < len; i++) s += String.fromCharCode(mem.getUint16(ptr + i * 2, true));
     return s;
@@ -254,12 +254,20 @@ async function main() {
     if (got !== WASM_SHA512) fail(`wasm sha512 不匹配\n  期望 ${WASM_SHA512}\n  实际 ${got}`);
     bytes = raw;
     writeFileSync(wasmPath, bytes);
-    console.log(`[sync-engine] moonviz.wasm ← moonviz-wasm-gc@${ENGINE_VERSION}（release ${RELEASE_TAG}，sha512 校验通过）`);
+    console.log(`[sync-engine] moonviz.wasm ← ${WASM_ASSET}（release ${RELEASE_TAG}，sha512 校验通过）`);
   }
   manifest.wasm_sha512 = sha512Base64(bytes);
 
+  let exports = null;
   try {
-    const exports = await instantiate(bytes);
+    exports = await instantiate(bytes);
+  } catch (e) {
+    // 只有「无法实例化」才是环境问题（降级为警告落文件）
+    console.warn(`[sync-engine] 本机无法实例化 wasm（${e.message}）——产物已落盘但契约未验证`);
+  }
+  if (exports) {
+    // 实例化成功后的探针失败 = 引擎产物回归（输出形状变了/导出缺失/模板漂移），
+    // 必须硬失败退出——否则新 wasm 配旧 components.json 静默下游消费
     const { components, engineIds } = await contractProbe(exports, bytes);
     writeFileSync(join(dst, 'components.json'), JSON.stringify(components, null, 2) + '\n');
     manifest = {
@@ -276,9 +284,6 @@ async function main() {
       `[sync-engine] 契约探针通过：${REQUIRED_EXPORTS.length} 经典导出 / ${INSPECTION_EXPORTS.length} 检视 / ` +
       `${SESSION_EXPORTS.length} session API（open→lint→close 实跑）/ ${engineIds.length} 模板 / ${components.length} 组件`
     );
-  } catch (e) {
-    // 实例化/编解码异常：产物本身没问题，但契约没人背书
-    console.warn(`[sync-engine] 跳过契约探针（${e.message}）——请用 Node ≥ 24 重跑以验证导出面与组件快照`);
   }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 }

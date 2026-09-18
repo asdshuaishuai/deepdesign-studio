@@ -7,7 +7,7 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # 引擎为预编译 wasm 产物（frontend/vendor/moonviz.wasm）：
-# 缺失时现场拉取（npm moonviz-engine-wasm，sha512 校验 + 真机契约探针，需 node ≥24）
+# 缺失时现场拉取（npm moonviz-engine-wasm，sha512 校验 + 真机契约探针，需 node（classic wasm 无版本门槛））
 if [ ! -f "$ROOT/frontend/vendor/moonviz.wasm" ]; then
   echo "→ 引擎 wasm 产物缺失，同步中（node scripts/sync-engine.mjs）…"
   (cd "$ROOT" && node scripts/sync-engine.mjs)

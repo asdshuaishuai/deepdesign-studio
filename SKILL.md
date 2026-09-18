@@ -238,11 +238,11 @@ library-restore-b64 ... # rehydrate at session start
 
 Rules: `.mbt.md` component source exists only inside the engine/local library; outbound distribution is always MCF. MCF is a pure data container — imports are re-validated through the same compile pipeline, no code execution surface.
 
-## 附录：op 清单（机器可读，`cargo test` 消费此块）
+## 附录：op 清单（机器可读文档镜像；契约锚定在 agent.rs 的 READONLY_OPS）
 
 ```
 # mutating 层不再手工列举——事实源是引擎 `list-ops` 输出（25 op，
-# cargo test 的 SKILL 契约测试直接消费它并与探针表双向比对）。
+# sync-engine 探针校验 ≥25；agent.rs 侧由 ENGINE_TEMPLATES 契约测试锚定模板）。
 readonly: list flows list-templates list-components list-tools list-tokens
   list-themes lint critique query infer spec missing doc-json states
   interactions export-svg export-html tap benchmark
@@ -258,11 +258,11 @@ cli_only: constrain name save load export-mbt-human export-mbt-agent export-decl
 ```bash
 E=src-tauri/engine/moonviz-cli.exe
 node scripts/sync-engine.mjs                       # 全量导出契约探针（事实源）
-printf 'help\nexit\n' | $E                       # 命令总览
+node scripts/sync-engine.mjs                       # 全量导出契约探针（含模板/组件）
 printf 'list-templates\nexit\n' | $E             # 模板全集
 printf 'list-components\nexit\n' | $E            # 组件全集（52）
 printf 'list-themes\nexit\n' | $E                # 主题全集（6）
 # 变更类逐个探针：apply-agent-mbt-op-b64 <mbt> <op>  → 期望 ok 或 mbt_gate_block（语法接受）
 # 只读类逐个探针：load-mbt-b64 <mbt> + <op>        → 期望 ok；apply 路径应报 mbt_operation_unsupported
-# 上述全套探针已固化为 cargo test 里的 SKILL 契约测试，直接跑测试即可对账
+# 探针已固化在 `node scripts/sync-engine.mjs`（同步时自动跑）与 cargo test 的引擎门测试
 ```

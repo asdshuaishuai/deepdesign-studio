@@ -45,11 +45,12 @@ const ex = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
 // 写入区始终锚在「当前内存大小 + 余量」之上——引擎 bump 堆顶不超过当前内存大小，
 // 故该区永不与引擎堆碰撞；引擎增长过内存时重新锚定。
 const INITIAL_MEM = ex.memory.buffer.byteLength;
-let writeOff = INITIAL_MEM + 4096;
+let writeOff = INITIAL_MEM + 65536;
 let lastMemSize = INITIAL_MEM;
 const readStr = (ptr) => {
   const mem = new DataView(ex.memory.buffer);
-  const len = mem.getUint32(ptr - 4, true) & 0x0FFFFFFF;
+  // 钳制到内存边界：腐坏指针/长度不再放大成巨型读取
+  const len = Math.min(mem.getUint32(ptr - 4, true) & 0x0FFFFFFF, (ex.memory.buffer.byteLength - ptr) / 2);
   let s = '';
   for (let i = 0; i < len; i++) s += String.fromCharCode(mem.getUint16(ptr + i * 2, true));
   return s;
@@ -97,6 +98,8 @@ function handle(req) {
   }
   // 全部调用经编解码（classic wasm 字符串是内存对象）；返回值为字符串指针。
   // session_tap 例外：artboard 是字符串，x/y 是 f64 参数（不能当指针传）。
+  // 参数个数校验：缺参会以指针 0 触发不透明的 wasm trap——转成明确错误。
+  const SESSION_MIN_ARGS = { session_tap: 3 };  // 其余 session_<ab> 类：0 或 1 参皆合法
   try {
     if (fn.startsWith('session_')) {
       const handle = ex.session_open(writeStr(req.mbt ?? ''));
@@ -105,19 +108,28 @@ function handle(req) {
       }
       const op = String(req.op ?? '');
       const parts = op.split(/\s+/).filter(Boolean);
+      const minArgs = SESSION_MIN_ARGS[fn] ?? 0;
+      if (parts.length < minArgs) {
+        ex.session_close(handle);
+        return { id, ok: false, error: `op_missing_args:${fn} 需要 ${minArgs} 个参数，得到 ${parts.length}` };
+      }
       let args;
       if (fn === 'session_tap') {
-        args = parts.length >= 3
-          ? [writeStr(parts[0]), Number(parts[1]), Number(parts[2])]
-          : [writeStr(parts[0] ?? ''), 0, 0];
+        args = [writeStr(parts[0]), Number(parts[1]), Number(parts[2])];
       } else {
         args = SESSION_WHOLE_ARG.has(fn)
           ? [writeStr(op)]
           : parts.map(writeStr);
       }
-      const outPtr = ex[fn](handle, ...args);
-      ex.session_close(handle);
-      return { id, ok: true, json: readStr(outPtr) };
+      // 先读结果再关会话（对齐前端桥），finally 兜底回收句柄防泄漏
+      let out;
+      try {
+        const outPtr = ex[fn](handle, ...args);
+        out = { id, ok: true, json: readStr(outPtr) };
+      } finally {
+        ex.session_close(handle);
+      }
+      return out;
     }
     const args = ARITY[fn] === 0
       ? []
