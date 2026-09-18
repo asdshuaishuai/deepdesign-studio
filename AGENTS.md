@@ -151,17 +151,18 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
   thinking 在 Anthropic 协议上表达为 `thinking{type:enabled,budget_tokens}`（仅 MiniMax 家族；
   off/auto 省略即关闭；budget 必须小于 max_tokens，按预算预留余量）。
   前端 13 个预设含 4 个 MiniMax（2 条 OpenAI 兼容 + 2 条 Anthropic 兼容，官方推荐路径）。
-- **`READONLY_OPS` 是「wasm 面不可达」清单**（20 项：清点类 `list`/`list-templates`/`list-components`/
+- **`READONLY_OPS` 是只读路由表**（20 项：清点类 `list`/`list-templates`/`list-components`/
   `list-tools`/`list-tokens`/`list-themes`/`flows`/`benchmark`；检视类 `lint`/`critique`/`query`/`infer`/
   `spec`/`missing`/`doc-json`/`states`/`interactions`/`export-svg`/`export-html`；模拟类 `tap`）：
-  wasm 产物（0.1.1）只导出 apply/render/validate/list_templates/export_html/version_info，
-  这些只读命令一律不可达——命中即返回 `wasm_engine_readonly_unavailable`（agent 提示词也明确
-  教了用 read_mbt + apply 结果里的 nodes 索引替代）。**引擎 wasm 补 inspect 导出后，此表要转回
-  路由白名单语义**（见注释）。变更类 op 绝不能进表——会被此分支拦下而非提交。
+  engine-v0.1.1-fix 的 **session API 已导出检视面**——命中即走只读路由（session API 或直调导出），
+  不进 apply 分发器。此前该表是「wasm 面不可达」拦截名单，现已转回路由白名单语义（注释处的预言成真）。
+  **例外**：`list-tools` 与 `doc-json` 无对应 wasm 导出，命中返回 `wasm_engine_export_unavailable`
+  （诚实报错，不假装可用）。变更类 op 绝不能进表——会被只读分支拦下而非提交。
   注意：`list_components` 作为**工具**仍可用（agent.rs 经宿主取 components.json 快照），
-  不可达的是同名 **op**。
-- **`constrain` 和独立 `name` op 不可达**：它们只存在于 CLI 直连面，走 apply-agent 返回
-  `mbt_operation_unsupported`。改节点名要用 `update <ab> <node> name=<id>`，不要教 Agent 用 `name`。
+  路由的是同名 **op**。
+- **`constrain` 和独立 `name` op 在 apply 门上不可达**：走 apply-human/apply-agent 均返回
+  `mbt_operation_unsupported`；但 **session API 已导出 `session_constrain`**（agent.rs 暂未接入，
+  需要时经 session 路由可达）。改节点名要用 `update <ab> <node> name=<id>`，不要教 Agent 用 `name`。
 - **`INSTRUCTIONS` 与 `ENGINE_TEMPLATES` 必须与引擎同步**（`template_ids_match_engine` 测试锚定 id 集合，
   `prompt_avoids_apply_rejected_ops` 锚定新语法在场）。提示词漏一个模板 Agent 就永远不选它，
   多一个它就会猜不存在的 id。模板尺寸以引擎实际产出为准——`pc_app` 是 1280×800，不是提示词里曾写的 1440×900。

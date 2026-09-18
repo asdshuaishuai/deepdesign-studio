@@ -32,10 +32,9 @@ fn our_family(base_url: &str) -> &'static str {
 /// 不是改 URL 的事——必须人工裁决。三条全是"快照说 anthropic、我们仍是 OpenAI wire"，
 /// 切换需请求体层逐模型验证，暂留。
 #[cfg(test)]
-const KNOWN_FAMILY_DIVERGENCES: [(&str, &str); 3] = [
+const KNOWN_FAMILY_DIVERGENCES: [(&str, &str); 2] = [
     ("minimax", "快照 minimax-cn npm=@ai-sdk/anthropic；本预设仍是 OpenAI 兼容 /v1——双协议支持已落地，用户可切同 id 的 Anthropic 预设"),
     ("minimax-intl", "快照 minimax npm=@ai-sdk/anthropic；同上"),
-    ("kimi-plan", "快照 kimi-for-coding npm=@ai-sdk/anthropic；订阅端点可能已要求 Messages 格式——未验证前不改线"),
 ];
 
 #[cfg(test)]
@@ -88,7 +87,7 @@ pub const PRESET_PROVIDER_MAP: [(&str, &str); 13] = [
     ("zai", "zai"),
     ("zai-coding", "zai-coding-plan"),
     ("kimi", "moonshotai-cn"),
-    ("kimi-plan", "kimi-for-coding"),
+    ("kimi-plan", "kimi-code-plan-cn"), // 上游把 kimi-for-coding 拆成 global/cn 两条
     ("minimax", "minimax-cn"),
     ("minimax-intl", "minimax"),
     // Anthropic Messages 双协议端点（官方推荐路径；同一个 models.dev 提供商）

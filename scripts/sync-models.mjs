@@ -28,7 +28,7 @@ const PROVIDER_MAP = {
   zai: 'zai',
   'zai-coding': 'zai-coding-plan',
   kimi: 'moonshotai-cn',
-  'kimi-plan': 'kimi-for-coding',
+  'kimi-plan': 'kimi-code-plan-cn',  // models.dev 把原 kimi-for-coding 拆成 global/cn 两条
   minimax: 'minimax-cn',
   'minimax-intl': 'minimax',
   'minimax-anthropic': 'minimax-cn',

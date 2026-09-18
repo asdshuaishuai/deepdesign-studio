@@ -1,12 +1,12 @@
 # MoonViz: AI-Native Prototype Design Engine
 
-> **本文件是 deepDesign 仓库的引擎能力字典（vendored 副本）。**
-> 源自 `../moonviz/SKILL.md`。上游曾不完整，已于 `555e21a` 修正并收敛；此后上游又新增
-> Images 语法段（已同步并实测）。本副本额外保留 deepDesign 特有部分（双门表、机器可读
-> 清单块、验证附录）。引擎 `list-tools` 已修复为合法 JSON 注册表（47 工具），但它是
-> MCP 命名层子集——CLI op 面仍靠本文件的清单块锚定。
-> 每一条声明都对照本仓库实际分发的引擎二进制探测验证过。引擎更新后：重跑文末附录探针 →
-> 更正本文件（并与上游 diff，能同步回上游的同步回去）→ `cargo test` 的 SKILL 契约测试强制对账。
+> **本文件是 deepDesign 仓库的引擎能力字典（vendored 副本，随 engine-v0.1.1-fix 适配到 wasm session API）。**
+> 源自 `../moonviz/SKILL.md`。本副本额外保留 deepDesign 特有部分（双门表、机器可读
+> 清单块、验证附录）。**op 语法内核不变**（wasm 的 apply_human_op/apply_agent_op 吃的
+> 还是同一套 op 串）；变的是**引擎接口形态**：从 CLI 独立二进制（stdin/stdout）改为
+> GitHub Releases 的预编译 wasm 工件（35 导出：7 经典 + 4 检视直调 + 24 session API）。
+> 只读检视命令经 session API 可达（list-tools/doc-json 无对应导出除外）。
+> 引擎更新后：`node scripts/sync-engine.mjs`（release 拉取 + 全量导出探针）→ `cargo test`。
 
 ## What This Is
 
@@ -16,26 +16,31 @@ MoonViz is a prototype design engine built entirely in MoonBit. It treats one Mo
 
 ## Quick Start
 
-本仓库内引擎是**独立二进制**（无 `moon run` 回退），stdin 写命令 / stdout 读 JSON 行：
+本仓库内引擎是 **GitHub Releases 的预编译 wasm 工件**（`frontend/vendor/moonviz.wasm`，
+由 `scripts/sync-engine.mjs` 拉取 + sha512 校验 + 全量导出契约探针；WebView 内进程执行，
+测试经 node 宿主驱动同一份产物）。op 以字符串形式传入 wasm 导出：
 
 ```bash
-# 定位：MOONVIZ_CLI 环境变量 → src-tauri/engine/moonviz-cli.exe → 兄弟仓库 _build 产物
-printf 'render-mbt-b64 <base64-utf8-mbt>\nexit\n' | src-tauri/engine/moonviz-cli.exe
-printf 'validate-mbt-b64 <base64-utf8-mbt>\nexit\n' | src-tauri/engine/moonviz-cli.exe
+# 同步工件（release 直链 wasm + 契约探针：7 经典/4 检视/24 session/模板/组件）
+node scripts/sync-engine.mjs
 
-# Human 与 Agent 操作都返回 canonical MBT + 引擎渲染
-apply-human-mbt-op-b64 <mbt-base64> <operation-base64>
-apply-agent-mbt-op-b64 <mbt-base64> <operation-base64>
+# 变更 op（两门，wasm 导出名）：
+#   apply_human_op <mbt> <op>    —— 人类画布操作
+#   apply_agent_op <mbt> <op>    —— Agent 单 op（仅变更类）
+# 只读检视经 session API（宿主包装 open→op→close 生命周期）：
+#   session_lint / session_critique / session_query_nodes / session_spec /
+#   session_infer_missing / session_states / session_interactions / session_flows /
+#   session_export_svg / session_tap / session_benchmark / session_list_artboards …
 ```
 
 ## 引擎双门（改任何 op 前必须分清）
 
-| 路径 | 用途 | 接受 |
+| wasm 路径 | 用途 | 接受 |
 |------|------|------|
-| `apply-human-mbt-op-b64` | 人类画布操作（前端 inspector） | 变更类 op |
-| `apply-agent-mbt-op-b64` | Agent 单 op | **仅变更类**；只读 op 一律 `mbt_operation_unsupported` |
-| `apply-agent-mbt-b64` | 整篇文档提交（前端的"校验并渲染"） | 整篇 canonical，**比 op 路径更严**（真实重叠债被 `no_sibling_overlap` 拦下） |
-| `load-mbt-b64` + op | 只读检视 | 只读命令 |
+| `apply_human_op` | 人类画布操作（前端 inspector） | 变更类 op |
+| `apply_agent_op` | Agent 单 op | **仅变更类**；只读 op 不得走此路（用 session API） |
+| `session_open` + `session_*` | 只读检视 | 检视命令（宿主单次调用内完成 open→op→close） |
+| `render_mbt` / `validate_mbt` | 整篇文档渲染/校验 | 整篇 canonical |
 
 实测结论：同一篇文档经人类门逐 op 全通过，整篇提交给 Agent 门仍可能被
 `mbt_gate_block:...:no_sibling_overlap` 拒绝——这是设计意图（Agent 门更严），不是 bug。
@@ -129,9 +134,10 @@ benchmark               性能基准
 
 ### CLI-pipeline-only（两道门都不可达）
 
-`constrain <ab> <intent_text>` —— 实测 `apply-agent-mbt-op-b64` 与
-`apply-human-mbt-op-b64` **双双返回 `mbt_operation_unsupported`**，仅在
-`load`/会话管道上可用。上游 SKILL.md 把它列在共享语法里是**错的**。
+`constrain <ab> <intent_text>` —— **两门 apply 均拒绝**（`mbt_operation_unsupported`），
+但 **session API 已导出 `session_constrain`**——agent.rs 目前未接入（布局推理走
+update 键），需要时经 session 路由可达。上游 SKILL.md 把它列在共享语法里是**错的**
+（共享的是 session 面，不是 apply 门）。
 改节点名用 `update <ab> <node> name=<id>`，不要教 Agent 用 `constrain` 或独立 `name` op。
 
 ## MCP Server
@@ -149,7 +155,7 @@ benchmark               性能基准
 ```
 
 MCP 面与 CLI op 面同源、snake_case 命名。工具注册表的事实源是引擎
-`core/agent_api.mbt`（47 工具、全量 inputSchema），CLI 的 `list-tools` 直接输出
+`core/agent_api.mbt`（47 工具、全量 inputSchema），MCP `tools/list` 直接输出
 MCP `tools/list` 形态的合法 JSON（`name`/`description`/`inputSchema{properties,required}`）。
 枚举 MCP 面用 `list-tools`，不要引用写死的工具总数。
 （此项已修复：此前只倾倒 11 个且嵌套 JSON 未转义。）
@@ -237,7 +243,7 @@ Rules: `.mbt.md` component source exists only inside the engine/local library; o
 readonly: list flows list-templates list-components list-tools list-tokens
   list-themes lint critique query infer spec missing doc-json states
   interactions export-svg export-html tap benchmark
-cli_only: constrain name save load export-mbt-human export-mbt-agent
+cli_only: constrain name save load export-mbt-human export-mbt-agent export-decl export-artifact
   export-decl export-artifact render-mbt-b64 validate-mbt-b64 canonical-mbt-b64
   apply-agent-mbt-b64 apply-human-mbt-op-b64 apply-agent-mbt-op-b64
   load-mbt-b64 library-snapshot library-restore-b64 component-compile-b64
@@ -248,7 +254,7 @@ cli_only: constrain name save load export-mbt-human export-mbt-agent
 
 ```bash
 E=src-tauri/engine/moonviz-cli.exe
-printf 'list-ops\nexit\n' | $E                     # 变更 op 注册表（事实源）
+node scripts/sync-engine.mjs                       # 全量导出契约探针（事实源）
 printf 'help\nexit\n' | $E                       # 命令总览
 printf 'list-templates\nexit\n' | $E             # 模板全集
 printf 'list-components\nexit\n' | $E            # 组件全集（52）

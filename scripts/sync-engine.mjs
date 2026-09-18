@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // 引擎同步（预编译 wasm 产物）：把 MoonViz 引擎的官方 WasmGC 产物拉到 frontend/vendor/。
 //
-// 引擎不再以兄弟仓库源码 + MoonBit 现场构建的方式集成；唯一分发物是
-// npm `moonviz-engine-wasm`（与 GitHub Releases engine-v* 同源），一份 wasm
+// 引擎不再以兄弟仓库源码 + MoonBit 现场构建的方式集成；唯一分发物是 GitHub Releases
+// 的 `moonviz-wasm-gc-<version>.wasm`（标准 wasm SDK，与 engine-v* tag 同源），一份 wasm
 // 全平台通用（WebView 内进程执行），无子进程、无工具链。
 //
 // 产物：
@@ -27,17 +27,34 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dst = join(root, 'frontend', 'vendor');
 
 // —— 引擎版本锚点（升级 = 改这里 + 重跑本脚本 + cd src-tauri && cargo test）——
-const ENGINE_VERSION = '0.1.1';
-const NPM_TARBALL =
+const ENGINE_VERSION = '0.1.1-fix';
+const RELEASE_TAG = `engine-v${ENGINE_VERSION}`;
+// 资产名里的 wasm 版本（与 release tag 后缀不同——tag 是 -fix 补丁，资产仍 0.1.1）
+const WASM_ARTIFACT_VERSION = '0.1.1';
+// 标准 wasm SDK：GitHub Releases 的 WasmGC 直链 .wasm（非 tarball）
+const WASM_URL =
   process.env.MOONVIZ_WASM_URL ||
-  `https://registry.npmjs.org/moonviz-engine-wasm/-/moonviz-engine-wasm-${ENGINE_VERSION}.tgz`;
-// tarball 整体的 npm dist.integrity（sha512-base64）——对下载的 .tgz 校验
-const TARBALL_SHA512 =
-  'sha512-WwWS6qal44/kNkJm72frWLVHZes+gdzQh7q9cCdyPh5icY5d74tIeledlZRc4bcydTvwEBWX7cyiyVpDPc35vg==';
+  `https://github.com/asdshuaishuai/moonviz/releases/download/${RELEASE_TAG}/moonviz-wasm-gc-${WASM_ARTIFACT_VERSION}.wasm`;
+// 下载的 .wasm 文件整体 sha512（npm 无此产物；校验值取自 release 资产）
+const WASM_SHA512 =
+  'sha512-/z1z0wjTWKEq9meR+is3UCUBru6f9R6US7CXC3rUTfaH+EEE1JtRE7galKOWAH8jNK8alUP3NHRn+vFquHH21Q==';
 
 const REQUIRED_EXPORTS = [
   'apply_human_op', 'apply_agent_op', 'render_mbt', 'validate_mbt',
   'list_templates', 'export_html', 'version_info',
+];
+// 非 session 的检视导出（session API 之外的直调面）
+const INSPECTION_EXPORTS = ['list_components', 'list_ops', 'list_tokens', 'list_themes'];
+// session API（24 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
+// 导出 SVG/交互运行时等）。agent.rs 的只读 op 路由依赖这组导出。
+const SESSION_EXPORTS = [
+  'session_open', 'session_close', 'session_apply_agent', 'session_apply_human',
+  'session_export_svg', 'session_lint', 'session_critique', 'session_auto_fix',
+  'session_query_nodes', 'session_list_artboards', 'session_flows', 'session_interactions',
+  'session_states', 'session_spec', 'session_constrain', 'session_infer_page_type',
+  'session_infer_missing', 'session_extract_design_system', 'session_generate_responsive',
+  'session_benchmark', 'session_save', 'session_component_compile_b64',
+  'session_library_snapshot', 'session_tap',
 ];
 
 // 组件候选（引擎 core/component.mbt 的 builtin 清单，含 v3 扩展）。
@@ -97,27 +114,13 @@ function sha512Base64(buf) {
 async function download() {
   const local = process.env.MOONVIZ_WASM_PATH;
   if (local && existsSync(local)) {
-    console.log(`[sync-engine] 使用本地 tarball：${local}`);
+    console.log(`[sync-engine] 使用本地 wasm：${local}`);
     return readFileSync(local);
   }
-  console.log(`[sync-engine] 下载 ${NPM_TARBALL}`);
-  const res = await fetch(NPM_TARBALL);
+  console.log(`[sync-engine] 下载 ${WASM_URL}`);
+  const res = await fetch(WASM_URL);
   if (!res.ok) fail(`下载失败：HTTP ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
-}
-
-function extractWasm(tarball) {
-  const tmp = join(tmpdir(), `moonviz-wasm-${Date.now()}`);
-  mkdirSync(tmp, { recursive: true });
-  const tgz = join(tmp, 'engine.tgz');
-  writeFileSync(tgz, tarball);
-  // bsdtar：Windows 10+/macOS/Linux CI 均自带
-  execFileSync('tar', ['-xzf', tgz, '-C', tmp], { stdio: 'pipe' });
-  const inner = join(tmp, 'package', 'dist', 'moonviz.wasm');
-  if (!existsSync(inner)) fail('tarball 中没有 package/dist/moonviz.wasm');
-  const bytes = readFileSync(inner);
-  rmSync(tmp, { recursive: true, force: true });
-  return bytes;
 }
 
 async function instantiate(bytes) {
@@ -138,6 +141,22 @@ function agentTemplateIds() {
 async function contractProbe(exports, wasmBytes) {
   const missing = REQUIRED_EXPORTS.filter((n) => typeof exports[n] !== 'function');
   if (missing.length) fail(`wasm 缺少必需导出：${missing.join(', ')}`);
+  const missInsp = INSPECTION_EXPORTS.filter((n) => typeof exports[n] !== 'function');
+  if (missInsp.length) fail(`wasm 缺少检视导出：${missInsp.join(', ')}`);
+  const missSess = SESSION_EXPORTS.filter((n) => typeof exports[n] !== 'function');
+  if (missSess.length) fail(`wasm 缺少 session API 导出：${missSess.join(', ')}`);
+
+  // session 生命周期实跑（不只是存在性）：种子文档 open → lint → close
+  const probeDoc = seedDoc('__seed', 390, 844);
+  const handle = exports.session_open(probeDoc);
+  if (!Number.isInteger(handle) || handle < 0) fail(`session_open 失败：handle=${handle}`);
+  // lint 返回违规数组（空数组=无违规），不是 {ok} 对象——可解析即通过
+  try { JSON.parse(exports.session_lint(handle, '__seed')); }
+  catch { fail('session_lint 返回非 JSON'); }
+  if (!exports.session_close(handle)) fail('session_close 失败');
+  // list_ops 应给出 mutating op 注册表（op 面事实源）
+  const ops = JSON.parse(exports.list_ops());
+  if (!Array.isArray(ops) || ops.length < 20) fail(`list_ops 异常：${JSON.stringify(ops).slice(0, 120)}`);
 
   const engineIds = JSON.parse(exports.list_templates())
     .map((t) => t.id ?? t.template_id ?? t);
@@ -166,7 +185,7 @@ async function main() {
   const manifestPath = join(dst, 'engine-manifest.json');
 
   // 跳过判断：现存 wasm 的哈希与上次 manifest 记录一致且版本未变 → 不再下载
-  let manifest = { version: ENGINE_VERSION, source: NPM_TARBALL };
+  let manifest = { version: ENGINE_VERSION, source: WASM_URL, releaseTag: RELEASE_TAG };
   let skipDownload = false;
   if (existsSync(wasmPath) && existsSync(manifestPath)) {
     try {
@@ -182,12 +201,12 @@ async function main() {
     bytes = readFileSync(wasmPath);
     console.log('[sync-engine] moonviz.wasm 已是目标版本，跳过下载');
   } else {
-    const tarball = await download();
-    const got = sha512Base64(tarball);
-    if (got !== TARBALL_SHA512) fail(`tarball sha512 不匹配\n  期望 ${TARBALL_SHA512}\n  实际 ${got}`);
-    bytes = extractWasm(tarball);
+    const raw = await download();
+    const got = sha512Base64(raw);
+    if (got !== WASM_SHA512) fail(`wasm sha512 不匹配\n  期望 ${WASM_SHA512}\n  实际 ${got}`);
+    bytes = raw;
     writeFileSync(wasmPath, bytes);
-    console.log(`[sync-engine] moonviz.wasm ← moonviz-engine-wasm@${ENGINE_VERSION}（tarball sha512 校验通过）`);
+    console.log(`[sync-engine] moonviz.wasm ← moonviz-wasm-gc@${ENGINE_VERSION}（release ${RELEASE_TAG}，sha512 校验通过）`);
   }
   manifest.wasm_sha512 = sha512Base64(bytes);
 
@@ -199,11 +218,16 @@ async function main() {
       ...manifest,
       generatedAt: new Date().toISOString(),
       exports: REQUIRED_EXPORTS,
+      inspection: INSPECTION_EXPORTS,
+      session: SESSION_EXPORTS,
       templates: engineIds,
       components: components.length,
       node: process.version,
     };
-    console.log(`[sync-engine] 契约探针通过：${REQUIRED_EXPORTS.length} 导出 / ${engineIds.length} 模板 / ${components.length} 组件`);
+    console.log(
+      `[sync-engine] 契约探针通过：${REQUIRED_EXPORTS.length} 经典导出 / ${INSPECTION_EXPORTS.length} 检视 / ` +
+      `${SESSION_EXPORTS.length} session API（open→lint→close 实跑）/ ${engineIds.length} 模板 / ${components.length} 组件`
+    );
   } catch (e) {
     // Node < 24 无法实例化 WasmGC + js-string：产物本身没问题，但契约没人背书
     console.warn(`[sync-engine] 跳过契约探针（${e.message}）——请用 Node ≥ 24 重跑以验证导出面与组件快照`);

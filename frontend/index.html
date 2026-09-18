@@ -1001,8 +1001,13 @@ async function bootstrapFirstBoard(cmd,id,w,h){
 }
 /* Rust agent 循环的引擎桥：lib.rs 经结构化事件 engine-req 请求（serde 对象，
  * 无 JS 拼接，零注入面），本监听驱动 WebView 内 wasm 实例执行，
- * 结果经 engine_res 命令回传（id 配对）。fn 限定 wasm 导出名 + list_components。 */
+ * 结果经 engine_res 命令回传（id 配对）。fn 限定 wasm 导出名 + list_components。
+ *
+ * session API（fn 以 session_ 开头）：单次请求内完成
+ * session_open(mbt) → session_X(handle, ...args) → session_close 生命周期，
+ * 与 scripts/engine-host.mjs 同构（测试与生产走同一份驱动逻辑）。 */
 if(IS_TAURI&&window.__TAURI__.event){
+  const SESSION_WHOLE_ARG=new Set(['session_apply_agent','session_apply_human','session_component_compile_b64']);
   window.__TAURI__.event.listen('engine-req',async ev=>{
     const p=ev.payload||{};
     let out;
@@ -1012,8 +1017,16 @@ if(IS_TAURI&&window.__TAURI__.event){
       const fn=p.fn;
       if(fn==='list_components'){
         out={ok:true,components:allComps||[]};
+      }else if(fn&&fn.startsWith('session_')){
+        if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
+        const h=engineExports.session_open(p.mbt||'');
+        if(!Number.isInteger(h)||h<0)throw new Error('session_open_failed:'+h);
+        const op=String(p.op||'');
+        const args=SESSION_WHOLE_ARG.has(fn)?[op]:op.split(/\s+/).filter(Boolean);
+        try{out=JSON.parse(engineExports[fn](h,...args));}
+        finally{engineExports.session_close(h);}
       }else{
-        if(!engineExports||typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
+        if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
         out=JSON.parse(engineExports[fn](p.mbt||'',p.op||''));
       }
     }catch(err){out={ok:false,error:String(err&&err.message||err)};}
@@ -1942,8 +1955,9 @@ function renderCompTree(filter){
 function filterComps(v){renderCompTree(v.trim());}
 
 /* ---------- 用户组件：画板沉淀（人类路线） / MCF 导入导出 ----------
- * 用户组件库（component-*/library-*）属引擎 CLI 会话面 + Rust 侧持久化，
- * wasm 产物未导出该注册表——三入口整体降级为提示，待引擎 wasm 面补齐后恢复。 */
+ * 用户组件库（component-compile / library-snapshot 系列）属引擎会话面 + Rust 侧持久化。
+ * 旧 wasm 产物未导出该注册表，三入口曾整体降级为提示；engine-v0.1.1-fix 的 session API
+ * 已导出 session_component_compile_b64 / session_library_snapshot，恢复路由待接线。 */
 const USERCOMP_UNAVAILABLE='用户组件库需要引擎 CLI 会话面，wasm 预编译版暂未提供';
 async function saveAsComponent(){
   if(!baseCmd||!active){toast('先创建一个活动画板');return;}

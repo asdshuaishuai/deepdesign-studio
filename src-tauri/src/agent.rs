@@ -4,8 +4,9 @@
 //! `EngineHost`（Rusty V8 进程内宿主，与前端画布各自持有实例、只交换
 //! canonical 文本）调用：变更 op → apply_agent_op（与 CLI apply-agent-mbt-op-b64
 //! 同一分发器，AgentGate），空项目起步 → 种子文档 + apply_human_op 引导。
-//! 只读检视面（lint/critique/query/...）wasm 产物未导出——READONLY_OPS 命中
-//! 即返回明确错误。请求体为 OpenAI chat wire format 或 Anthropic Messages wire
+//! 只读检视面（lint/critique/query/...）经 wasm session API 路由可达
+//! （engine-v0.1.1-fix 导出 24 个 session_*；仅 list-tools/doc-json 无对应导出）。
+//! 请求体为 OpenAI chat wire format 或 Anthropic Messages wire
 //! （协议按 base_url 探测，json! 字面量），thinking 家族等非标字段在构造时
 //! 直接注入。返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text}。
 
@@ -103,12 +104,14 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   | show_toast:<msg> | set_text:<node>:<text> | set_state:<node>:<state>
   | toggle_state:<node> | play_sound:<name>. Define the state via "state" BEFORE
   set_state/toggle_state can target it; call set-state only after a state exists.
-- inspection: this engine face (prebuilt wasm) exposes MUTATIONS only. Read-only commands
-  (list/flows/list-*/lint/critique/query/infer/spec/missing/doc-json/states/interactions/
-  export-svg/export-html/tap/benchmark) are rejected with wasm_engine_readonly_unavailable —
-  don't call them. Ground everything in read_mbt (full source: ids, flows, styles) and the
-  apply results (each returns per-artboard node indexes with rects); list_components covers
-  the palette; the studio frontend can export an interactive HTML prototype of the final doc.
+- inspection: read-only commands ARE available on this engine face (routed through the wasm
+  session API — they inspect but never commit): list | flows | list-templates | list-components
+  | list-tokens | list-themes | lint <ab> | critique <ab> | query <ab> | infer <ab> | spec <ab>
+  | missing <ab> | states <ab> | interactions <ab> | export-svg <ab> | export-html | tap <ab> <x> <y>
+  | benchmark. Use them to ground decisions before mutating (lint catches contrast/touch-target
+  debt, missing finds unwired CTAs, query lists nodes, states/interactions show what's wired).
+  Exceptions with no wasm export — never call: list-tools, doc-json (use read_mbt / list-ops
+  introspection instead). Mutations still go through moonviz_op only.
 - update keys: w h text fill text_color stroke stroke_width radius opacity font_size weight
   shadow rotate blur blend line tracking constraint align italic dash visible layout gap
   justify padding width_mode height_mode x_mode y_mode name.
@@ -396,11 +399,11 @@ fn thinking_extra_body(model: &str, level: &str, protocol: Protocol) -> Option<V
     Some(json!({"reasoning_effort": level}))
 }
 
-/// 只读 op 分类表。引擎 wasm 面（0.1.1）只导出 apply/render/validate/list_templates/
-/// export_html/version_info——这些检视命令一律不可达；命中本表即返回
-/// `wasm_engine_readonly_unavailable`（把「面没开」说清楚，而不是让 op 撞上
-/// apply 分发器的 mbt_operation_unsupported）。引擎 wasm 补 inspect 类导出后，
-/// 此表转回路由白名单并恢复只读管道。变更类 op 绝不能入表（会被此分支拦下）。
+/// 只读 op 分类表：命中即走只读路由（session API 或直调导出），不进 apply 分发器。
+/// engine-v0.1.1-fix 的 session API 已导出检视面——此前该表只是"不可达"拦截名单，
+/// 现已转回路由白名单语义（本注释处的预言成真）。变更类 op 绝不能入表——
+/// 入表会被只读分支拦下而非提交。list-tools/doc-json 无对应 wasm 导出，
+/// 路由时保持诚实报错（见 moonviz_op 的 unavailable 分支）。
 const READONLY_OPS: [&str; 20] = [
     // 无参清点类
     "list", "list-templates", "list-components", "list-tools", "list-tokens", "list-themes",
@@ -506,13 +509,48 @@ impl<'a> EngineState<'a> {
             return json!({"ok": false, "error": "no_mbt_loaded"});
         };
 
-        // 只读 op：wasm 引擎面未导出检视命令——明确报错并指路
+        // 只读 op：路由到 session API / 直调导出（engine-v0.1.1-fix 起检视面可达）。
+        // 路由表：CLI op 头 → (wasm 导出名, 是否走 session 包装)。session 类导出的
+        // 参数（artboard / x y）由 op 的剩余部分携带，宿主在单次调用内完成
+        // open→call→close 生命周期。
         if is_readonly_op(op) {
-            return json!({
-                "ok": false, "op": op,
-                "error": "wasm_engine_readonly_unavailable",
-                "hint": "inspection commands are not exported by the wasm engine; use read_mbt (full source) and apply-result node indexes instead",
-            });
+            let head = op.split_whitespace().next().unwrap_or("");
+            let args = op[head.len()..].trim();
+            let (fn_name, session) = match head {
+                // session API（宿主包装生命周期）
+                "list" => ("session_list_artboards", true),
+                "lint" => ("session_lint", true),
+                "critique" => ("session_critique", true),
+                "query" => ("session_query_nodes", true),
+                "infer" => ("session_infer_page_type", true),
+                "spec" => ("session_spec", true),
+                "missing" => ("session_infer_missing", true),
+                "states" => ("session_states", true),
+                "interactions" => ("session_interactions", true),
+                "flows" => ("session_flows", true),
+                "export-svg" => ("session_export_svg", true),
+                "tap" => ("session_tap", true),
+                "benchmark" => ("session_benchmark", true),
+                // 直调导出（无状态）
+                "list-templates" => ("list_templates", false),
+                "list-components" => ("list_components", false),
+                "list-tokens" => ("list_tokens", false),
+                "list-themes" => ("list_themes", false),
+                "export-html" => ("export_html", false),
+                // 无对应 wasm 导出：保持诚实报错（不假装可用）
+                "list-tools" | "doc-json" => {
+                    return json!({
+                        "ok": false, "op": op,
+                        "error": "wasm_engine_export_unavailable",
+                        "hint": format!("{head} has no wasm export in this engine build — use read_mbt / list-ops style introspection instead"),
+                    });
+                }
+                _ => return json!({"ok": false, "error": format!("unknown_readonly_op:{head}")}),
+            };
+            let _ = session; // 宿主按 fn 名前缀自行判断 session 包装
+            let r = self.call(fn_name, &mbt, args).await;
+            self.ops.push(op.to_string());
+            return json!({"ok": true, "op": op, "result": r});
         }
 
         // 变更操作：apply_agent_op（与 CLI apply-agent-mbt-op-b64 同一分发器，AgentGate）
@@ -581,7 +619,7 @@ fn tools_schema() -> Value {
             "type": "function",
             "function": {
                 "name": "moonviz_op",
-                "description": "Execute one MoonViz MUTATING design operation (AgentGate-validated, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Read-only inspection commands are NOT available on this engine face — ground ids/flows/styles via read_mbt and apply-result node indexes.",
+                "description": "Execute one MoonViz MUTATING design operation (AgentGate-validated, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
                 "parameters": {
                     "type": "object",
                     "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -1540,6 +1578,95 @@ mod tests {
             .filter_map(|blk| blk.get("id").and_then(|v| v.as_str()))
             .collect();
         assert_eq!(tu, vec!["tu1", "tu2"], "assistant 消息应含两个 tool_use 块");
+    }
+
+    /// 只读 op 端到端：Agent 调用 `lint wl` → moonviz_op 路由到 session API →
+    /// 结果含检视输出（不再是 wasm_engine_readonly_unavailable 硬拦）。
+    /// 断言第二轮请求的消息历史里带着 lint 的 tool 结果（session 面真被打通）。
+    #[tokio::test]
+    async fn agent_loop_readonly_op_via_session_api() {
+        if !engine_ready().await {
+            eprintln!("跳过：V8 宿主或 wasm 产物不可用（node ≥24 + node scripts/sync-engine.mjs）");
+            return;
+        }
+        let (port, mock, bodies) = spawn_mock_llm(vec![
+            // 第一轮：bootstrap 建板 + 一个只读 lint（同一消息两个 tool_use）
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "moonviz_op",
+                     "arguments": "{\"op\": \"template login wl\"}"}},
+                    {"id": "c2", "type": "function", "function": {"name": "moonviz_op",
+                     "arguments": "{\"op\": \"lint wl\"}"}}
+                ]}}]
+            }),
+            // 第二轮：文本总结
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": "已建板并完成 lint。"}}]
+            }),
+        ])
+        .await;
+        let out = run(
+            &ENGINE,
+            "建登录页并 lint",
+            None,
+            "sk-test",
+            "mock-model",
+            &format!("http://127.0.0.1:{port}"),
+            "auto",
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(
+            out["ops"],
+            json!(["template login wl", "lint wl"]),
+            "只读 op 应被记录并执行"
+        );
+        assert_eq!(out["stopReason"], json!("done"));
+        // 第二轮请求的历史里必须带着 lint 的 tool 结果（session 面真被打通：
+        // 若是硬拦，tool 结果会是 wasm_engine_readonly_unavailable 错误）
+        let bs = bodies.lock().unwrap();
+        assert!(bs.len() >= 2, "应有 2 轮请求");
+        let second = &bs[1];
+        // tool 结果在请求体里是转义 JSON 字符串（\"op\":\"lint wl\"），
+        // 搜明文 "lint wl" 即可（转义不影响子串匹配）
+        assert!(
+            second.contains("lint wl"),
+            "第二轮请求未含 lint 的 tool 结果：{}",
+            &second[..second.len().min(400)]
+        );
+        assert!(
+            !second.contains("unavailable"),
+            "只读 op 仍被拦为不可用（session 路由未生效）：{}",
+            &second[..second.len().min(400)]
+        );
+    }
+
+    /// session 面宿主契约：经 ENGINE 宿主（node 驱动真 wasm）走完整 session
+    /// 生命周期——open → lint/flows/list_artboards → close 全部可用。
+    /// 这是只读路由的宿主层证据（agent.rs 路由 + 宿主包装 + wasm 导出三层）。
+    #[tokio::test]
+    async fn session_api_host_contract() {
+        if !engine_ready().await {
+            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
+            return;
+        }
+        let seed = seed_doc("sd", 390, 844);
+        let lint = ENGINE.call("session_lint", &seed, "sd").await.unwrap();
+        // lint 返回违规数组（空=无违规）——可解析即通过
+        serde_json::from_str::<Value>(lint.to_string().as_str()).unwrap();
+        let flows = ENGINE.call("session_flows", &seed, "").await.unwrap();
+        serde_json::from_str::<Value>(flows.to_string().as_str()).unwrap();
+        let arts = ENGINE.call("session_list_artboards", &seed, "").await.unwrap();
+        let arr = arts.as_array().expect("session_list_artboards 应返回数组");
+        assert!(arr.iter().any(|a| a.get("id").and_then(|v| v.as_str()) == Some("sd")));
+        let bench = ENGINE.call("session_benchmark", &seed, "").await.unwrap();
+        assert!(bench.get("avg_score").is_some(), "session_benchmark 应返回评分对象：{bench}");
+        // 直调检视导出
+        let tokens = ENGINE.call("list_tokens", "", "").await.unwrap();
+        assert!(tokens.get("colors").is_some(), "list_tokens 应返回颜色分组：{tokens}");
+        let themes = ENGINE.call("list_themes", "", "").await.unwrap();
+        assert!(themes.as_array().is_some_and(|a| a.len() >= 5), "list_themes 应返回 6 主题");
     }
 
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。

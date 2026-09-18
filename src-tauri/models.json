@@ -1,7 +1,7 @@
 {
   "source": "https://models.dev/api.json",
   "license": "MIT (models.dev, sst/anomaly)",
-  "fetched_at": "2026-09-17",
+  "fetched_at": "2026-09-18",
   "note": "vendored snapshot for deepDesign Studio provider presets; capability axes only, wire dialects live in agent.rs::thinking_extra_body; drift is locked by cargo test presets_match_snapshot / minimax_static_models_in_snapshot",
   "providers": {
     "deepseek": {
@@ -467,7 +467,7 @@
       "name": "Zhipu AI Coding Plan",
       "api": "https://open.bigmodel.cn/api/coding/paas/v4",
       "npm": "@ai-sdk/openai-compatible",
-      "model_count": 10,
+      "model_count": 4,
       "models": {
         "glm-5.3-highspeed": {
           "name": "GLM-5.3 Highspeed",
@@ -521,27 +521,6 @@
             "cache_write": 0
           }
         },
-        "glm-5.1": {
-          "name": "GLM-5.1",
-          "reasoning": true,
-          "reasoning_options": [
-            {
-              "type": "toggle"
-            }
-          ],
-          "tool_call": true,
-          "structured_output": true,
-          "limit": {
-            "context": 200000,
-            "output": 131072
-          },
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cache_read": 0,
-            "cache_write": 0
-          }
-        },
         "glm-5.3": {
           "name": "GLM-5.3",
           "reasoning": true,
@@ -550,73 +529,6 @@
               "type": "effort",
               "values": [
                 "low",
-                "high",
-                "max"
-              ]
-            }
-          ],
-          "tool_call": true,
-          "structured_output": true,
-          "limit": {
-            "context": 1000000,
-            "output": 131072
-          },
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cache_read": 0,
-            "cache_write": 0
-          }
-        },
-        "glm-5v-turbo": {
-          "name": "GLM-5V-Turbo",
-          "reasoning": true,
-          "reasoning_options": [
-            {
-              "type": "toggle"
-            }
-          ],
-          "tool_call": true,
-          "structured_output": false,
-          "limit": {
-            "context": 200000,
-            "output": 131072
-          },
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cache_read": 0,
-            "cache_write": 0
-          }
-        },
-        "glm-5-turbo": {
-          "name": "GLM-5-Turbo",
-          "reasoning": true,
-          "reasoning_options": [
-            {
-              "type": "toggle"
-            }
-          ],
-          "tool_call": true,
-          "structured_output": true,
-          "limit": {
-            "context": 200000,
-            "output": 131072
-          },
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cache_read": 0,
-            "cache_write": 0
-          }
-        },
-        "glm-5.2": {
-          "name": "GLM-5.2",
-          "reasoning": true,
-          "reasoning_options": [
-            {
-              "type": "effort",
-              "values": [
                 "high",
                 "max"
               ]
@@ -652,52 +564,6 @@
           "cost": {
             "input": 0.3,
             "output": 0.9
-          }
-        },
-        "glm-4.7": {
-          "name": "GLM-4.7",
-          "reasoning": true,
-          "reasoning_options": [
-            {
-              "type": "toggle"
-            }
-          ],
-          "tool_call": true,
-          "structured_output": false,
-          "limit": {
-            "context": 204800,
-            "output": 131072
-          },
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cache_read": 0,
-            "cache_write": 0
-          }
-        },
-        "glm-5.2-highspeed": {
-          "name": "GLM-5.2 Highspeed",
-          "reasoning": true,
-          "reasoning_options": [
-            {
-              "type": "effort",
-              "values": [
-                "high",
-                "max"
-              ]
-            }
-          ],
-          "tool_call": true,
-          "structured_output": true,
-          "limit": {
-            "context": 1000000,
-            "output": 131072
-          },
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cache_read": 0,
-            "cache_write": 0
           }
         }
       }
@@ -1325,11 +1191,11 @@
         }
       }
     },
-    "kimi-for-coding": {
-      "id": "kimi-for-coding",
-      "name": "Kimi For Coding",
+    "kimi-code-plan-cn": {
+      "id": "kimi-code-plan-cn",
+      "name": "Kimi For Coding (kimi.com)",
       "api": "https://api.kimi.com/coding/v1",
-      "npm": "@ai-sdk/anthropic",
+      "npm": "@ai-sdk/openai-compatible",
       "model_count": 4,
       "models": {
         "kimi-for-coding-highspeed": {
