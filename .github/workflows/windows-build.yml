@@ -12,41 +12,27 @@ concurrency:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout deepDesign
         uses: actions/checkout@v4
 
-      # Cargo.toml 的 moonviz-ddp 依赖指向仓库外兄弟目录 ../../moonviz，
-      # CI 中将引擎仓库 checkout 到工作区旁（D:\a\<repo>\moonviz）以对齐路径。
-      - name: Checkout MoonViz engine (sibling path)
-        uses: actions/checkout@v4
-        with:
-          repository: asdshuaishuai/moonviz
-          ref: main
-          path: ../moonviz
-
-      - name: Install MoonBit toolchain (Windows)
-        shell: powershell
-        run: irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
-
-      - name: Build MoonViz CLI binary (embedded into installer)
-        shell: powershell
-        run: |
-          $env:Path = "$env:USERPROFILE\.moon\bin;$env:Path"
-          moon version
-          moon build --release --target native cli
-          "list-templates", "exit" | &_build/native/release/build/cli/cli.exe | Select-String '"login"'
-        working-directory: ../moonviz
-        # 产物经 beforeBuildCommand(sync-engine.mjs) 以 engine/moonviz-cli.exe
-        # 打进安装包，最终用户无需安装 MoonBit 工具链；Agent 基座为 Rust 进程内
-        # 实现（无 JS 运行时），node 仅用于构建期脚本
-
-      - name: Setup Node 20
+      # 引擎以预编译 wasm 产物集成：sync-engine.mjs 从 npm registry 拉取
+      # moonviz-engine-wasm（pin 版本 + sha512 校验 + 真机契约探针）到
+      # frontend/vendor/。无 MoonBit 工具链、无兄弟仓库依赖。
+      - name: Setup Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+
+      - name: Fetch prebuilt engine (sync-engine.mjs)
+        shell: bash
+        run: node scripts/sync-engine.mjs
+
+      - name: Frontend smoke + wasm contract (test_studio.cjs)
+        shell: bash
+        run: node test_studio.cjs
 
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -56,10 +42,16 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # Rust 侧测试：V8 宿主在进程内实例化同一份 wasm 产物
+      # （agent e2e 用 mock LLM 端点，不出网）
+      - name: Run cargo tests
+        working-directory: src-tauri
+        run: cargo test --release
+
       - name: Build NSIS installer
         run: npx @tauri-apps/cli@^2 build --bundles nsis
         env:
-          # 引擎路径依赖已由兄弟 checkout 对齐；CI 只做构建产物，不签名
+          # CI 只做构建产物，不签名
           TAURI_SIGNING_PRIVATE_KEY: ''
 
       - name: Upload installer artifact

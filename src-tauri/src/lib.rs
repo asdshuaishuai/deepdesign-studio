@@ -1,200 +1,114 @@
 //! deepDesign Studio: Tauri 2 桌面应用
 //!
 //! 架构：
-//! - 前端 (纯静态): 多画板页签 + 拖拽画布 + 操作流 + Agent 控制台 + decl 视图
-//! - 后端 (Rust): exec_cli（引擎进程）+ 加密 DDP 字节读写 + agent（进程内
-//!   Agent 循环：OpenAI chat 兼容工具调用 × MoonViz AgentGate）
+//! - 前端 (纯静态): 多画板页签 + 拖拽画布 + **内嵌 wasm 引擎**（预编译产物，
+//!   WebView 内进程执行——画布与 agent 共用这个实例）+ Agent 控制台 + decl 视图
+//! - 后端 (Rust): DDP 加解密（vendored moonviz-ddp）+ agent（进程内
+//!   Agent 循环：OpenAI/Anthropic 工具调用 × 引擎事件桥）
 //!
-//! 引擎 100% MoonBit 独立进程（stdin/stdout JSON 协议）。唯一事实源是
-//! MoonBit `.mbt.md`；DDP 只是它的认证加密表示，Rust 不解释视觉语义。
-//! Agent 基座 Rust 原生化后无 JS 运行时依赖（node/桥已删除）。
+//! 引擎是 MoonViz 的 WasmGC 产物（frontend/vendor/moonviz.wasm，sync-engine.mjs
+//! 从官方发布件拉取）。唯一事实源是 `.mbt.md`；DDP 只是它的认证加密表示，
+//! Rust 不解释视觉语义。无引擎子进程、无 JS 运行时依赖、无 MoonBit 工具链。
+//! 终局路线（待引擎上游出字节边界 wasm 变体后）：wasmtime 纯 Rust 宿主，
+//! 彻底移除事件桥——见 docs/upstream-engine-ask.md。
 
 pub mod agent;
+mod node_host;
 pub mod models;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use moonviz_ddp::{decrypt_ddp, encrypt_ddp};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
-/// 引擎 CLI 独立二进制定位（无回退——只走二进制产物，不依赖 moon 工具链）：
-/// 1) MOONVIZ_CLI 环境变量 → 显式指定的二进制
-/// 2) 内嵌引擎二进制（resources 里的 agent/moonviz-cli.exe，
-///    由 moon build --release --target native cli 产出的自包含 CLI）
-/// 3) dev 布局：兄弟 moonviz 仓库的 _build 产物
-pub(crate) fn engine_cli_binary() -> Result<PathBuf, String> {
-    if let Ok(cli) = std::env::var("MOONVIZ_CLI") {
-        let p = PathBuf::from(&cli);
-        if p.is_file() {
-            return Ok(p);
-        }
-        return Err(format!("MOONVIZ_CLI={} 不是可执行文件", cli));
-    }
-    if let Ok(dir) = engine_bin_dir() {
-        return Ok(dir.join("moonviz-cli.exe"));
-    }
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../moonviz/_build/native/release/build/cli/cli.exe");
-    if dev.is_file() {
-        return Ok(dev);
-    }
-    Err(
-        "找不到 MoonViz 引擎二进制：内嵌 moonviz-cli.exe 缺失，且兄弟 moonviz 仓库无 \
-         _build/native/release/build/cli/cli.exe。请先在引擎仓库执行 \
-         `moon build --release --target native cli`，或设置 MOONVIZ_CLI。"
-            .into(),
-    )
+/// 引擎宿主：wasm 引擎（frontend/vendor/moonviz.wasm）唯一实例活在
+/// WebView 里，agent 循环经事件桥调用；cargo test 在无 WebView 环境
+/// 用 node 子进程宿主（node_host.rs → scripts/engine-host.mjs）驱动同一份产物。
+pub enum EngineHost {
+    WebView(tauri::AppHandle),
+    NodeWasm,
 }
 
-/// 执行 MoonViz CLI 命令序列（stdin → stdout JSON 行）
+/* ---------- WebView 引擎桥（agent 循环 ⇄ 前端 wasm 实例） ----------
+ * 请求：结构化事件 engine-req（serde 对象，无 JS 字符串拼接——零注入面；
+ * capabilities/default.json 放行 core:event:default 供前端 listen）。
+ * 响应：前端 invoke('engine_res',{id,json}) 回填 oneshot。id 配对 + 超时清理。 */
+
+struct EngineBridgeState {
+    counter: std::sync::atomic::AtomicU64,
+    pending: std::sync::Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<String>>>,
+}
+
+static ENGINE_BRIDGE: std::sync::OnceLock<EngineBridgeState> = std::sync::OnceLock::new();
+
+fn bridge_state() -> &'static EngineBridgeState {
+    ENGINE_BRIDGE.get_or_init(|| EngineBridgeState {
+        counter: std::sync::atomic::AtomicU64::new(1),
+        pending: std::sync::Mutex::new(std::collections::HashMap::new()),
+    })
+}
+
+/// 前端引擎桥回传口（唯一写方是 frontend/index.html 的引擎事件监听）。
 #[tauri::command]
-/// 用户组件库（宿主持久化侧）：默认 ~/.moonviz/components，可用 MOONVIZ_USER_LIB 覆盖。
-fn user_lib_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("MOONVIZ_USER_LIB") {
-        return PathBuf::from(dir);
+async fn engine_res(id: u64, json: String) -> Result<(), String> {
+    if let Some(tx) = bridge_state().pending.lock().unwrap().remove(&id) {
+        let _ = tx.send(json);
     }
-    PathBuf::from(home_dir()).join(".moonviz").join("components")
+    Ok(())
 }
 
-fn user_lib_b64s() -> Vec<String> {
-    let dir = user_lib_dir();
-    let mut out = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
-        paths.sort();
-        for p in paths {
-            if p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(".mbt.md")) {
-                if let Ok(bytes) = std::fs::read(&p) {
-                    out.push(BASE64.encode(bytes));
-                }
-            }
+async fn engine_bridge_call(
+    app: &tauri::AppHandle,
+    fn_name: &str,
+    mbt: &str,
+    op: &str,
+) -> Result<serde_json::Value, String> {
+    use tauri::Emitter as _;
+
+    const BRIDGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+    let id = bridge_state()
+        .counter
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    bridge_state().pending.lock().unwrap().insert(id, tx);
+    let cleanup = || {
+        bridge_state().pending.lock().unwrap().remove(&id);
+    };
+
+    let payload = serde_json::json!({ "id": id, "fn": fn_name, "mbt": mbt, "op": op });
+    if let Err(e) = app.emit("engine-req", &payload) {
+        cleanup();
+        return Err(format!("engine_bridge_emit:{e}"));
+    }
+
+    match tokio::time::timeout(BRIDGE_TIMEOUT, rx).await {
+        Ok(Ok(json)) => serde_json::from_str(&json).map_err(|e| format!("engine_bridge_bad_json:{e}")),
+        Ok(Err(_)) => {
+            cleanup();
+            Err("engine_bridge_dropped".into())
         }
-    }
-    out
-}
-
-fn is_lib_mutating(cmd: &str) -> bool {
-    let head = cmd.split_whitespace().next().unwrap_or("");
-    matches!(
-        head,
-        "component-compile-b64" | "component-import" | "component-delete"
-    )
-}
-
-/// 用同批 library-snapshot 结果全量重写本地库（幂等）。
-fn write_user_lib(snap: &serde_json::Value) {
-    let dir = user_lib_dir();
-    let _ = std::fs::create_dir_all(&dir);
-    let mut keep = std::collections::HashSet::new();
-    if let Some(items) = snap.get("components").and_then(|c| c.as_array()) {
-        for item in items {
-            let cid = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let src = item.get("source_b64").and_then(|v| v.as_str()).unwrap_or("");
-            if cid.is_empty() || src.is_empty() || cid.contains('/') || cid.contains("..") {
-                continue;
-            }
-            let name = format!("{cid}.mbt.md");
-            // keep 先于写：decode/写失败时保留既有文件（瞬时故障不得删数据）
-            keep.insert(name.clone());
-            if let Ok(bytes) = BASE64.decode(src) {
-                let _ = std::fs::write(dir.join(&name), bytes);
-            }
-        }
-    }
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.file_name().and_then(|x| x.to_str()).is_some_and(|n| n.ends_with(".mbt.md"))
-                && !keep.contains(&p.file_name().unwrap_or_default().to_string_lossy().to_string())
-            {
-                let _ = std::fs::remove_file(p);
-            }
+        Err(_) => {
+            cleanup();
+            Err("engine_bridge_timeout".into())
         }
     }
 }
 
-#[tauri::command]
-fn exec_cli(commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
-    exec_cli_pipeline(commands)
-}
-
-/// 引擎完整管道（用户组件库 restore/snapshot 写回）——画布命令与 Agent 工具共用。
-pub(crate) fn exec_cli_pipeline(mut commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
-    // snapshot 与变更命令同进程：跨进程注入的 restore 只读磁盘旧库，
-    // 首次注册会得到空快照（鸡生蛋）。
-    let mutating = commands.iter().any(|c| is_lib_mutating(c));
-    if mutating {
-        commands.push("library-snapshot".to_string());
-    }
-    let result = exec_cli_inner(commands)?;
-    if mutating {
-        if let Some(snap) = result
-            .iter()
-            .find(|r| r.get("op").and_then(|v| v.as_str()) == Some("library-snapshot"))
-        {
-            write_user_lib(snap);
+impl EngineHost {
+    pub async fn call(
+        &self,
+        fn_name: &str,
+        mbt: &str,
+        op: &str,
+    ) -> Result<serde_json::Value, String> {
+        match self {
+            EngineHost::WebView(app) => engine_bridge_call(app, fn_name, mbt, op).await,
+            EngineHost::NodeWasm => node_host::call(fn_name, mbt, op).await,
         }
     }
-    Ok(result)
-}
-
-fn exec_cli_inner(mut commands: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
-    let lib = user_lib_b64s();
-    if !lib.is_empty() {
-        let mut restore = String::from("library-restore-b64");
-        for b in &lib {
-            restore.push(' ');
-            restore.push_str(b);
-        }
-        commands.insert(0, restore);
-    }
-    let cli_bin = engine_cli_binary()?;
-    let mut child = Command::new(&cli_bin)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            format!(
-                "启动 moonviz CLI 失败（{} 不可执行？）：{e}",
-                cli_bin.display()
-            )
-        })?;
-
-    {
-        let stdin = child.stdin.as_mut().unwrap();
-        for cmd in &commands {
-            writeln!(stdin, "{cmd}").map_err(|e| format!("写入 stdin 失败：{e}"))?;
-        }
-        writeln!(stdin, "exit").ok();
-    }
-
-    let out = child
-        .wait_with_output()
-        .map_err(|e| format!("等待 CLI 退出失败：{e}"))?;
-
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let mut results = Vec::new();
-    for line in stdout.lines() {
-        let l = line.trim();
-        if l.starts_with('{') || l.starts_with('[') {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
-                results.push(v);
-            }
-        }
-    }
-    if results.is_empty() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "CLI 无输出。stderr: {}",
-            stderr.chars().take(400).collect::<String>()
-        ));
-    }
-    Ok(results)
 }
 
 /// 保存唯一事实源：引擎交付 canonical MBT，Rust codec 输出不透明 `.ddp`。
@@ -269,98 +183,18 @@ fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json::Value
     }))
 }
 
-/// 内嵌引擎二进制所在目录（tauri resources 布局）：
-/// 1) dev：编译清单目录的上一级（<deepDesign>/engine——CARGO_MANIFEST_DIR 是 src-tauri）
-/// 2) 打包回退：从可执行文件向上逐级找 engine/moonviz-cli.exe
-///    - Windows（NSIS）：resources 落在 exe 旁 → dir/engine 直接命中
-///    - macOS（.app）：resources 落在 Contents/Resources/engine → 补查 dir/Resources/engine
-fn engine_bin_dir() -> Result<PathBuf, String> {
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("engine");
-    if dev.join("moonviz-cli.exe").exists() {
-        return Ok(dev);
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        let mut dir = exe.parent().map(|p| p.to_path_buf());
-        for _ in 0..4 {
-            if let Some(d) = dir {
-                let cand = d.join("engine");
-                if cand.join("moonviz-cli.exe").exists() {
-                    return Ok(cand);
-                }
-                let res_cand = d.join("Resources").join("engine");
-                if res_cand.join("moonviz-cli.exe").exists() {
-                    return Ok(res_cand);
-                }
-                dir = d.parent().map(|p| p.to_path_buf());
-            }
-        }
-    }
-    Err("engine_bin_missing".into())
-}
-
-/// Agent 基座入口（进程内，无 JS 运行时）：
-/// payload = { mode?:'models', instruction, mbt_b64?, api_key?, model?, base_url?, thinking_level? }
-/// 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text} / models 列表。
-#[tauri::command]
-async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
-    let p: serde_json::Value =
-        serde_json::from_str(&payload).map_err(|e| format!("fxsdk_payload_invalid:{e}"))?;
-    let key = if !api_key.trim().is_empty() {
-        api_key
-    } else {
-        // 三档：invoke 参数 > payload 字段 > 环境变量（设置面板文案承诺的回退）
-        let from_payload = p.get("api_key").and_then(|v| v.as_str()).unwrap_or("");
-        if !from_payload.trim().is_empty() {
-            from_payload.to_string()
-        } else {
-            std::env::var("AI_GATEWAY_API_KEY").unwrap_or_default()
-        }
-    };
-    if p.get("mode").and_then(|v| v.as_str()) == Some("models") {
-        let base = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
-        return Ok(agent::list_models(base, &key).await);
-    }
-    let instruction = p.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
-    let mbt_b64 = p.get("mbt_b64").and_then(|v| v.as_str());
-    let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
-    let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
-    let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
-    Ok(agent::run(instruction, mbt_b64, &key, model, base_url, thinking).await)
-}
-
-/// 模型元数据注册表（vendored models.dev 快照）下发给前端：
-/// 设置面板据此展示可用模型、能力标签（tool_call/structured_output/上下文长度）
-/// 与思考等级档位约束，无需运行时联网。
-#[tauri::command]
-fn model_registry() -> serde_json::Value {
-    let map: serde_json::Map<String, serde_json::Value> = models::PRESET_PROVIDER_MAP
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), serde_json::json!((*v))))
-        .collect();
-    serde_json::json!({
-        "ok": true,
-        "providers": models::snapshot_document().get("providers").cloned().unwrap_or(serde_json::json!({})),
-        "provider_map": map,
-        "fetched_at": models::snapshot_document().get("fetched_at").cloned().unwrap_or(serde_json::json!("")),
-    })
-}
-
-/// 跨平台 home 目录：Windows 用 USERPROFILE，Unix 用 HOME。
-fn home_dir() -> String {
-    std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default()
-}
-
 #[tauri::command]
 fn diagnostics() -> serde_json::Value {
-    let engine_bin = engine_cli_binary()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
+    // 引擎面在 WebView（wasm 实例）；这里只报宿主形态与产物可见性。
+    // 产物契约（导出面/模板/组件）由 sync-engine.mjs 与 test_studio.cjs 锚定。
+    let wasm = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("frontend")
+        .join("vendor")
+        .join("moonviz.wasm");
     serde_json::json!({
-        "engine_cli": engine_bin,
+        "engine": "moonviz-wasm（WebView 内进程执行）",
+        "engine_wasm_present": wasm.is_file(),
         "version": env!("CARGO_PKG_VERSION"),
     })
 }
@@ -370,7 +204,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            exec_cli,
+            engine_res,
             invoke_fx_sdk,
             save_ddp,
             open_ddp,
@@ -402,6 +236,58 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Agent 基座入口（进程内，无 JS 运行时）：
+/// payload = { mode?:'models', instruction, mbt_b64?, api_key?, model?, base_url?, thinking_level? }
+/// 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text} / models 列表。
+#[tauri::command]
+async fn invoke_fx_sdk(
+    app: tauri::AppHandle,
+    payload: String,
+    api_key: String,
+) -> Result<serde_json::Value, String> {
+    let p: serde_json::Value =
+        serde_json::from_str(&payload).map_err(|e| format!("fxsdk_payload_invalid:{e}"))?;
+    let key = if !api_key.trim().is_empty() {
+        api_key
+    } else {
+        // 三档：invoke 参数 > payload 字段 > 环境变量（设置面板文案承诺的回退）
+        let from_payload = p.get("api_key").and_then(|v| v.as_str()).unwrap_or("");
+        if !from_payload.trim().is_empty() {
+            from_payload.to_string()
+        } else {
+            std::env::var("AI_GATEWAY_API_KEY").unwrap_or_default()
+        }
+    };
+    if p.get("mode").and_then(|v| v.as_str()) == Some("models") {
+        let base = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
+        return Ok(agent::list_models(base, &key).await);
+    }
+    let instruction = p.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+    let mbt_b64 = p.get("mbt_b64").and_then(|v| v.as_str());
+    let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
+    let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
+    let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
+    let host = EngineHost::WebView(app);
+    Ok(agent::run(&host, instruction, mbt_b64, &key, model, base_url, thinking).await)
+}
+
+/// 模型元数据注册表（vendored models.dev 快照）下发给前端：
+/// 设置面板据此展示可用模型、能力标签（tool_call/structured_output/上下文长度）
+/// 与思考等级档位约束，无需运行时联网。
+#[tauri::command]
+fn model_registry() -> serde_json::Value {
+    let map: serde_json::Map<String, serde_json::Value> = models::PRESET_PROVIDER_MAP
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), serde_json::json!((*v))))
+        .collect();
+    serde_json::json!({
+        "ok": true,
+        "providers": models::snapshot_document().get("providers").cloned().unwrap_or(serde_json::json!({})),
+        "provider_map": map,
+        "fetched_at": models::snapshot_document().get("fetched_at").cloned().unwrap_or(serde_json::json!("")),
+    })
 }
 
 /// 原生菜单栏（macOS 全局菜单）。菜单项只负责发事件，动作在前端执行，

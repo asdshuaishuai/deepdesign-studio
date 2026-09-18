@@ -5,7 +5,8 @@
   "identifier": "com.deepcode.deepdesign",
   "build": {
     "frontendDist": "../frontend",
-    "beforeBuildCommand": "node scripts/sync-engine.mjs"
+    "beforeBuildCommand": "node scripts/sync-engine.mjs",
+    "beforeDevCommand": "node scripts/sync-engine.mjs"
   },
   "app": {
     "withGlobalTauri": true,
@@ -23,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:"
     }
   },
   "bundle": {
@@ -32,9 +33,6 @@
       "app",
       "dmg",
       "nsis"
-    ],
-    "resources": [
-      "engine/moonviz-cli.exe"
     ],
     "icon": [
       "icons/icon.png",

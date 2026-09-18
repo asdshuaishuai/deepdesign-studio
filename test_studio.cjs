@@ -86,7 +86,7 @@ assert.deepEqual(missingSurface,[],
  * 根因就是"测试替身顶替了真实定义"。凡是 stub 掉的名字，真身必须存在。 */
 const HARNESS_STUBS=['renderStage','renderAbs','renderFlows','renderInspector',
   'renderLayersIfOpen','updateSel','setStatus','closeAgentPop','cancelInline',
-  'mbtResult','switchSession','execCli'];
+  'switchSession'];
 const stubMasking=HARNESS_STUBS.filter(n=>!defined.has(n));
 assert.deepEqual(stubMasking,[],
   `测试替身掩盖了不存在的定义：${stubMasking}——请先修实现，不要改测试`);
@@ -105,28 +105,65 @@ assert.deepEqual(unmapped,[],`原生菜单 id 未在 nativeMenuAction 中映射�
 /* ---------- 动态检查：真实状态机 ---------- */
 function fn(name){const start=script.indexOf('function '+name+'(');assert(start>=0,name);const brace=script.indexOf('){',start)+1;let depth=1,i=brace+1;for(;depth;i++){if(script[i]==='{')depth++;if(script[i]==='}')depth--;}return (script.slice(start-6,start)==='async '?'async ':'')+script.slice(start,i)}
 const context=vm.createContext({console,window:{addEventListener(){}},document:{documentElement:{classList:{add(){}}},getElementById:element},performance:{now:()=>0},setTimeout,clearTimeout,requestAnimationFrame(){},btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),encodeURIComponent,decodeURIComponent,escape,unescape});
-// Use the real state/apply/queue functions, with presentation and engine boundaries stubbed.
-vm.runInContext(script.slice(script.indexOf("const APP_VER"),script.indexOf('async function execCli')),context);
-vm.runInContext(['newId','applyMbtResult','serializeProject','runOp','runOpNow','addBoard','quickStart','createBlank','newProject'].map(fn).join('\n'),context);
+// Use the real state/engine-seam/apply/queue functions, with presentation stubbed.
+vm.runInContext(script.slice(script.indexOf("const APP_VER"),script.indexOf('function mbtResult(')),context);
+vm.runInContext(['newId','mbtResult','applyMbtResult','serializeProject','runOp','runOpNow','addBoard','quickStart','createBlank','newProject'].map(fn).join('\n'),context);
 vm.runInContext(`
-function renderStage(){} function renderAbs(){} function renderFlows(){} function renderInspector(){} function renderLayersIfOpen(){} function updateSel(){} function setStatus(){} function closeAgentPop(){} function cancelInline(){} function mbtResult(rs){return rs.find(r=>r.mbt)}
+function renderStage(){} function renderAbs(){} function renderFlows(){} function renderInspector(){} function renderLayersIfOpen(){} function updateSel(){} function setStatus(){} function closeAgentPop(){} function cancelInline(){}
 async function switchSession(id){active=id}
 let history=[];
-async function execCli(commands){history.push(commands[0]);await new Promise(r=>setTimeout(r,5));const c=commands[0];if(c.startsWith('create '))throw Error('simulated failure');const parts=c.split(' '),input=b64ToUtf8(parts[1]),op=b64ToUtf8(parts[2]);return [{ok:true,mbt:input+';'+op,entry:'a',artboards:[{id:'a',nodes:[]},{id:'b',nodes:[{id:'selected'}]}]}];}
+// 引擎接缝桩：镜像 wasm apply/render 的返回契约（mbt 拼接语义与旧 execCli 桩一致）
+window.__ENGINE_STUB__={
+  apply:(gate,mbt,op)=>{history.push((gate==='agent'?'a:':'h:')+op);return {ok:true,debt:0,mbt:mbt+';'+op,revision:1,entry:'a',artboards:[{id:'a',name:'a',width:390,height:844,nodes:[]},{id:'b',name:'b',width:390,height:844,nodes:[{id:'selected'}]}],flows:[]};},
+  render:(mbt)=>{history.push('render');return {ok:true,mbt,revision:1,entry:'a',artboards:[{id:'a',name:'a',width:390,height:844,nodes:[]},{id:'b',name:'b',width:390,height:844,nodes:[{id:'selected'}]}],flows:[]};}
+};
 sessions={a:{},b:{}};active='b';selected='selected';mbtText='start';declDraftDirty=true;$('decl-text').value='unsubmitted draft';
-applyMbtResult({ok:true,mbt:'canonical',entry:'a',artboards:[{id:'a',nodes:[]},{id:'b',nodes:[{id:'selected'}]}]});
+applyMbtResult({ok:true,mbt:'canonical',entry:'a',revision:1,artboards:[{id:'a',name:'a',width:390,height:844,nodes:[]},{id:'b',name:'b',width:390,height:844,nodes:[{id:'selected'}]}],flows:[]});
 `,context);
 (async()=>{
  assert.equal(vm.runInContext('active',context),'b');assert.equal(vm.runInContext('selected',context),'selected');assert.equal(element('decl-text').value,'unsubmitted draft');
  await vm.runInContext("Promise.all([runOp('first','human'),runOp('second','human')])",context);
  assert.equal(vm.runInContext('mbtText',context),'canonical;first;second');
  await vm.runInContext('newProject()',context);assert.equal(vm.runInContext('mbtText',context),'');assert.equal(vm.runInContext('active',context),'');
- await vm.runInContext("quickStart('login',390,844)",context);assert.match(vm.runInContext('history.at(-1)',context),/^apply-human-mbt-op-b64 /);
- await vm.runInContext('createBlank()',context);assert.match(vm.runInContext('history.at(-1)',context),/^apply-human-mbt-op-b64 /);
+ // 空项目模板起步：经种子文档引导（template op → 删除种子板），全程人类门
+ await vm.runInContext("quickStart('login',390,844)",context);
+ assert.match(vm.runInContext('history.at(-1)',context),/^h:delete-artboard __seed$/);
+ assert(vm.runInContext('history.some(h=>/^h:template login /.test(h))',context),'模板 op 未经种子引导');
+ // 有文档后 createBlank 直接走 apply 人类门
+ await vm.runInContext('createBlank()',context);
+ assert.match(vm.runInContext('history.at(-1)',context),/^h:create /);
  assert(html.includes("['p-op','opacity',n.style.opacity??1]"));
  // 跨文件契约：tauri.conf.json 的 frontendDist 必须指向本文件所在目录。
  // （不要写成读同一路径跟自身比较——9f48220 就是这么把真 parity 检查变成恒真式的）
  const conf=JSON.parse(fs.readFileSync(path.join(__dirname,'src-tauri','tauri.conf.json'),'utf8'));
  assert.equal(conf.build.frontendDist,'../frontend','frontendDist 未指向 frontend/（前端可能已搬家或换副本）');
- console.log(`Studio checks passed: ${INTERACTIVE_SURFACE.length} 个交互层函数在场、${menuIds.length} 个原生菜单 id 全映射、内联处理器无悬空引用；状态机：队列、新建画板、选区、draft、失败回滚、opacity`);
+ // CSP 契约：wasm 引擎在 WebView 内实例化，script-src 必须带 'wasm-unsafe-eval'
+ assert.match(conf.app.security.csp,/script-src[^;]*'wasm-unsafe-eval'/,"CSP script-src 缺 'wasm-unsafe-eval'——wasm 引擎将无法编译");
+ // —— wasm 引擎真机契约（Node ≥ 24；产物缺失/宿主过旧时跳过并提示，不误报绿）——
+ const wasmPath=path.join(__dirname,'frontend','vendor','moonviz.wasm');
+ if(!fs.existsSync(wasmPath)){
+   console.warn('跳过 wasm 契约：frontend/vendor/moonviz.wasm 缺失（先跑 node scripts/sync-engine.mjs）');
+ }else{
+   let ex;
+   try{
+     const mod=new WebAssembly.Module(fs.readFileSync(wasmPath),{builtins:['js-string'],importedStringConstants:'_'});
+     ex=new WebAssembly.Instance(mod,{}).exports;
+   }catch(e){
+     console.warn('跳过 wasm 契约：本机 Node 无法实例化 WasmGC（需 ≥24）：'+e.message);
+   }
+   if(ex){
+     for(const name of ['apply_human_op','apply_agent_op','render_mbt','validate_mbt','list_templates','export_html','version_info'])
+       assert.equal(typeof ex[name],'function',`wasm 缺导出 ${name}——引擎产物面变了，同步前端与 agent`);
+     const engineIds=JSON.parse(ex.list_templates()).map(t=>t.id??t.template_id??t);
+     const agentSrc=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
+     const tplBlock=agentSrc.match(/const ENGINE_TEMPLATES[^=]*=\s*r?"([\s\S]*?)";/);
+     assert(tplBlock,'无法从 agent.rs 解析 ENGINE_TEMPLATES');
+     const agentIds=[...tplBlock[1].matchAll(/[a-z0-9_]+(?=\()/g)].map(m=>m[0]);
+     const drift=engineIds.filter(x=>!agentIds.includes(x)).concat(agentIds.filter(x=>!engineIds.includes(x)));
+     assert.deepEqual(drift,[],`模板清单与 agent.rs 漂移：${drift}——两边必须一起改`);
+     const comps=JSON.parse(fs.readFileSync(path.join(__dirname,'frontend','vendor','components.json'),'utf8'));
+     assert(comps.length>0,'components.json 为空——sync-engine 探针异常');
+   }
+ }
+ console.log(`Studio checks passed: ${INTERACTIVE_SURFACE.length} 个交互层函数在场、${menuIds.length} 个原生菜单 id 全映射、内联处理器无悬空引用；状态机：队列、种子引导、选区、draft、opacity`);
 })().catch(e=>{console.error(e);process.exitCode=1});

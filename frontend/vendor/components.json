@@ -1,0 +1,297 @@
+[
+  {
+    "id": "button",
+    "kind": "rect",
+    "category": "actions",
+    "variants": [
+      "primary",
+      "secondary",
+      "danger"
+    ],
+    "default_size": [
+      120,
+      44
+    ],
+    "description": "操作按钮。支持 primary/secondary/danger。"
+  },
+  {
+    "id": "text_input",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default",
+      "filled"
+    ],
+    "default_size": [
+      280,
+      44
+    ],
+    "description": "文本输入框。"
+  },
+  {
+    "id": "card",
+    "kind": "frame",
+    "category": "layout",
+    "variants": [
+      "elevated"
+    ],
+    "default_size": [
+      320,
+      200
+    ],
+    "description": "卡片容器。垂直布局。"
+  },
+  {
+    "id": "app_bar",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "surface",
+      "primary"
+    ],
+    "default_size": [
+      390,
+      56
+    ],
+    "description": "顶部导航栏。"
+  },
+  {
+    "id": "divider",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      320,
+      1
+    ],
+    "description": "分隔线。"
+  },
+  {
+    "id": "heading",
+    "kind": "text",
+    "category": "display",
+    "variants": [
+      "h1",
+      "h2",
+      "h3",
+      "h4"
+    ],
+    "default_size": [
+      280,
+      36
+    ],
+    "description": "标题。h1=32px h2=24px h3=20px h4=16px。"
+  },
+  {
+    "id": "body_text",
+    "kind": "text",
+    "category": "display",
+    "variants": [
+      "body",
+      "caption"
+    ],
+    "default_size": [
+      280,
+      20
+    ],
+    "description": "正文。body=14px caption=12px。"
+  },
+  {
+    "id": "badge",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "primary",
+      "success"
+    ],
+    "default_size": [
+      64,
+      24
+    ],
+    "description": "徽标。"
+  },
+  {
+    "id": "rect",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "default",
+      "outline"
+    ],
+    "default_size": [
+      200,
+      100
+    ],
+    "description": "通用矩形：面板/背景条/装饰块。"
+  },
+  {
+    "id": "checkbox",
+    "kind": "rect",
+    "category": "selection",
+    "variants": [
+      "unchecked",
+      "checked"
+    ],
+    "default_size": [
+      22,
+      22
+    ],
+    "description": "复选框。"
+  },
+  {
+    "id": "switch",
+    "kind": "rect",
+    "category": "selection",
+    "variants": [
+      "off",
+      "on"
+    ],
+    "default_size": [
+      46,
+      26
+    ],
+    "description": "开关。"
+  },
+  {
+    "id": "radio",
+    "kind": "rect",
+    "category": "selection",
+    "variants": [
+      "unchecked",
+      "checked"
+    ],
+    "default_size": [
+      20,
+      20
+    ],
+    "description": "单选圆点。"
+  },
+  {
+    "id": "avatar",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "circle",
+      "square"
+    ],
+    "default_size": [
+      40,
+      40
+    ],
+    "description": "头像占位。"
+  },
+  {
+    "id": "search_bar",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default",
+      "filled"
+    ],
+    "default_size": [
+      240,
+      38
+    ],
+    "description": "搜索框（占位文字 text 设置）。"
+  },
+  {
+    "id": "progress",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "default",
+      "secondary"
+    ],
+    "default_size": [
+      180,
+      6
+    ],
+    "description": "进度条。"
+  },
+  {
+    "id": "chip",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "default",
+      "selected"
+    ],
+    "default_size": [
+      72,
+      30
+    ],
+    "description": "筛选/标签 chip。"
+  },
+  {
+    "id": "fab",
+    "kind": "rect",
+    "category": "actions",
+    "variants": [
+      "primary",
+      "error"
+    ],
+    "default_size": [
+      56,
+      56
+    ],
+    "description": "悬浮操作按钮。"
+  },
+  {
+    "id": "list_item",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "default",
+      "highlighted"
+    ],
+    "default_size": [
+      320,
+      56
+    ],
+    "description": "列表行（text 为标题）。"
+  },
+  {
+    "id": "tab_bar",
+    "kind": "rect",
+    "category": "navigation",
+    "variants": [
+      "default",
+      "active"
+    ],
+    "default_size": [
+      390,
+      56
+    ],
+    "description": "标签栏容器。"
+  },
+  {
+    "id": "image",
+    "kind": "image",
+    "category": "display",
+    "variants": [
+      "default",
+      "rounded"
+    ],
+    "default_size": [
+      200,
+      140
+    ],
+    "description": "图片占位。"
+  },
+  {
+    "id": "slider",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default",
+      "active"
+    ],
+    "default_size": [
+      200,
+      4
+    ],
+    "description": "滑杆轨道。"
+  }
+]

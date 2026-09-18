@@ -7,54 +7,67 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 ## 三层架构与边界（改代码前先读）
 
 ```
-frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）
-src-tauri/src/lib.rs       Tauri 命令层：exec_cli / save_ddp / open_ddp / invoke_fx_sdk / diagnostics / model_registry
-src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI chat-completions 工具调用 × 引擎管道）
-../moonviz                兄弟仓库：MoonBit 引擎源码 + ddp crate（引擎二进制从这里来）
+frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）+ 画布侧 wasm 引擎实例（含 agent 桥监听）
+src-tauri/src/lib.rs       Tauri 命令层：engine_res / invoke_fx_sdk / save_ddp / open_ddp / diagnostics / model_registry + EngineHost
+src-tauri/src/node_host.rs node 子进程引擎宿主（cargo test 专用，驱动同一份 wasm 产物）
+src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI/Anthropic 工具调用 × 引擎事件桥）
+scripts/sync-engine.mjs    引擎产物同步：npm 拉 moonviz-engine-wasm → sha512 校验 → 真机契约探针 → frontend/vendor/
+vendor/moonviz-ddp/        vendored DDP 编解码 crate（引擎仓库 MIT 副本，见其 README）
+docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体 + wasmtime 纯 Rust 宿主
 ```
 
 必须守住的边界：
 
-- **前端只能经 `window.__TAURI__.core.invoke` 调上面 6 个命令**，没有 HTTP 层，不要引入 fetch/axios。
-- **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、进程编排、DDP 加解密。
+- **前端只能经 `window.__TAURI__.core.invoke` 调上面 5 个命令**，没有 HTTP 层，不要引入 fetch/axios。
+- **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、进程内 V8 宿主、DDP 加解密。
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
-- **人类操作与 Agent 操作走不同引擎入口**，两条门的能力面不同（详见下文「引擎双门」表），
-  不要为了省事统一成一个。
-- **引擎只走独立二进制，无 `moon run` 回退**。定位顺序（`lib.rs::engine_cli_binary`）：
-  `MOONVIZ_CLI` 环境变量 → `src-tauri/engine/moonviz-cli.exe`（打包 resources）→
-  `../moonviz/_build/native/release/build/cli/cli.exe`（dev）。
-- 引擎协议是 **stdin 写命令 / stdout 读 JSON 行**。前端用 `fObj(rs,key)` / `fArr(rs)` 在结果数组里找目标对象。
+- **人类操作与 Agent 操作走不同引擎入口**：画布/Agent 共用 wasm 面的 `apply_human_op` /
+  `apply_agent_op`（与 CLI 双门同一分发器），语义差异由门实现，不要在前端绕过门直接改数据。
+- **引擎是预编译 WasmGC + js-string builtins 产物**（`frontend/vendor/moonviz.wasm`，
+  sync-engine.mjs 从 npm `moonviz-engine-wasm` 拉取、sha512 校验、编译期 include_bytes 嵌入
+  Rust 侧；前端经 `fetch('vendor/moonviz.wasm')` 实例化）。**只有真 JS 引擎能加载它**
+  （WebView / Node ≥24 / Rusty V8）——wasmtime、Boa 等无 js-string builtins 的运行时不行。
+- 两个引擎实例（WebView 画布 + node 测试宿）**只交换 canonical `.mbt.md` 文本**，无共享状态；
+  前端调 `engApply/engRender`（wasm 直调），agent 循环经**结构化事件桥**（`engine-req` 事件 →
+  前端 wasm 执行 → `engine_res` 命令回传，serde 对象直达无 JS 拼接）——**终局是 wasmtime 纯
+  Rust 宿主，待上游字节边界变体**（见 `docs/upstream-engine-ask.md`）；
+  `capabilities/default.json`（core:event:default）只为这条桥存在，桥消失时一并删。
+- 引擎要求文档至少一个视觉块——**空项目起步用种子文档引导**（前端 `seedDoc`/`bootstrapFirstBoard`，
+  Rust `agent.rs::seed_doc`，两边逐字对齐；首 op 后删除 `__seed` 画板）。
 
 ## 常用命令
 
 **Rust 命令必须在 `src-tauri/` 下执行**——仓库根目录没有 `Cargo.toml`，也没有 `package.json`。
 
 ```bash
-cd src-tauri && cargo test        # 20 个测试：方言表(含双协议) + 协议探测/转换/归一化单测 + 路由白名单 + base_url 策略 + 5 个引擎契约（SKILL 字典 + 模型快照）+ 4 个端到端（含 Anthropic 多轮 e2e）
+cd src-tauri && cargo test        # 测试：方言表/协议/归一化单测 + base_url 策略 + wasm 契约（node 宿主跑真产物）+ 4 个端到端（mock LLM）+ 模型快照契约
 cd src-tauri && cargo build
-node test_studio.cjs              # 前端状态机冒烟（在仓库根跑）
+node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（在仓库根跑，需 node ≥24）
+node scripts/sync-engine.mjs      # 引擎产物同步（npm → frontend/vendor/；先跑这个）
 node scripts/sync-models.mjs     # 模型元数据快照同步（models.dev → src-tauri/models.json）
-./dev.sh                          # debug 编译启动；引擎二进制缺失时自动 moon build
-./dev.sh --fresh                  # 先 kill 旧进程 + 清 WebView 缓存
-npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 staging 引擎二进制）
+./dev.sh                          # debug 编译启动（Windows 用 Git Bash，或手动 npx @tauri-apps/cli dev）
+npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 sync-engine）
 ```
 
 仓库**没有配置 lint / formatter**（无 rustfmt.toml、clippy 配置、eslint、prettier）。
 2021 edition，形态上跟随既有代码即可。
 
-## 同步引擎更新（引擎在兄弟仓库迭代后必做）
+## 同步引擎更新（引擎发布新版本后必做）
 
-`src-tauri/engine/` 已被 gitignore，所以引擎二进制**不进版本库**——本地靠下面这套流程对齐，
-CI 则直接 checkout 引擎仓库 `main` 现场构建。引擎改了就重跑：
+引擎以**预编译 wasm 产物**集成，不依赖兄弟仓库、不装 MoonBit 工具链。升级引擎 =
+改 `scripts/sync-engine.mjs` 顶部的 `ENGINE_VERSION` / `TARBALL_SHA512`（registry
+元数据 dist.integrity），然后：
 
 ```bash
-cd ../moonviz && moon build --release --target native cli   # 产物 _build/native/release/build/cli/cli.exe
-cd ../deepDesign && node scripts/sync-engine.mjs            # staging 到 src-tauri/engine/
-shasum -a 256 src-tauri/engine/moonviz-cli.exe ../moonviz/_build/native/release/build/cli/cli.exe  # 两值必须相同
+node scripts/sync-engine.mjs    # 下载 → sha512 校验 → 契约探针（导出面/模板/组件逐个 place 验证）→ frontend/vendor/
+cd src-tauri && cargo test      # node 宿主真机契约 + e2e 必须仍绿
+node test_studio.cjs            # 前端侧 wasm 契约（模板清单 vs agent.rs）必须仍绿
 ```
 
-`moon build` 若报 `no work to do` 说明构建图已最新；此时 `_build` 里的产物就是当前源码的产物，
-直接同步即可。同步后**必须重跑 `cargo test`**——引擎契约测试会拿真实二进制校验白名单与模板清单。
+探针会**自动裁剪**组件快照（引擎不认的 id 不写入 components.json）并在模板清单与
+`agent.rs::ENGINE_TEMPLATES` 漂移时直接失败——两边必须一起改。
+`frontend/vendor/moonviz.wasm` 与 `engine-manifest.json` 已 gitignore；`components.json`
+入库（它是探针验证过的快照，前端组件面板与 agent list_components 共用）。
 
 ## 同步模型快照（models.dev，与引擎无关的另一条对账线）
 
@@ -83,32 +96,42 @@ chat_template_kwargs）不在 models.dev 覆盖范围，仍以 `agent.rs::thinki
 auto/off），`fetchFxModels` 端点拉取失败时回退到快照清单（MiniMax 静态清单为最后手段）。
 快照不可用时全部降级为手输，不影响主流程。
 
-**`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自 `../moonviz/SKILL.md` 并双向同步。
+**`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自引擎仓库 `SKILL.md`。
 分层事实源：**变更 op 层由引擎 `list-ops` 输出直接接管**（OpEntry 注册表，含 usage/category/gates，
 测试直接消费并与探针表双向比对——引擎新增 op 而无人采纳会红）；**readonly / cli_only 两层暂无
-引擎输出**，由 SKILL.md 文末清单块锚定并与 `READONLY_OPS` 严格相等。引擎更新后的对账顺序：
-重跑 SKILL.md 文末附录的探针 → `list-ops` 有新 op 就加探针 + 写进提示词 → 更新 SKILL.md 两层清单 →
-`skill_dictionary_matches_engine_and_agent` 强制全链一致。**引擎仓库构建阶段只读，不改引擎，
-以二进制行为为准。**对账的权威来源不是引擎的 `help` 文案，而是实际行为：
+引擎输出**，由 SKILL.md 文末清单块锚定并与 `READONLY_OPS` 严格相等。**引擎仓库只读，不改引擎，
+以产物行为为准。**对账的权威来源不是引擎的 `help` 文案，而是实际行为：
 
 ```bash
-printf 'help\nexit\n' | src-tauri/engine/moonviz-cli.exe          # 命令总览
-printf 'list-tools\nexit\n' | src-tauri/engine/moonviz-cli.exe    # Agent 工具面
-printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
+echo '{"id":1,"fn":"list_templates","mbt":"","op":""}' | node scripts/engine-host.mjs   # 引擎产物直查
+node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时校验导出面/模板/组件
 ```
 
 ## 硬性环境约束
 
-- **兄弟目录 `../moonviz` 必须存在**。`Cargo.toml` 有 `moonviz-ddp = { path = "../../moonviz/ddp" }`，
-  缺失则连编译都过不去。CI 里通过把引擎仓库 checkout 到工作区旁来对齐这个路径。
+- **兄弟目录 `../moonviz` 不再需要**：DDP crate 已 vendor 到 `vendor/moonviz-ddp/`，引擎以
+  预编译 wasm 产物集成（sync-engine.mjs 拉取）。仓库自包含，clone 后三步即可构建：
+  `node scripts/sync-engine.mjs` → `cargo build` → 打开。
+- **Windows 本机编译需 MSVC 工具链**：tauri/webview2 链接在 GNU 工具链下失败
+  （`linking with x86_64-w64-mingw32-gcc failed`）。本机默认是 GNU 时用
+  `cargo +stable-x86_64-pc-windows-msvc test`，或 `rustup default stable-x86_64-pc-windows-msvc`。
+- **测试引擎依赖 node ≥24**（WasmGC + js-string builtins）：cargo test 的引擎契约/端到端走
+  `node_host.rs` → `scripts/engine-host.mjs`，node 缺失/过旧时这些测试**静默跳过**（eprintln
+  提示，仍算绿）——看到绿先确认没有 "跳过" 输出。前端契约测试 `test_studio.cjs` 同理。
 - **改 `frontend/` 后 `tauri dev` 不会热更**（它只 watch `src-tauri/`）。需在窗口按 ⌘R，
   或用 `./dev.sh --fresh`。`lib.rs` 里还有一段强制 `?v=<timestamp>` 重载，是为了绕 WKWebView 缓存——
   不要删。
-- **CSP 在 `src-tauri/tauri.conf.json`**（`script-src 'self'`，无 `unsafe-inline`）。Tauri codegen 在
-  构建期为非空内联 `<script>` 自动注入 sha256 hash，所以 `frontend/index.html` 里那一大坨内联脚本没问题；
-  新增内联脚本同样会被自动 hash，但**不要**改成外部 module script。
+- **CSP 在 `src-tauri/tauri.conf.json`**（`script-src 'self' 'wasm-unsafe-eval'`）。`wasm-unsafe-eval`
+  是前端实例化引擎 wasm 的硬前提，别删。Tauri codegen 在构建期为非空内联 `<script>` 自动注入
+  sha256 hash，所以 `frontend/index.html` 里那一大坨内联脚本没问题；新增内联脚本同样会被自动
+  hash，但**不要**改成外部 module script。
+- **capabilities/default.json 只放行 `core:event:default`**——它是引擎事件桥
+  （`engine-req`/`engine_res`）的生命线；当年 `event.listen` 因 ACL 未放行而弃用的坑，就是靠这个
+  capability 解开的。改权限面时最小化新增。
 - 依赖刻意保持精简。引入类型化 chat 客户端（如 async-openai）已被评估否决：thinking 家族等非标字段
-  必须在序列化后注入，类型层反而被绕过。新增依赖前先确认真的绕不开。
+  必须在序列化后注入，类型层反而被绕过。Rusty V8（进程内 JS 引擎宿主）也已评估并**否决**：
+  +30~80MB 安装包税 + 依赖链脆弱（temporal_rs/icu_calendar 编译断裂实证），事件桥够用；
+  终局走上游字节边界 wasm + wasmtime（见 `docs/upstream-engine-ask.md`）。
 
 ## Agent 基座约定（`agent.rs`）
 
@@ -128,15 +151,15 @@ printf 'list-templates\nexit\n' | src-tauri/engine/moonviz-cli.exe
   thinking 在 Anthropic 协议上表达为 `thinking{type:enabled,budget_tokens}`（仅 MiniMax 家族；
   off/auto 省略即关闭；budget 必须小于 max_tokens，按预算预留余量）。
   前端 13 个预设含 4 个 MiniMax（2 条 OpenAI 兼容 + 2 条 Anthropic 兼容，官方推荐路径）。
-- **只读 op 白名单是 `is_readonly_op`**，它是**路由契约而非便利表**：引擎的 `apply-agent-mbt-op-b64`
-  只接受变更类操作，任何没进这张表的只读 op 都会硬失败 `mbt_operation_unsupported`。
-  当前 20 项（清点类 `list`/`list-templates`/`list-components`/`list-tools`/`list-tokens`/`list-themes`/
-  `flows`/`benchmark`；检视类 `lint`/`critique`/`query`/`infer`/`spec`/`missing`/`doc-json`/`states`/
-  `interactions`/`export-svg`/`export-html`；模拟类 `tap`）。
-  两点坑：**`fix` 必须留在表外**——引擎在 apply 路径为它实现了"违规严格下降才提交"的还债语义，
-  走只读管道会静默丢弃变更;反之**变更类 op 绝不能进表**（`state`/`interact`/`group`/`responsive`/
-  `token` 等），否则变更被丢弃且不报错。`readonly_whitelist_matches_engine_surface` 会拿真实引擎
-  逐个探针校验并断言探针集合与白名单严格相等，白名单过时它就会红。
+- **`READONLY_OPS` 是「wasm 面不可达」清单**（20 项：清点类 `list`/`list-templates`/`list-components`/
+  `list-tools`/`list-tokens`/`list-themes`/`flows`/`benchmark`；检视类 `lint`/`critique`/`query`/`infer`/
+  `spec`/`missing`/`doc-json`/`states`/`interactions`/`export-svg`/`export-html`；模拟类 `tap`）：
+  wasm 产物（0.1.1）只导出 apply/render/validate/list_templates/export_html/version_info，
+  这些只读命令一律不可达——命中即返回 `wasm_engine_readonly_unavailable`（agent 提示词也明确
+  教了用 read_mbt + apply 结果里的 nodes 索引替代）。**引擎 wasm 补 inspect 导出后，此表要转回
+  路由白名单语义**（见注释）。变更类 op 绝不能进表——会被此分支拦下而非提交。
+  注意：`list_components` 作为**工具**仍可用（agent.rs 经宿主取 components.json 快照），
+  不可达的是同名 **op**。
 - **`constrain` 和独立 `name` op 不可达**：它们只存在于 CLI 直连面，走 apply-agent 返回
   `mbt_operation_unsupported`。改节点名要用 `update <ab> <node> name=<id>`，不要教 Agent 用 `name`。
 - **`INSTRUCTIONS` 与 `ENGINE_TEMPLATES` 必须与引擎同步**（`template_ids_match_engine` 测试锚定 id 集合，

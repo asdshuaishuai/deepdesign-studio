@@ -939,21 +939,91 @@ $('decl-text').addEventListener('input',()=>{declDraftDirty=true;});
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2400);}
 function utf8ToB64(text){return btoa(unescape(encodeURIComponent(text)));}
 function b64ToUtf8(text){return decodeURIComponent(escape(atob(text)));}
-async function execCli(cmds){
+/* ---------- wasm 引擎（预编译产物，WebView 内进程执行，无子进程） ----------
+ * 产物 frontend/vendor/moonviz.wasm 由 scripts/sync-engine.mjs 从官方
+ * moonviz-engine-wasm 发布件拉取（sha512 校验 + 真机契约探针）。
+ * WasmGC + js-string builtins：WebView2(Chromium 119+)/WKWebView(Safari 18.2+)。
+ * 供测试注入的接缝：window.__ENGINE_STUB__ = {apply,render} 存在时优先走桩。 */
+let engineExports=null,engineFailed='',engineReady=null;
+function loadEngine(){
+  if(engineReady)return engineReady;
+  engineReady=(async()=>{
+    try{
+      const r=await fetch('vendor/moonviz.wasm');
+      if(!r.ok)throw new Error('wasm fetch HTTP '+r.status);
+      const mod=new WebAssembly.Module(await r.arrayBuffer(),{builtins:['js-string'],importedStringConstants:'_'});
+      engineExports=new WebAssembly.Instance(mod,{}).exports;
+    }catch(err){engineFailed=String(err&&err.message||err);}
+  })();
+  return engineReady;
+}
+async function engApply(gate,mbt,op){
+  const stub=window.__ENGINE_STUB__;
+  if(stub&&stub.apply)return stub.apply(gate,mbt,op);
+  await loadEngine();
+  if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
   const t0=performance.now();
-  const r=await window.__TAURI__.core.invoke('exec_cli',{commands:cmds});
+  const out=JSON.parse(engineExports[gate==='agent'?'apply_agent_op':'apply_human_op'](mbt,op));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
-  return r;
+  return out;
 }
-const fObj=(rs,k)=>rs.find(r=>r&&typeof r==='object'&&!Array.isArray(r)&&r[k]!==undefined);
-const fArr=rs=>rs.find(r=>Array.isArray(r));
-function mergeFlows(incoming){
-  for(const f of incoming){
-    if(!studioFlows.some(x=>x.from===f.from&&x.to===f.to&&x.trigger===f.trigger))studioFlows.push(f);
-  }
-  flows=studioFlows.slice();
+async function engRender(mbt){
+  const stub=window.__ENGINE_STUB__;
+  if(stub&&stub.render)return stub.render(mbt);
+  await loadEngine();
+  if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  const t0=performance.now();
+  const out=JSON.parse(engineExports.render_mbt(mbt));
+  $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
+  return out;
 }
-function mbtResult(rs){return fObj(rs,'mbt');}
+async function engValidate(mbt){
+  await loadEngine();
+  if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  return JSON.parse(engineExports.validate_mbt(mbt));
+}
+async function engTemplates(){
+  await loadEngine();
+  if(!engineExports)return[];
+  try{return JSON.parse(engineExports.list_templates()).map(t=>t.id??t.template_id??t);}catch(_){return[];}
+}
+/* 引擎要求文档至少一个视觉块才能承载 op——空项目起步用最小种子画板引导，
+ * 首条 op 落地后随即删掉种子（create 直接以种子为画板，一次 render 即成）。 */
+const SEED_BOARD='__seed';
+function seedDoc(id,w,h){
+  return `---\nmoonviz:\n  format: visual-document\n  revision: 1\n  entry: ${id}\n---\n\n# ${id}\n\n<!-- moonviz:artboard ${id} -->\n\`\`\`mbt\nfn visual_${id}() -> @decl.Prototype {\n  let page = @decl.prototype(name="${id}", width=${w}.0, height=${h}.0)\n  page\n}\n\`\`\`\n`;
+}
+async function bootstrapFirstBoard(cmd,id,w,h){
+  if(cmd==='create')return engRender(seedDoc(id,w,h));
+  let r=await engApply('human',seedDoc(SEED_BOARD,24,24),`${cmd} ${id} ${w} ${h}`);
+  if(!r.ok)return r;
+  return engApply('human',r.mbt,`delete-artboard ${SEED_BOARD}`);
+}
+/* Rust agent 循环的引擎桥：lib.rs 经结构化事件 engine-req 请求（serde 对象，
+ * 无 JS 拼接，零注入面），本监听驱动 WebView 内 wasm 实例执行，
+ * 结果经 engine_res 命令回传（id 配对）。fn 限定 wasm 导出名 + list_components。 */
+if(IS_TAURI&&window.__TAURI__.event){
+  window.__TAURI__.event.listen('engine-req',async ev=>{
+    const p=ev.payload||{};
+    let out;
+    try{
+      await loadEngine();
+      if(!engineExports)throw new Error(engineFailed||'engine_wasm_unavailable');
+      const fn=p.fn;
+      if(fn==='list_components'){
+        out={ok:true,components:allComps||[]};
+      }else{
+        if(!engineExports||typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
+        out=JSON.parse(engineExports[fn](p.mbt||'',p.op||''));
+      }
+    }catch(err){out={ok:false,error:String(err&&err.message||err)};}
+    try{await window.__TAURI__.core.invoke('engine_res',{id:p.id,json:JSON.stringify(out)});}catch(_){}
+  });
+}
+function mbtResult(result){
+  // wasm 引擎直接返回结果对象（不再是 CLI 行数组的形态）；保留函数名为调用点共用
+  return result&&result.ok===true&&result.mbt?result:null;
+}
 function applyMbtResult(result,{reset=false,acceptDraft=false}={}){
   if(!result||result.ok!==true||!result.mbt)throw new Error('引擎未返回 canonical .mbt.md');
   if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;placeMode=null;playStack=[];}
@@ -975,15 +1045,11 @@ function applyMbtResult(result,{reset=false,acceptDraft=false}={}){
 }
 async function renderMbtSource(){
   if(!mbtText)return false;
-  const rs=await execCli([`render-mbt-b64 ${utf8ToB64(mbtText)}`]);
-  const result=mbtResult(rs);if(!result)throw new Error('MBT 渲染失败');
+  const result=await engRender(mbtText);
+  if(!mbtResult(result))throw new Error('MBT 渲染失败：'+String(result&&result.error||'unknown'));
   applyMbtResult(result);return true;
 }
-async function captureLegacyProject(commands){
-  const rs=await execCli([...commands,'export-mbt-human']);
-  const result=mbtResult(rs);if(!result)throw new Error('引擎未生成 MBT 源码');
-  applyMbtResult(result);return true;
-}
+/* 空项目首板引导：见 bootstrapFirstBoard（wasm 引擎不接受无视觉块的文档） */
 
 /* ---------- 状态 */
 function setStatus(src,cmd,ok,detail){
@@ -1002,36 +1068,13 @@ window.addEventListener('unhandledrejection',e=>setStatus('agent','引擎调用�
 
 /* ---------- 刷新 ---------- */
 async function refresh(){
-  if(mbtText){
-    const sess=sessions[active];
-    currentSvg=sess?.svg||'';nodes=sess?.nodes||[];
-    renderStage();renderAbs();renderFlows();renderInspector();renderLayersIfOpen();
-    $('tail-artboard').textContent=active||'未打开画板';
-    $('tail-info').textContent=sess?`${sess.w} × ${sess.h}`:'';
-    return;
-  }
-  if(!baseCmd||baseCmd.startsWith('__loaded__'))return;
-  let rs;
-  try{rs=await execCli([baseCmd,...opCmds,`export-svg ${active}`,`query ${active}`,'flows']);}
-  catch(err){setStatus('agent','refresh',false,String(err).slice(0,70));return;}
-  const svgR=fObj(rs,'svg');
-  const arrs=rs.filter(r=>Array.isArray(r));
-  const q=arrs.find(a=>a.length&&a[0]&&a[0].rect);
-  const flw=arrs.find(a=>a.length&&a[0]&&a[0].from);
-  if(svgR&&svgR.svg){currentSvg=svgR.svg;}
-  nodes=q||[];
-  if(flw&&flw.length){ mergeFlows(flw); }
-  renderFlows();
-  renderStage();renderAbs();renderInspector();renderLayersIfOpen();loadAuditSoon();
-  requestAnimationFrame(()=>updateSel());
-  requestAnimationFrame(()=>renderFlowWires($('stage')));
-  $('tail-artboard').textContent=active||'未打开画板';
+  if(!mbtText)return;
   const sess=sessions[active];
+  currentSvg=sess?.svg||'';nodes=sess?.nodes||[];
+  renderStage();renderAbs();renderFlows();renderInspector();renderLayersIfOpen();
+  $('tail-artboard').textContent=active||'未打开画板';
   $('tail-info').textContent=sess?`${sess.w} × ${sess.h}`:'';
 }
-let auditTimer=null;
-function loadAuditSoon(){clearTimeout(auditTimer);auditTimer=setTimeout(loadAudit,900);}
-
 /* ---------- 多 Frame 并排舞台 ---------- */
 function frameScale(sess){
   const h=$('canvas-scroll').clientHeight-200;
@@ -1085,17 +1128,6 @@ async function renderStage(){
         if(flinked.has(g.id.slice(2)))g.setAttribute('data-flow-trigger','');
       });
       if(isActive)bindStageSvg(svg);
-    }else if(!mbtText){
-      const key=id+'#'+sess.ops.length;
-      if(thumbCache[key]){body.innerHTML=thumbCache[key].replace('<svg ','<svg preserveAspectRatio="xMidYMid meet" ');const svg=body.querySelector('svg');if(svg){svg.style.width='100%';svg.style.height='100%';}}
-      else{
-        body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#a1a1aa;font-size:11px">渲染中…</div>';
-        execCli([sess.baseCmd,...sess.ops,`export-svg ${id}`]).then(rs=>{
-          if(generation!==renderGeneration)return;
-          const svgR=fObj(rs,'svg');
-          if(svgR&&svgR.svg){thumbCache[key]=svgR.svg;const el=$('fb-'+id);if(el){el.innerHTML=svgR.svg.replace('<svg ','<svg preserveAspectRatio="xMidYMid meet" ');const svg=el.querySelector('svg');if(svg){svg.style.width='100%';svg.style.height='100%';}}}
-        });
-      }
     }else body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#a1a1aa;font-size:11px">MBT 渲染结果缺失</div>';
     if(!isActive){
       wrap.onclick=()=>switchSession(id);
@@ -1259,48 +1291,15 @@ async function renderLayers(){
     if(!rows.length)el.innerHTML='<div class="hintbox">空画板</div>';return;
   }
   if(!baseCmd){$('layer-tree').innerHTML='<div class="hintbox">无画板</div>';return;}
-  const rs=await execCli([baseCmd,...opCmds,`doc-json ${active}`]);
-  const dj=fObj(rs,'json');
-  if(!dj){$('layer-tree').innerHTML='<div class="hintbox">读取失败</div>';return;}
-  try{
-    const doc=JSON.parse(dj.json);
-    const root=doc.nodes;
-    const rows=[];
-    const walk=(kids,depth)=>{(kids||[]).slice().reverse().forEach(k=>{rows.push({id:k.id,kind:k.kind,depth});walk(k.children,depth+1);});};
-    walk(root?root.children:[],0);
-    $('layer-cnt').textContent=rows.length;
-    const el=$('layer-tree');el.innerHTML='';
-    rows.forEach(r=>{
-      const d=document.createElement('div');
-      d.className='layerrow'+(r.id===selected?' on':'');
-      d.style.paddingLeft=(8+r.depth*13)+'px';
-      const ic={frame:'▢',text:'T',rect:'▣',image:'▣',group:'◈'}[r.kind]||'◻';
-      d.innerHTML=`<span class="lic">${ic}</span><span class="lnm">${r.id}</span>`;
-      d.onclick=()=>select(r.id,null);
-      el.appendChild(d);
-    });
-    if(!rows.length)el.innerHTML='<div class="hintbox">空画板</div>';
-  }catch(_){$('layer-tree').innerHTML='<div class="hintbox">解析失败</div>';}
+  // doc-json 层级查询属引擎 CLI 只读面，wasm 产物未导出——扁平清单已覆盖选择场景，
+  // 层级树待引擎 wasm 面补 inspect 类导出后恢复
+  $('layer-tree').innerHTML='<div class="hintbox">空画板</div>';
 }
 function renderLayersIfOpen(){if($('lp-layer').style.display!=='none')renderLayers();}
 
 /* ---------- UX 审计卡 ---------- */
-async function loadAudit(){
-  if(!baseCmd||mode!=='canvas')return;
-  try{
-    const rs=await execCli([baseCmd,...opCmds,`critique ${active}`]);
-    const c=fObj(rs,'principles');
-    const slot=$('audit-slot');
-    if(!c||!c.results){slot.innerHTML='';return;}
-    const worst=c.results.slice().sort((a,b)=>a.score-b.score)[0];
-    const good=c.results.filter(r=>r.verdict==='good').length;
-    slot.innerHTML=`<div class="audit">
-      <h5><svg class="ic" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>UX 审计 · ${good}/8 项通过</h5>
-      <p>最弱项 <b>${worst.principle.replace(/_/g,' ')}</b>（${worst.score}/10）：${worst.advice}</p>
-      <button onclick="runAutoFix()">⚡ 一键自动生成修复</button>
-    </div>`;
-  }catch(_){}
-}
+/* critique 属引擎只读检视面，wasm 产物（0.1.1）未导出——审计卡整体下线，
+ * 待引擎补 inspect 类导出后恢复（渲染逻辑见 git 历史的 loadAudit）。 */
 async function runAutoFix(){
   if(!baseCmd){toast('先创建画板');return;}
   if(await runOp(`fix ${active}`,'agent'))trackAgent('一键自动修复',[`fix ${active}`]);
@@ -1309,24 +1308,13 @@ async function runAutoFix(){
 /* ---------- 命令执行 ---------- */
 function runOp(cmd,src){return serializeProject(()=>runOpNow(cmd,src));}
 async function runOpNow(cmd,src){
-  if(mbtText){
-    let rs;
-    try{rs=await execCli([`${src==='agent'?'apply-agent-mbt-op-b64':'apply-human-mbt-op-b64'} ${utf8ToB64(mbtText)} ${utf8ToB64(cmd)}`]);}
-    catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
-    const result=mbtResult(rs);
-    if(!result||result.ok!==true){const errRow=rs.find(x=>x&&x.error)||rs[rs.length-1];setStatus(src,cmd,false,(errRow&&errRow.error)||'MBT 提交失败');return false;}
-    try{applyMbtResult(result);}catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
-    setStatus(src,cmd,true,result.debt?`视觉债 ${result.debt} 条`:'已回写 MBT 并重新渲染');
-    return true;
-  }
-  const rs=await execCli([baseCmd,...opCmds,cmd]);
-  const last=rs[rs.length-1];
-  if(!last||last.ok!==true){setStatus(src,cmd,false,last&&last.error);return false;}
-  opCmds.push(cmd);
-  if(sessions[active])sessions[active].ops.push(cmd);
-  delete thumbCache[active+'#'+(sessions[active]?sessions[active].ops.length-1:0)];
-  setStatus(src,cmd,true,last.op?(last.op+(last.detached?' · 脱离布局':'')):(last.flow||last.result||''));
-  await refresh();
+  if(!mbtText){setStatus(src,cmd,false,'空项目请先创建画板');return false;}
+  let result;
+  try{result=await engApply(src==='agent'?'agent':'human',mbtText,cmd);}
+  catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
+  if(!mbtResult(result)){setStatus(src,cmd,false,(result&&result.error)||'MBT 提交失败');return false;}
+  try{applyMbtResult(result);}catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
+  setStatus(src,cmd,true,result.debt?`视觉债 ${result.debt} 条`:'已回写 MBT 并重新渲染');
   return true;
 }
 
@@ -1831,7 +1819,12 @@ function addBoard(prefix,w,h,src){return serializeProject(async()=>{
   const id=newId(),cmd=`${prefix} ${id} ${w} ${h}`;
   try{
     if(mbtText){if(!await runOpNow(cmd,src))return false;}
-    else await captureLegacyProject([cmd]);
+    else{
+      // 空项目：经最小种子文档引导首板（wasm 引擎不接受无视觉块的文档）
+      const result=await bootstrapFirstBoard(prefix,id,w,h);
+      if(!mbtResult(result)){setStatus(src,cmd,false,(result&&result.error)||'首板创建失败');return false;}
+      applyMbtResult(result);
+    }
     await switchSession(id);setStatus(src,cmd,true,'新画板');return true;
   }catch(err){setStatus(src,cmd,false,String(err));return false;}
 });}
@@ -1870,10 +1863,13 @@ async function validateMbtNow(){
   const text=$('decl-text').value;
   if(!text.trim()){toast('先创建画板或打开 DDP');return;}
   try{
-    const rs=await execCli([`apply-agent-mbt-b64 ${utf8ToB64(text)}`]);
-    const result=mbtResult(rs);
-    if(!result||result.ok!==true){toast('MBT 校验失败：'+String((rs[rs.length-1]||{}).error||'unknown').slice(0,80));return;}
-    applyMbtResult(result,{acceptDraft:$('decl-text').value===text});toast('MBT 已校验并由引擎重新渲染');setStatus('agent','校验并渲染 ✓（AgentGate 重载）',true,'');
+    // 整篇提交：wasm 面无 apply-agent-mbt-b64 等价导出，以 validate（结构）+ render
+    //（AgentGate 级重建）替代；视觉债的硬拒绝语义待引擎补 commit 导出后恢复
+    const check=await engValidate(text);
+    if(!check.ok){toast('MBT 校验失败：'+String(check.error||'unknown').slice(0,80));return;}
+    const result=await engRender(text);
+    if(!mbtResult(result)){toast('MBT 渲染失败：'+String(result&&result.error||'unknown').slice(0,80));return;}
+    applyMbtResult(result,{acceptDraft:$('decl-text').value===text});toast('MBT 已校验并由引擎重新渲染');setStatus('agent','校验并渲染 ✓（AgentGate 级重建）',true,'');
   }catch(err){toast('MBT 校验失败：'+String(err).slice(0,80));}
 }
 /* ---------- 组件库 ---------- */
@@ -1886,16 +1882,18 @@ function toggleCompGuide(){
   if(g)g.style.display=hasUser?'none':'block';
 }
 async function loadComponents(){
-  let rs;
-  try{rs=await execCli(['list-components']);}
-  catch(err){
-    const msg=String(err);
-    const hint=msg.includes('fetch')||msg.includes('Failed')?'引擎未启动或网络不可达':'加载失败';
-    $('comp-tree').innerHTML='<div class="hintbox">'+hint+' — 请确认 MoonViz 引擎已就绪<br><span style="font-size:9.5px;opacity:.6">'+msg.slice(0,80)+'</span></div>';
+  // 引擎 wasm 0.1.1 未导出 list_components：清单来自同步脚本用真机探针
+  // 验证过的快照（frontend/vendor/components.json，入库），升级引擎时自动再验证
+  let comps;
+  try{
+    const r=await fetch('vendor/components.json');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    comps=await r.json();
+  }catch(err){
+    $('comp-tree').innerHTML='<div class="hintbox">组件清单加载失败<br><span style="font-size:9.5px;opacity:.6">'+String(err&&err.message||err).slice(0,80)+'</span></div>';
     return;
   }
-  const comps=fArr(rs);
-  if(!comps){$('comp-tree').innerHTML='<div class="hintbox">组件列表解析失败</div>';return;}
+  if(!Array.isArray(comps)){$('comp-tree').innerHTML='<div class="hintbox">组件列表解析失败</div>';return;}
   allComps=comps;
   renderCompTree('');
   toggleCompGuide();
@@ -1922,12 +1920,7 @@ function renderCompTree(filter){
         cell.style.position='relative';cell.appendChild(ex);
         const del=document.createElement('span');del.textContent='✕';del.title='删除组件';
         del.style.cssText='position:absolute;top:3px;right:20px;font-size:9px;color:#c34;cursor:pointer;opacity:.6';
-        del.onclick=async ev=>{ev.stopPropagation();
-          const rs=await execCli(['component-delete '+c.id]);
-          const r=rs.find(x=>x&&x.op==='component-delete');
-          if(r&&r.ok){toast('已删除 '+c.id);loadComponents();}
-          else{const errRow=rs.find(x=>x&&x.error);
-            toast('删除失败：'+((r&&r.error)||(errRow&&errRow.error)||'unknown'));}};
+        del.onclick=ev=>{ev.stopPropagation();deleteUserComponent(c.id);};
         cell.appendChild(del);
       }
       cell.onclick=()=>{
@@ -1948,74 +1941,20 @@ function renderCompTree(filter){
 }
 function filterComps(v){renderCompTree(v.trim());}
 
-/* ---------- 用户组件：画板沉淀（人类路线） / MCF 导入导出 ---------- */
+/* ---------- 用户组件：画板沉淀（人类路线） / MCF 导入导出 ----------
+ * 用户组件库（component-*/library-*）属引擎 CLI 会话面 + Rust 侧持久化，
+ * wasm 产物未导出该注册表——三入口整体降级为提示，待引擎 wasm 面补齐后恢复。 */
+const USERCOMP_UNAVAILABLE='用户组件库需要引擎 CLI 会话面，wasm 预编译版暂未提供';
 async function saveAsComponent(){
   if(!baseCmd||!active){toast('先创建一个活动画板');return;}
-  const src=mbtText; // canonical 源码存于全局 mbtText（applyMbtResult 赋值）
-  if(!src){toast('当前画板没有源码');return;}
-  const cid=prompt('组件 id（英文标识符）：',active);
-  if(!cid)return;
-  if(!/^[a-z][a-z0-9_]*$/.test(cid)){toast('id 需为小写字母开头的标识符');return;}
-  const desc=prompt('组件描述：','由 deepDesign 画板沉淀')||'';
-  // 构造组件声明：单画板块 + component 元段（v1 固化当前内容为默认值）
-  let body='';
-  const marker='<!-- moonviz:artboard '+active+' -->';
-  const mi=src.indexOf(marker);
-  if(mi>=0){
-    const bi=src.indexOf('```mbt',mi);
-    const bj=bi>=0?src.indexOf('```',bi+6):-1;
-    if(bi>=0&&bj>bi){body=src.slice(bi,bj+3);}
-  }
-  if(!body){ // 兜底：找不到该画板的块时按 id 提示，而不是抓第一个画板
-    toast('画板「'+active+'」的声明块提取失败（多画板文档请切换到目标画板）');return;
-  }
-  const decl='---\n'
-    +'moonviz:\n  format: visual-document\n  revision: 1\n'
-    +'  title: '+cid+'\n  entry: '+cid+'\n  artboards:\n    - '+cid+'\n'
-    +'  component:\n    id: '+cid+'\n    description: '+desc+'\n'
-    +'    params: []\n    variants:\n      - name: default\n'
-    +'---\n\n# '+cid+'\n\n<!-- moonviz:artboard '+cid+' -->\n'
-    +body.replace('moonviz:visual '+active,'moonviz:visual '+cid)
-         .replace('visual_'+active+'(','visual_'+cid+'(')
-    +'\n';
-  const b64=btoa(unescape(encodeURIComponent(decl)));
-  // 组件库命令直连 CLI 顶层（apply-*-mbt-op 白名单不含 component-*）
-  const rs=await execCli(['component-compile-b64 '+b64]);
-  const r=rs.find(x=>x&&x.op==='component-compile');
-  if(r&&r.ok){toast('组件已注册：'+cid+'（本地库已持久化）');loadComponents();}
-  else{toast('注册失败：'+(r&&r.error||'invalid'));}
+  toast(USERCOMP_UNAVAILABLE);
 }
-async function exportMcf(cid){
-  const rs=await execCli(['component-export '+cid]);
-  const r=rs.find(x=>x&&x.mcf_b64);
-  if(!r||!r.ok){toast('导出失败：'+(r&&r.error||'unknown'));return;}
-  const bytes=Uint8Array.from(atob(r.mcf_b64),c=>c.charCodeAt(0));
-  const blob=new Blob([bytes],{type:'application/octet-stream'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=cid+'.mcf';a.click();
-  URL.revokeObjectURL(a.href);
-  toast('已导出 '+cid+'.mcf（专有格式，仅引擎可解析）');
-}
+async function exportMcf(cid){toast(USERCOMP_UNAVAILABLE);}
+async function deleteUserComponent(cid){toast(USERCOMP_UNAVAILABLE);}
 const COMP_ID_RE=/^[A-Za-z0-9_-]+$/;
 async function importMcf(input){
-  const f=input.files&&input.files[0];input.value='';
-  if(!f)return;
-  if(f.size>16*1024*1024){toast('文件过大（上限 16MB）');return;}
-  const buf=await f.arrayBuffer();
-  let bin='';const u=new Uint8Array(buf);
-  for(let i=0;i<u.length;i+=8192)bin+=String.fromCharCode(...u.subarray(i,i+8192));
-  const b64=btoa(bin);
-  const rs=await execCli(['component-import '+b64]);
-  const r=rs.find(x=>x&&x.op==='component-import');
-  if(r&&r.ok){
-    // 白名单防线：拒绝含异常字符的组件 id（阻断 XSS/路径逃逸载荷，并清理注册残留）
-    if(!COMP_ID_RE.test(r.component||'')){
-      await execCli(['component-delete '+(r.component||'')]);
-      toast('已拒绝：组件 id 含非法字符（仅允许字母/数字/_/-）');return;
-    }
-    toast('已导入组件：'+r.component);loadComponents();
-  }
-  else{const errRow=rs.find(x=>x&&x.error&&(x.error.startsWith('mcf')||x.error.startsWith('usercomp')||x.error.startsWith('mbt_transport')||x.error.startsWith('library')));
-    toast('导入失败：'+((r&&r.error)||(errRow&&errRow.error)||'invalid'));}
+  input.value='';
+  toast(USERCOMP_UNAVAILABLE);
 }
 
 /* ---------- 组件 Pointer 拖拽（真实预览 + 松手落点） ---------- */
@@ -2179,26 +2118,14 @@ async function defineSt(){
   const ok=await runOp(`state ${active} ${selected} ${name} fill=${n.style.fill}`,'human');
   if(ok){toast('已定义状态 '+name);loadStList();}
 }
-/* 交互/状态清单：只读查询，经 load+命令管道 */
+/* 交互/状态清单：interactions/states 属引擎只读检视面，wasm 产物未导出——降级为提示 */
 async function loadIxList(){
   const box=$('ix-list');if(!box||!active)return;
-  try{
-    const rs=await execCli([`load-mbt-b64 ${utf8ToB64(mbtText)}`,'interactions '+active]);
-    const arr=rs.filter(r=>r&&typeof r==='object'&&!r.moonviz).pop();
-    box.innerHTML=Array.isArray(arr)&&arr.length
-      ? arr.map(x=>`<div class="ix-row"><code>${x.node}</code><span>${x.trigger} → ${x.action}</span></div>`).join('')
-      : '<div class="ix-empty">本画板暂无交互</div>';
-  }catch(_){box.innerHTML='<div class="ix-empty">读取失败</div>';}
+  box.innerHTML='<div class="ix-empty">交互清单读取需引擎 inspect 面（wasm 版待提供）；绑定/解绑交互仍可用</div>';
 }
 async function loadStList(){
   const box=$('st-list');if(!box||!active)return;
-  try{
-    const rs=await execCli([`load-mbt-b64 ${utf8ToB64(mbtText)}`,'states '+active]);
-    const arr=rs.filter(r=>r&&typeof r==='object'&&!r.moonviz).pop();
-    box.innerHTML=Array.isArray(arr)&&arr.length
-      ? arr.map(x=>`<div class="ix-row"><code>${x.node}</code><span>${(x.states||[]).join(' / ')}${x.current!=='default'?' · 当前 '+x.current:''}</span><button onclick="setState('${x.node}','${x.current==='default'?'pressed':'default'}')">切换</button></div>`).join('')
-      : '<div class="ix-empty">暂无组件状态</div>';
-  }catch(_){box.innerHTML='<div class="ix-empty">读取失败</div>';}
+  box.innerHTML='<div class="ix-empty">状态清单读取需引擎 inspect 面（wasm 版待提供）；定义/切换状态仍可用</div>';
 }
 async function setState(node,state){
   if(await runOp(`set-state ${node} ${state}`,'human')){loadStList();}
@@ -2344,9 +2271,8 @@ async function openProject(){
   try{
     const r=await window.__TAURI__.core.invoke('open_ddp',{password});
     if(!r||r==='canceled')return;
-    await serializeProject(async()=>{const rs=await execCli([`render-mbt-b64 ${r.mbt_b64}`]);
-    const result=mbtResult(rs);
-    if(!result||result.ok!==true){toast('DDP 中的 MBT 校验失败：'+String((rs[rs.length-1]||{}).error||'unknown').slice(0,80));return;}
+    await serializeProject(async()=>{const result=await engRender(b64ToUtf8(r.mbt_b64));
+    if(!mbtResult(result)){toast('DDP 中的 MBT 校验失败：'+String(result&&result.error||'unknown').slice(0,80));return;}
     applyMbtResult(result,{reset:true});filePath=r.path;$('file-label').textContent=r.path.split('/').pop();toast('已打开 DDP，并从 MBT 重新渲染');});
   }catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));}
 }
@@ -2580,20 +2506,25 @@ window.addEventListener('resize',()=>{if(Object.keys(sessions).length)renderStag
 window.__state=()=>({baseCmd,opCmds,nodes,selected,flows,active,sessions,mode});
 loadComponents();
 if(IS_TAURI)loadModelRegistry();   // 模型注册表快照（离线；失败不影响主流程）
+loadEngine().then(()=>{           // wasm 引擎预加载（画布首帧 op 前就绪）
+  if(engineFailed)console.warn('引擎 wasm 加载失败：',engineFailed);
+  else if(typeof setStatus==='function')setStatus('','',true,'引擎 wasm 就绪');
+});
 renderAbs();
 $('file-label').textContent='v'+APP_VER;
 setStatus('','',true);
 document.body.classList.add('mode-wireframe','design-active');
-/* 模板卡真实预览 */
+/* 模板卡真实预览：种子文档 + template op，取新画板的 svg（种子板留在一次性草稿里，不入库） */
 (async function loadTemplateThumbs(){
+  await loadEngine();
+  if(!engineExports)return;
   const defs=[['web_login','th-tpl-web_login',1280,800],['adaptive_landing','th-tpl-adaptive_landing',1280,800],['login','th-tpl-login',390,844]];
   for(const[tid,elId,w,h]of defs){
     try{
-      const rs=await execCli([`template ${tid} __t_${tid} ${w} ${h}`,`export-svg __t_${tid}`]);
-      // 健壮提取：遍历结果找含 svg 字段的对象
-      const svgR=rs.find(r=>r&&typeof r==='object'&&typeof r.svg==='string'&&r.svg.length>50);
-      if(svgR){const el=$(elId);if(el)el.innerHTML=svgR.svg;}
-      else{console.warn('thumb miss',tid,JSON.stringify(rs).slice(0,200));}
+      const r=await engApply('human',seedDoc(SEED_BOARD,24,24),`template ${tid} __t_${tid} ${w} ${h}`);
+      const art=r.ok&&r.artboards&&r.artboards.find(a=>a.id==='__t_'+tid);
+      if(art&&art.svg&&art.svg.length>50){const el=$(elId);if(el)el.innerHTML=art.svg;}
+      else console.warn('thumb miss',tid,String(r.error||''));
     }catch(err){console.warn('thumb err',tid,String(err).slice(0,100));}
   }
 })();

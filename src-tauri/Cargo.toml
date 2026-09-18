@@ -7,7 +7,9 @@ edition = "2021"
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-moonviz-ddp = { path = "../../moonviz/ddp" }
+# DDP 编解码 crate：vendored 副本（引擎预编译化后不再依赖兄弟仓库源码）。
+# 来源与同步方式见 vendor/moonviz-ddp/README.md。
+moonviz-ddp = { path = "../vendor/moonviz-ddp" }
 tauri = { version = "2.0", features = [] }
 tauri-plugin-dialog = "2.0"
 serde = { version = "1.0", features = ["derive"] }

@@ -1,21 +1,35 @@
-//! 进程内 Agent 基座：OpenAI chat-completions 工具循环 × MoonViz 引擎管道。
+//! 进程内 Agent 基座：OpenAI/Anthropic 工具调用循环 × MoonViz wasm 引擎。
 //!
-//! 取代原 node + agent-bridge.mjs 子进程桥（85MB JS 运行时）。
-//! 请求体为 OpenAI chat wire format 或 Anthropic Messages wire（协议按 base_url 探测，
-//! json! 字面量），thinking 家族等非标
-//! 字段在构造时直接注入；引擎调用复用 exec_cli 完整管道（用户组件库
-//! restore/snapshot 写回、AgentGate 校验、canonical .mbt.md 提交）。
-//! 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text}。
+//! 引擎是预编译 WasmGC 产物（frontend/vendor/moonviz.wasm），本模块经
+//! `EngineHost`（Rusty V8 进程内宿主，与前端画布各自持有实例、只交换
+//! canonical 文本）调用：变更 op → apply_agent_op（与 CLI apply-agent-mbt-op-b64
+//! 同一分发器，AgentGate），空项目起步 → 种子文档 + apply_human_op 引导。
+//! 只读检视面（lint/critique/query/...）wasm 产物未导出——READONLY_OPS 命中
+//! 即返回明确错误。请求体为 OpenAI chat wire format 或 Anthropic Messages wire
+//! （协议按 base_url 探测，json! 字面量），thinking 家族等非标字段在构造时
+//! 直接注入。返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text}。
 
 use serde_json::{json, Value};
 use std::time::Duration;
 
-use crate::exec_cli_pipeline;
+use crate::EngineHost;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
 const MAX_STEPS: usize = 20;
 const ENGINE_OP_TIMEOUT: Duration = Duration::from_secs(30);
 const LLM_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// 空项目起步的种子画板 id（wasm 引擎要求文档至少一个视觉块才能承载 op；
+/// 首个真实 op 落地后立即 delete-artboard 移除种子）。
+const SEED_BOARD: &str = "__seed";
+
+/// 最小种子文档（canonical 格式：frontmatter + 单画板 ```mbt 块）。
+/// 与 frontend/index.html 的 seedDoc 逐字对齐——改任一边都要同步另一边。
+fn seed_doc(id: &str, w: i64, h: i64) -> String {
+    format!(
+        "---\nmoonviz:\n  format: visual-document\n  revision: 1\n  entry: {id}\n---\n\n# {id}\n\n<!-- moonviz:artboard {id} -->\n```mbt\nfn visual_{id}() -> @decl.Prototype {{\n  let page = @decl.prototype(name=\"{id}\", width={w}.0, height={h}.0)\n  page\n}}\n```\n"
+    )
+}
 
 /// 引擎模板清单（id 与 MoonViz `list-templates` 对齐，尺寸以引擎实际产出为准）。
 /// 改这里必须同步 `template_ids_match_engine` 契约测试。
@@ -55,8 +69,8 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
    Use "interact" for anything richer than navigation (show_toast, set_state, haptic, play_sound) —
    and define the target with "state" first if you want a pressed/selected visual.
 5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired; no dangling refs.
-   Run "missing <artboard>" to catch unwired CTAs, "fix <artboard>" if violations accumulated
-   (fix commits when it strictly reduces them).
+   Run "fix <artboard>" if violations accumulated (on docs carrying human-canvas debt it may be
+   rejected — the debt count in each apply result tells you how much is left).
 6. REPORT: stop calling tools and summarize: screens built and the flow map.
 
 ## Tweak loop (document already loaded)
@@ -81,22 +95,20 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   | token <name> <value>   (override ONE COLOR token, e.g. token primary #FF5722)
   | fix <artboard>
 - token: color tokens ONLY (primary, on_primary, secondary, surface, background, error, text_
-  primary... — full list via list-tokens, use the flat "colors" names). Spacing/radii/typography
-  tokens are NOT settable (unknown_token). The override recolors immediately, persists in the
-  document's frontmatter tokens: section, and setting the value back to its default removes it.
+  primary...). Spacing/radii/typography tokens are NOT settable (unknown_token). The override
+  recolors immediately, persists in the document's frontmatter tokens: section, and setting
+  the value back to its default removes it.
 - interact triggers: tap long_press swipe_left swipe_right swipe_up swipe_down scroll_end
   key_enter focus blur. interact actions: back | haptic | navigate_to:<board>
   | show_toast:<msg> | set_text:<node>:<text> | set_state:<node>:<state>
   | toggle_state:<node> | play_sound:<name>. Define the state via "state" BEFORE
   set_state/toggle_state can target it; call set-state only after a state exists.
-- read-only inspection ops (no document change):
-  list | flows | list-templates | list-components | list-tools | list-tokens | list-themes
-  | lint <artboard> | critique <artboard> | query <artboard> | infer <artboard>
-  | spec <artboard> | missing <artboard> | doc-json <artboard> | states <artboard>
-  | interactions <artboard> | export-svg <artboard> | export-html <artboard>
-  | tap <artboard> <x> <y> | benchmark
-- export-html <artboard>: self-contained interactive HTML prototype (node-level tap bindings
-  + component states as CSS variants). Use it when the user wants a shareable/runnable demo.
+- inspection: this engine face (prebuilt wasm) exposes MUTATIONS only. Read-only commands
+  (list/flows/list-*/lint/critique/query/infer/spec/missing/doc-json/states/interactions/
+  export-svg/export-html/tap/benchmark) are rejected with wasm_engine_readonly_unavailable —
+  don't call them. Ground everything in read_mbt (full source: ids, flows, styles) and the
+  apply results (each returns per-artboard node indexes with rects); list_components covers
+  the palette; the studio frontend can export an interactive HTML prototype of the final doc.
 - update keys: w h text fill text_color stroke stroke_width radius opacity font_size weight
   shadow rotate blur blend line tracking constraint align italic dash visible layout gap
   justify padding width_mode height_mode x_mode y_mode name.
@@ -384,12 +396,11 @@ fn thinking_extra_body(model: &str, level: &str, protocol: Protocol) -> Option<V
     Some(json!({"reasoning_effort": level}))
 }
 
-/// 只读命令白名单：**路由契约**——引擎的 `apply-agent-mbt-op-b64` 只接受变更类操作，
-/// 任何未列于此的只读 op 都会被它拒绝（`mbt_operation_unsupported`）。
-/// 注意 `fix` 不在此列——引擎在 apply 路径为 fix 实现了「违规严格下降才提交」的还债语义，
-/// 走只读管道会丢弃变更。反之变更类 op（state/interact/group/responsive…）绝不能入表，
-/// 否则变更被静默丢弃且不报错。
-/// 提到模块级是为了让 `readonly_whitelist_matches_engine_surface` 能把它与探针集合严格比对。
+/// 只读 op 分类表。引擎 wasm 面（0.1.1）只导出 apply/render/validate/list_templates/
+/// export_html/version_info——这些检视命令一律不可达；命中本表即返回
+/// `wasm_engine_readonly_unavailable`（把「面没开」说清楚，而不是让 op 撞上
+/// apply 分发器的 mbt_operation_unsupported）。引擎 wasm 补 inspect 类导出后，
+/// 此表转回路由白名单并恢复只读管道。变更类 op 绝不能入表（会被此分支拦下）。
 const READONLY_OPS: [&str; 20] = [
     // 无参清点类
     "list", "list-templates", "list-components", "list-tools", "list-tokens", "list-themes",
@@ -408,8 +419,10 @@ fn is_readonly_op(op: &str) -> bool {
     }
 }
 
-/// Agent 会话的引擎执行状态（对齐 JS 桥 makeExecutor 的语义）。
-struct EngineState {
+/// Agent 会话的引擎执行状态。mbt 是会话内唯一事实源（每 op 提交后更新为引擎
+/// 回传的 canonical 文本）；last_render 保证终态返回总是带 artboards/svg。
+struct EngineState<'a> {
+    host: &'a EngineHost,
     mbt: Option<String>,
     last_render: Option<Value>,
     ops: Vec<String>,
@@ -428,9 +441,10 @@ fn b64_encode(s: &str) -> String {
     BASE64.encode(s.as_bytes())
 }
 
-impl EngineState {
-    fn new(mbt_b64: Option<&str>) -> Result<Self, String> {
+impl<'a> EngineState<'a> {
+    fn new(host: &'a EngineHost, mbt_b64: Option<&str>) -> Result<Self, String> {
         Ok(Self {
+            host,
             mbt: match mbt_b64 {
                 Some(b) if !b.is_empty() => Some(b64_decode(b)?),
                 _ => None,
@@ -440,18 +454,16 @@ impl EngineState {
         })
     }
 
-    /// 与 exec_cli 相同的完整管道（含用户组件库 restore/snapshot），带 30s 超时。
-    async fn exec(&self, commands: Vec<String>) -> Result<Vec<Value>, String> {
-        tokio::time::timeout(
-            ENGINE_OP_TIMEOUT,
-            tokio::task::spawn_blocking(move || exec_cli_pipeline(commands)),
-        )
-        .await
-        .map_err(|_| "engine_timeout".to_string())?
-        .map_err(|e| format!("engine_join_failed:{e}"))?
+    /// 宿主调用（带 30s 超时与错误归一）。
+    async fn call(&self, fn_name: &str, mbt: &str, op: &str) -> Value {
+        match tokio::time::timeout(ENGINE_OP_TIMEOUT, self.host.call(fn_name, mbt, op)).await {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => json!({"ok": false, "error": e}),
+            Err(_) => json!({"ok": false, "error": "engine_timeout"}),
+        }
     }
 
-    /// moonviz_op 工具：空项目 bootstrap / 只读路由 / apply-op 三条路径。
+    /// moonviz_op 工具：空项目种子引导 / 只读拦截 / apply-op 三条路径。
     async fn moonviz_op(&mut self, op: &str) -> Value {
         let op = op.trim();
         if op.is_empty() {
@@ -461,91 +473,62 @@ impl EngineState {
             return json!({"ok": false, "error": "op_newline_forbidden"});
         }
 
-        // 空项目起步：template/create 可直接引导
-        if self.mbt.is_none() && matches!(op.split_whitespace().next(), Some("template") | Some("create")) {
-            let rs = self.exec(vec![op.to_string(), "export-mbt-human".into()]).await;
-            match rs {
-                Ok(rs) => {
-                    if let Some(boot) = rs
-                        .iter()
-                        .find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false) && r.get("ok") == Some(&json!(true)))
-                    {
-                        self.mbt = boot.get("mbt").and_then(|v| v.as_str()).map(String::from);
-                        self.last_render = Some(boot.clone());
-                        self.ops.push(op.to_string());
-                        return json!({
-                            "ok": true, "op": op,
-                            "revision": boot.get("revision").cloned().unwrap_or(json!(0)),
-                            "artboards": boot.get("artboards").map(artboard_index).unwrap_or(json!([])),
-                        });
-                    }
-                    let err = rs.iter().find(|r| r.get("error").is_some());
-                    return json!({"ok": false, "error": err.and_then(|r| r.get("error").cloned()).unwrap_or(json!("boot_failed"))});
-                }
-                Err(e) => return json!({"ok": false, "error": e}),
+        // 空项目起步：template/create 经种子文档引导（人类门语义——画布首板同路），
+        // 首个 op 落地后立即删除种子画板，canonical 由引擎回传。
+        if self.mbt.is_none()
+            && matches!(op.split_whitespace().next(), Some("template") | Some("create"))
+        {
+            let seed = seed_doc(SEED_BOARD, 24, 24);
+            let mut r = self.call("apply_human_op", &seed, op).await;
+            if r.get("ok") != Some(&json!(true)) {
+                return r;
             }
+            let committed = r
+                .get("mbt")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            r = self.call("apply_human_op", &committed, &format!("delete-artboard {SEED_BOARD}")).await;
+            if r.get("ok") != Some(&json!(true)) {
+                return json!({"ok": false, "error": format!("seed_cleanup_failed:{op}")});
+            }
+            self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
+            self.last_render = Some(r.clone());
+            self.ops.push(op.to_string());
+            return json!({
+                "ok": true, "op": op,
+                "revision": r.get("revision").cloned().unwrap_or(json!(0)),
+                "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
+            });
         }
 
         let Some(mbt) = self.mbt.clone() else {
             return json!({"ok": false, "error": "no_mbt_loaded"});
         };
 
-        // 只读命令：引擎输出顺序 banner → load ack → 命令结果，取最后一个非 banner 对象。
+        // 只读 op：wasm 引擎面未导出检视命令——明确报错并指路
         if is_readonly_op(op) {
-            let rs = self
-                .exec(vec![format!("load-mbt-b64 {}", b64_encode(&mbt)), op.to_string()])
-                .await;
-            match rs {
-                Ok(rs) => {
-                    let non_banner: Vec<&Value> =
-                        rs.iter().filter(|r| r.get("moonviz").is_none()).collect();
-                    let Some(result) = non_banner.last() else {
-                        return json!({"ok": false, "error": "readonly_no_output"});
-                    };
-                    if result.get("error").is_some() {
-                        return json!({"ok": false, "error": result.get("error").cloned().unwrap()});
-                    }
-                    self.ops.push(op.to_string());
-                    return if result.is_array() {
-                        json!({"ok": true, "result": result})
-                    } else {
-                        (*result).clone()
-                    };
-                }
-                Err(e) => return json!({"ok": false, "error": e}),
-            }
+            return json!({
+                "ok": false, "op": op,
+                "error": "wasm_engine_readonly_unavailable",
+                "hint": "inspection commands are not exported by the wasm engine; use read_mbt (full source) and apply-result node indexes instead",
+            });
         }
 
-        // 变更操作：apply-agent-mbt-op-b64
-        let rs = self
-            .exec(vec![format!(
-                "apply-agent-mbt-op-b64 {} {}",
-                b64_encode(&mbt),
-                b64_encode(op)
-            )])
-            .await;
-        match rs {
-            Ok(rs) => {
-                let result = rs.iter().find(|r| r.get("mbt").is_some());
-                match result {
-                    Some(r) if r.get("ok") == Some(&json!(true)) => {
-                        self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
-                        self.last_render = Some(r.clone());
-                        self.ops.push(op.to_string());
-                        json!({
-                            "ok": true, "op": op,
-                            "debt": r.get("debt").cloned().unwrap_or(json!(0)),
-                            "revision": r.get("revision").cloned().unwrap_or(json!(0)),
-                            "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
-                        })
-                    }
-                    _ => {
-                        let err = rs.iter().find(|r| r.get("error").is_some());
-                        json!({"ok": false, "error": err.and_then(|r| r.get("error").cloned()).unwrap_or(json!("agent_op_failed"))})
-                    }
-                }
-            }
-            Err(e) => json!({"ok": false, "error": e}),
+        // 变更操作：apply_agent_op（与 CLI apply-agent-mbt-op-b64 同一分发器，AgentGate）
+        let r = self.call("apply_agent_op", &mbt, op).await;
+        if r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some() {
+            self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
+            self.last_render = Some(r.clone());
+            self.ops.push(op.to_string());
+            json!({
+                "ok": true, "op": op,
+                "debt": r.get("debt").cloned().unwrap_or(json!(0)),
+                "revision": r.get("revision").cloned().unwrap_or(json!(0)),
+                "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
+            })
+        } else {
+            r
         }
     }
 
@@ -556,33 +539,26 @@ impl EngineState {
         }
     }
 
-    /// 终态 render 兜底（移植自 JS 桥）：只读会话（仅 lint/query/flows 等）
-    /// 不产生 apply 渲染——用 render-mbt-b64 补齐，保证前端 applyMbtResult
-    /// 始终拿到含 artboards/svg 的 render 而不是 null。
+    /// 终态 render 兜底（移植自 JS 桥）：无 apply 渲染的会话（只读尝试/零变更）
+    /// 用 render_mbt 补齐，保证前端 applyMbtResult 拿到的不是 null。
     async fn ensure_render(&mut self) {
         if self.last_render.is_some() {
             return;
         }
         let Some(mbt) = self.mbt.clone() else { return };
-        let Ok(rs) = self.exec(vec![format!("render-mbt-b64 {}", b64_encode(&mbt))]).await
-        else {
-            return;
-        };
-        if let Some(rendered) = rs
-            .iter()
-            .find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
-        {
-            self.last_render = Some(rendered.clone());
+        let rendered = self.call("render_mbt", &mbt, "").await;
+        if rendered.get("mbt").is_some_and(|v| v.is_string()) {
+            self.last_render = Some(rendered);
         }
     }
 
+    /// 组件清单：经桥取前端同源快照（wasm 0.1.1 未导出 list_components；
+    /// 快照由 sync-engine.mjs 用真机探针验证生成）。
     async fn list_components(&self) -> Value {
-        match self.exec(vec!["list-components".into()]).await {
-            Ok(rs) => match rs.iter().find(|r| r.is_array()) {
-                Some(arr) => json!({"ok": true, "components": arr}),
-                None => json!({"ok": true, "components": []}),
-            },
-            Err(e) => json!({"ok": false, "error": e}),
+        let r = self.call("list_components", "", "").await;
+        match r.get("components").and_then(|v| v.as_array()) {
+            Some(arr) => json!({"ok": true, "components": arr}),
+            None => json!({"ok": false, "error": r.get("error").cloned().unwrap_or(json!("components_unavailable"))}),
         }
     }
 }
@@ -605,7 +581,7 @@ fn tools_schema() -> Value {
             "type": "function",
             "function": {
                 "name": "moonviz_op",
-                "description": "Execute one MoonViz design operation (validated by AgentGate, committed to .mbt.md). Also supports read-only inspection ops (no commit): list, flows, list-templates, list-components, list-tools, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, doc-json <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html <ab>, tap <ab> <x> <y>, benchmark.",
+                "description": "Execute one MoonViz MUTATING design operation (AgentGate-validated, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Read-only inspection commands are NOT available on this engine face — ground ids/flows/styles via read_mbt and apply-result node indexes.",
                 "parameters": {
                     "type": "object",
                     "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -763,6 +739,7 @@ async fn chat_once(
 
 /// 主循环：chat → tool_calls → 引擎执行 → 回填 → 直至 assistant 总结或 maxSteps。
 pub async fn run(
+    host: &EngineHost,
     instruction: &str,
     mbt_b64: Option<&str>,
     api_key: &str,
@@ -777,7 +754,7 @@ pub async fn run(
         return json!({"ok": false, "error": "base_url_invalid_https_or_local"});
     };
     let model = if model.trim().is_empty() { "deepseek-chat" } else { model.trim() };
-    let mut state = match EngineState::new(mbt_b64) {
+    let mut state = match EngineState::new(host, mbt_b64) {
         Ok(s) => s,
         Err(e) => return json!({"ok": false, "error": e}),
     };
@@ -872,7 +849,7 @@ pub async fn run(
 
 /// 中途失败的部分状态返回：零操作 → 纯失败；有已提交工作 → ok:true +
 /// partial_error 说明，前端照常应用 mbt_b64/render 并提示部分完成。
-async fn finish_partial(state: &mut EngineState, error: &str) -> Value {
+async fn finish_partial(state: &mut EngineState<'_>, error: &str) -> Value {
     if state.mbt.is_none() && state.ops.is_empty() {
         return json!({"ok": false, "error": error, "ops": [], "text": ""});
     }
@@ -1172,85 +1149,58 @@ mod tests {
         assert!(!is_readonly_op(""));
     }
 
-    /// 引擎命令面契约：白名单里每个 op 都必须在 load 管道上被引擎接受。
-    /// 引擎拒绝则说明白名单过时（该 op 已改名或下架）——本机无引擎时跳过。
+    /// 共享宿主实例：测试无 WebView，走 node 子进程宿主驱动同一份 wasm 产物
+    /// （node ≥24）。产物缺失/宿主不可用时调用返回 Err（各测试据此跳过）。
+    const ENGINE: EngineHost = EngineHost::NodeWasm;
+
+    /// 引擎 wasm 面契约：经 node 宿主驱动**真产物**——种子文档可承载 op、
+    /// AgentGate 拒绝带债提交、canonical mbt 回传、组件快照非空。
     #[tokio::test]
-    async fn readonly_whitelist_matches_engine_surface() {
-        if crate::engine_cli_binary().is_err() {
-            eprintln!("跳过：本机无引擎二进制");
-            return;
-        }
-        let rs = tokio::task::spawn_blocking(move || {
-            crate::exec_cli_pipeline(vec!["template login wl".into(), "export-mbt-human".into()])
-        })
-        .await
-        .unwrap();
-        let Ok(rs) = rs else { eprintln!("跳过：引擎未产出文档"); return };
-        let Some(mbt) = rs
-            .iter()
-            .find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
-            .and_then(|r| r.get("mbt").and_then(|v| v.as_str()).map(String::from))
-        else {
-            eprintln!("跳过：引擎未产出 mbt");
+    async fn wasm_engine_surface_contract() {
+        let Ok(v) = ENGINE.call("version_info", "", "").await else {
+            eprintln!("跳过：V8 宿主不可用");
             return;
         };
-
-        // 每个白名单 op 的探针形态（占位符换成真实画板/节点）
-        let probes = [
-            "list", "list-templates", "list-components", "list-tools", "list-tokens",
-            "list-themes", "flows", "benchmark", "lint wl", "critique wl", "query wl",
-            "infer wl", "spec wl", "missing wl", "doc-json wl", "states wl",
-            "interactions wl", "export-svg wl", "export-html wl", "tap wl 10 10",
-        ];
-        // 双向校验：只断言 probes ⊆ READONLY 是不够的——白名单新增一项却忘了加探针时，
-        // 那一项完全不被引擎校验，测试却仍然全绿。两个集合必须严格相等。
-        let mut probe_heads: Vec<&str> =
-            probes.iter().filter_map(|p| p.split_whitespace().next()).collect();
-        probe_heads.sort_unstable();
-        let mut whitelist: Vec<&str> = READONLY_OPS.to_vec();
-        whitelist.sort_unstable();
-        assert_eq!(
-            probe_heads, whitelist,
-            "探针集合与 READONLY_OPS 不一致：白名单加项必须同步加探针（左=探针，右=白名单）"
-        );
-        for op in probes {
-            let out = crate::exec_cli_pipeline(vec![
-                format!("load-mbt-b64 {}", b64_encode(&mbt)),
-                op.to_string(),
-            ]);
-            let out = out.unwrap_or_else(|e| panic!("{op}: 引擎调用失败 {e}"));
-            // banner / load ack 之后取最后一个非 banner 结果
-            let last = out
-                .iter()
-                .filter(|r| r.get("moonviz").is_none())
-                .next_back();
-            let Some(last) = last else { panic!("{op}: 无输出") };
-            assert!(
-                last.get("error").is_none(),
-                "{op} 在引擎上失败（白名单过时？）：{last}"
-            );
+        if v.get("ok") != Some(&json!(true)) {
+            eprintln!("跳过：wasm 产物不可用（先跑 node scripts/sync-engine.mjs）");
+            return;
         }
+
+        // 种子文档可承载变更 op（空文档会 mbt_no_visual_blocks——种子引导的前提）
+        let r = ENGINE
+            .call("apply_human_op", &seed_doc(SEED_BOARD, 390, 844), "template login wl 390 844")
+            .await
+            .unwrap();
+        assert_eq!(r["ok"], json!(true), "种子文档上的 template op 失败：{r}");
+        assert!(r["mbt"].as_str().is_some_and(|m| m.contains("wl")), "apply 结果应含 canonical mbt");
+
+        // AgentGate：明显越界的放置必须整体拒绝（双门语义仍在 wasm 面生效）
+        let r = ENGINE
+            .call("apply_agent_op", &seed_doc("ov", 390, 844), "place ov button huge - 380 806")
+            .await
+            .unwrap();
+        assert_eq!(r["ok"], json!(false), "AgentGate 应拒绝越界放置：{r}");
+
+        // 组件快照（与前端画布同源）非空
+        let comps = ENGINE.call("list_components", "", "").await.unwrap();
+        assert!(
+            comps["components"].as_array().is_some_and(|a| !a.is_empty()),
+            "组件快照为空：{comps}"
+        );
     }
 
-    /// 引擎模板清单契约：提示词里的模板 id 集合必须与引擎 list-templates 完全一致。
+    /// 引擎模板清单契约：提示词里的模板 id 集合必须与 wasm list_templates 完全一致。
     /// 提示词漏一个模板 → Agent 永远不会选它；多一个 → Agent 会猜不存在的 id。
     #[tokio::test]
     async fn template_ids_match_engine() {
-        if crate::engine_cli_binary().is_err() {
-            eprintln!("跳过：本机无引擎二进制");
+        let Ok(out) = ENGINE.call("list_templates", "", "").await else {
+            eprintln!("跳过：V8 宿主不可用");
             return;
-        }
-        let out = tokio::task::spawn_blocking(|| {
-            crate::exec_cli_pipeline(vec!["list-templates".into()])
-        })
-        .await
-        .unwrap()
-        .expect("list-templates 失败");
-        let arr = out
-            .iter()
-            .find(|r| r.is_array())
-            .and_then(|r| r.as_array())
-            .expect("list-templates 未返回数组");
+        };
+        let Some(arr) = out.as_array() else {
+            eprintln!("跳过：wasm 产物不可用");
+            return;
+        };
         let mut engine_ids: Vec<String> = arr
             .iter()
             .filter_map(|t| t.get("id").and_then(|v| v.as_str()).map(String::from))
@@ -1278,7 +1228,7 @@ mod tests {
 
         assert_eq!(
             prompt_ids, engine_ids,
-            "提示词模板清单与引擎不一致（差集：左=提示词，右=引擎）"
+            "提示词模板清单与引擎 wasm 不一致（差集：左=提示词，右=引擎）"
         );
     }
 
@@ -1301,304 +1251,6 @@ mod tests {
         }
     }
 
-    /// 解析仓库根 SKILL.md（引擎能力字典，vendored 副本）文末的机器可读清单块。
-    /// 块只含 readonly / cli_only 两层——**变更 op 层已由引擎 `list-ops` 输出接管**
-    /// （引擎 8c03a7e 起 OpEntry 注册表是事实源，usage 与分发器逐字一致，
-    /// 本仓库不再手工列举变更 op）。
-    /// 块形如：`readonly: a b ...` 后跟缩进续行，直到 ``` 收束。
-    fn skill_op_lists() -> (Vec<String>, Vec<String>) {
-        let skill = include_str!("../../SKILL.md");
-        let mut readonly = Vec::new();
-        let mut cli_only = Vec::new();
-        let mut in_block = false;
-        let mut cur: Option<&mut Vec<String>> = None;
-        for line in skill.lines() {
-            let (key, rest) = if let Some(r) = line.strip_prefix("readonly:") {
-                in_block = true;
-                (0usize, r)
-            } else if let Some(r) = line.strip_prefix("cli_only:") {
-                (1usize, r)
-            } else if line.trim() == "```" && in_block {
-                break;
-            } else {
-                (usize::MAX, "")
-            };
-            if key != usize::MAX {
-                cur = Some(match key {
-                    0 => &mut readonly,
-                    _ => &mut cli_only,
-                });
-            }
-            if let Some(list) = cur.as_deref_mut() {
-                if !rest.is_empty() || key == usize::MAX {
-                    let src = if key == usize::MAX { line.trim() } else { rest.trim() };
-                    if !src.is_empty() {
-                        list.extend(src.split_whitespace().map(String::from));
-                    }
-                }
-            }
-        }
-        (readonly, cli_only)
-    }
-
-    /// SKILL.md 字典契约——让字典变成 load-bearing 而非文档摆设：
-    /// 1. 字典的 readonly 集合必须与 READONLY_OPS **严格相等**（双向，防单边漂移）；
-    /// 2. 变更 op 清单直接消费引擎 `list-ops` 输出（OpEntry 注册表）：
-    ///    探针表必须与 list-ops 集合严格相等——引擎新增 op 而本仓库没加探针即红，
-    ///    这就是"新命令无人采纳"盲区的哨兵；每个 op 还须走 apply 路径实测被接受、
-    ///    且在 INSTRUCTIONS 提示词里被教会（词边界匹配）；
-    /// 3. readonly op 走 load 路径可用、走 apply 路径必须 `mbt_operation_unsupported`；
-    ///    cli_only op 走 apply 路径必须 `mbt_operation_unsupported`。
-    #[tokio::test]
-    async fn skill_dictionary_matches_engine_and_agent() {
-        let (readonly, cli_only) = skill_op_lists();
-        assert!(!readonly.is_empty() && !cli_only.is_empty(),
-            "SKILL.md 机器可读清单块缺失或为空——文件被改动时请同步解析逻辑");
-
-        // 1) 字典 readonly ⇔ READONLY_OPS 严格相等
-        let mut skill_ro = readonly.clone();
-        skill_ro.sort();
-        skill_ro.dedup();
-        let mut wl: Vec<&str> = READONLY_OPS.to_vec();
-        wl.sort();
-        assert_eq!(skill_ro, wl,
-            "SKILL.md readonly 清单与 READONLY_OPS 不一致（左=字典，右=白名单）——两边必须一起改");
-
-        // 词边界匹配：子串会让 "list-tokens" 误满足 "token"，也会被顺带的解释文字糊弄过去
-        let contains_word = |hay: &str, needle: &str| {
-            hay.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
-                .any(|w| w == needle)
-        };
-
-        if crate::engine_cli_binary().is_err() {
-            eprintln!("跳过引擎探针：本机无引擎二进制（静态断言已通过）");
-            return;
-        }
-
-        // 3) 引擎实测。造一篇两画板文档（delete-artboard/flow 需要）。
-        let rs = tokio::task::spawn_blocking(move || {
-            crate::exec_cli_pipeline(vec![
-                "template login lg".into(),
-                "template login lg2".into(),
-                "export-mbt-human".into(),
-            ])
-        })
-        .await
-        .unwrap();
-        let rs = rs.expect("构造探针文档失败");
-        let mbt = rs
-            .iter()
-            .find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
-            .and_then(|r| r.get("mbt").and_then(|v| v.as_str()).map(String::from))
-            .expect("引擎未产出 mbt");
-        let b = b64_encode(&mbt);
-
-        let apply_probe = |op: &str| -> String {
-            let out = crate::exec_cli_pipeline(vec![format!(
-                "apply-agent-mbt-op-b64 {b} {}",
-                b64_encode(op)
-            )])
-            .expect("引擎调用失败");
-            let last = out.last().cloned().unwrap_or(json!(null));
-            last.get("error").and_then(|v| v.as_str()).unwrap_or("OK").to_string()
-        };
-        let load_probe = |op: &str| -> String {
-            let out = crate::exec_cli_pipeline(vec![
-                format!("load-mbt-b64 {b}"),
-                op.to_string(),
-            ])
-            .expect("引擎调用失败");
-            let last = out
-                .iter()
-                .filter(|r| r.get("moonviz").is_none())
-                .next_back()
-                .cloned()
-                .unwrap_or(json!(null));
-            last.get("error").and_then(|v| v.as_str()).unwrap_or("OK").to_string()
-        };
-
-        // ---- 变更 op 清单的事实源：引擎 `list-ops`（OpEntry 注册表）----
-        // 此前清单来自 SKILL.md 手工块——引擎新增 op 而无人更新块时完全不可见。
-        // 现在直接消费引擎输出：探针表必须与 list-ops 集合严格相等（双向）。
-        let out = crate::exec_cli_pipeline(vec!["list-ops".into()]).expect("list-ops 失败");
-        let op_registry = out
-            .iter()
-            .find(|r| r.is_array())
-            .and_then(|r| r.as_array())
-            .expect("list-ops 未返回 JSON 数组（注册表坏了？）");
-        assert!(op_registry.len() >= 25,
-            "list-ops 只返回 {} 个 op——注册表塌缩了（应 ≥25）",
-            op_registry.len());
-        let mut engine_mutating: Vec<String> = Vec::new();
-        for e in op_registry {
-            let op = e.get("op").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            assert!(!op.is_empty(), "list-ops 条目缺 op 字段：{e}");
-            let agent_gate = e.get("gates")
-                .and_then(|g| g.get("agent"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            assert!(agent_gate, "list-ops 里 `{op}` 的 gates.agent=false——Agent 不可达，需另行分类");
-            let usage = e.get("usage").and_then(|v| v.as_str()).unwrap_or_default();
-            assert!(!usage.is_empty(), "list-ops 里 `{op}` 缺 usage");
-            engine_mutating.push(op);
-        }
-        engine_mutating.sort();
-        engine_mutating.dedup();
-
-        // 变更 op → 具体探针形态（ok 或谓词/语义错误都算语法接受，唯独 unsupported 不算）
-        let mutating_probes: &[(&str, &str)] = &[
-            ("create", "create p3 200 300"),
-            ("template", "template login p4"),
-            ("place", "place lg button b1 - 10 700"),
-            ("duplicate", "duplicate lg p5"),
-            ("delete-artboard", "delete-artboard lg2"),
-            ("move", "move lg logo 3 3"),
-            ("copy", "copy lg logo logo_c 5 5"),
-            ("delete", "delete lg logo"),
-            ("reorder", "reorder lg logo front"),
-            ("flip", "flip lg logo h"),
-            ("group", "group lg gg logo subtitle"),
-            ("ungroup", "ungroup lg gg"),
-            ("align", "align lg left logo subtitle"),
-            ("resize-canvas", "resize-canvas lg 400 900"),
-            ("responsive", "responsive lg"),
-            ("restyle", "restyle lg button fill=#00ff00"),
-            ("interact", "interact lg logo tap show_toast:hi"),
-            ("uninteract", "uninteract lg logo"),
-            ("state", "state lg logo pressed fill=#000000"),
-            ("set-state", "set-state logo pressed"),
-            ("flow", "flow lg lg2 logo"),
-            ("theme", "theme dark"),
-            ("token", "token primary #FF0000"),
-            ("fix", "fix lg"),
-            ("update", "update lg logo fill=#123456"),
-        ];
-        let mut probe_heads: Vec<&str> =
-            mutating_probes.iter().map(|(h, _)| *h).collect();
-        probe_heads.sort_unstable();
-        let probe_set: Vec<&str> = probe_heads.clone();
-        let engine_refs: Vec<&str> = engine_mutating.iter().map(|s| s.as_str()).collect();
-        assert_eq!(probe_set, engine_refs,
-            "探针表与引擎 list-ops 集合不一致（左=探针，右=引擎）——\
-             引擎新增 op 必须加探针并写进提示词，别删断言");
-        for (head, probe) in mutating_probes {
-            let err = apply_probe(probe);
-            assert!(!err.contains("mbt_operation_unsupported"),
-                "`{probe}` 被 apply 路径拒绝（{err}）——list-ops 标它为 Agent 可达变更 op，但引擎不认");
-            assert!(contains_word(INSTRUCTIONS, head),
-                "引擎 list-ops 已收录 `{head}`，但 INSTRUCTIONS 提示词未教它——Agent 永远用不到");
-        }
-
-        // 只读 op：load 路径必须可用，apply 路径必须 unsupported（路由契约双向锁定）
-        let readonly_probes: &[(&str, &str)] = &[
-            ("list", "list"),
-            ("flows", "flows"),
-            ("list-templates", "list-templates"),
-            ("list-components", "list-components"),
-            ("list-tools", "list-tools"),
-            ("list-tokens", "list-tokens"),
-            ("list-themes", "list-themes"),
-            ("benchmark", "benchmark"),
-            ("lint", "lint lg"),
-            ("critique", "critique lg"),
-            ("query", "query lg"),
-            ("infer", "infer lg"),
-            ("spec", "spec lg"),
-            ("missing", "missing lg"),
-            ("doc-json", "doc-json lg"),
-            ("states", "states lg"),
-            ("interactions", "interactions lg"),
-            ("export-svg", "export-svg lg"),
-            ("export-html", "export-html lg"),
-            ("tap", "tap lg 10 10"),
-        ];
-        for op in &readonly {
-            let Some((_, probe)) = readonly_probes.iter().find(|(h, _)| h == op) else {
-                panic!("SKILL.md 新增只读 op `{op}` 但探针表没有它——加探针，别删断言");
-            };
-            let load_err = load_probe(probe);
-            assert_eq!(load_err, "OK", "只读 op `{probe}` 在 load 路径失败：{load_err}");
-            let apply_err = apply_probe(probe);
-            assert!(apply_err.contains("mbt_operation_unsupported"),
-                "只读 op `{probe}` 走 apply 路径应被拒绝，实际返回：{apply_err}——若引擎已把它变为变更类，请同步字典与白名单");
-        }
-        assert_eq!(readonly_probes.len(), readonly.len(),
-            "只读探针表与字典条目数不一致——探针表不得收录字典外的 op");
-
-        // cli_only：apply 路径一律 unsupported
-        for op in &cli_only {
-            let err = apply_probe(op);
-            assert!(err.contains("mbt_operation_unsupported"),
-                "cli_only 项 `{op}` 在 apply 路径应返回 unsupported，实际：{err}");
-        }
-
-        // ---- 直接消费引擎输出：`list-tools` 工具注册表 ----
-        // 引擎 aefa1f6 起以 core/agent_api.mbt 为单一事实源，list-tools 输出合法的
-        // MCP tools/list JSON。注意它仍是 **MCP 命名层的策展子集**（create/copy/
-        // delete/reorder/flip/duplicate/delete-artboard/flow 等 CLI op 无 MCP 工具），
-        // 所以 CLI op 清单仍由 SKILL.md 块锚定；这里校验的是注册表健康度 +
-        // 我们教的每个 op 的 MCP 对应工具必须在场。
-        let out = crate::exec_cli_pipeline(vec!["list-tools".into()]).expect("list-tools 失败");
-        let registry = out
-            .iter()
-            .find(|r| r.is_array())
-            .and_then(|r| r.as_array())
-            .expect("list-tools 未返回 JSON 数组（注册表又坏了？）");
-        assert!(registry.len() >= 40,
-            "list-tools 只返回 {} 个工具——注册表塌缩回子集了（历史上曾只有 11 个）",
-            registry.len());
-        for t in registry {
-            for field in ["name", "description", "inputSchema"] {
-                assert!(t.get(field).is_some(), "注册表工具缺 {field} 字段：{t}");
-            }
-        }
-        let names: Vec<&str> = registry
-            .iter()
-            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
-            .collect();
-        // CLI op → MCP 工具对应表（仅收录确有对应的；无对应的 op 不入表）
-        let counterparts: &[(&str, &str)] = &[
-            ("template", "apply_template"),
-            ("place", "place_component"),
-            ("move", "move_node"),
-            ("update", "update_node"),
-            ("group", "group_nodes"),
-            ("ungroup", "ungroup_node"),
-            ("align", "align_nodes"),
-            ("resize-canvas", "resize_canvas"),
-            ("responsive", "generate_responsive"),
-            ("restyle", "restyle_component"),
-            ("interact", "interact"),
-            ("uninteract", "uninteract"),
-            ("interactions", "interactions"),
-            ("state", "define_state"),
-            ("set-state", "set_state"),
-            ("states", "list_states"),
-            ("theme", "apply_theme"),
-            ("token", "set_token"),
-            ("fix", "auto_fix"),
-            ("list", "list_artboards"),
-            ("list-templates", "list_templates"),
-            ("list-components", "list_components"),
-            ("list-tokens", "list_tokens"),
-            ("list-themes", "list_themes"),
-            ("lint", "lint_design"),
-            ("critique", "critique"),
-            ("query", "query_nodes"),
-            ("infer", "infer_page_type"),
-            ("spec", "generate_spec"),
-            ("missing", "infer_missing"),
-            ("export-svg", "export_svg"),
-            ("export-html", "export_html"),
-            ("benchmark", "benchmark"),
-        ];
-        for (op, tool) in counterparts {
-            assert!(names.contains(tool),
-                "CLI op `{op}` 的 MCP 对应工具 `{tool}` 不在 list-tools 注册表中——\
-                 引擎侧注册表与 op 面脱节，或映射表需更新");
-        }
-    }
-
     #[test]
     fn base_url_policy() {
         assert!(safe_base_url("https://api.deepseek.com").is_some());
@@ -1618,12 +1270,20 @@ mod tests {
         assert!(safe_base_url("ftp://x").is_none());
     }
 
-    /// 端到端 back 任务测试：mock OpenAI 端点（脚本化两轮 tool_calls）× 真实引擎二进制。
-    /// 覆盖：空项目 bootstrap → apply-op → 终态总结 → canonical mbt 契约。
+    /// 引擎（node 宿主 × 真 wasm 产物）可用性探针：不可用即跳过，绿不是假绿。
+    async fn engine_ready() -> bool {
+        matches!(
+            ENGINE.call("version_info", "", "").await,
+            Ok(v) if v.get("ok") == Some(&json!(true))
+        )
+    }
+
+    /// 端到端 back 任务测试：mock OpenAI 端点（脚本化两轮 tool_calls）× 真实 wasm 引擎。
+    /// 覆盖：空项目种子引导 → apply-op → 终态总结 → canonical mbt 契约。
     #[tokio::test]
     async fn agent_loop_with_mock_llm_and_real_engine() {
-        if crate::engine_cli_binary().is_err() {
-            eprintln!("跳过：本机无引擎二进制");
+        if !engine_ready().await {
+            eprintln!("跳过：V8 宿主或 wasm 产物不可用（node ≥24 + node scripts/sync-engine.mjs）");
             return;
         }
         // mock /chat/completions：第 1 轮返回 bootstrap 工具调用，第 2 轮返回总结
@@ -1680,6 +1340,7 @@ mod tests {
         });
 
         let out = run(
+            &ENGINE,
             "建一个登录页",
             None,
             "sk-test",
@@ -1768,8 +1429,8 @@ mod tests {
     /// system 提取、连续 tool 消息批处理为单条 user 消息、tool_call id 往返。
     #[tokio::test]
     async fn agent_loop_anthropic_protocol_with_mock_llm_and_real_engine() {
-        if crate::engine_cli_binary().is_err() {
-            eprintln!("跳过：本机无引擎二进制");
+        if !engine_ready().await {
+            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
             return;
         }
         // 第一轮：同消息两个 tool_use（触发两 tool 结果的批处理路径）
@@ -1780,7 +1441,7 @@ mod tests {
                     {"type": "tool_use", "id": "tu1", "name": "moonviz_op",
                      "input": {"op": "template login rt"}},
                     {"type": "tool_use", "id": "tu2", "name": "moonviz_op",
-                     "input": {"op": "fix rt"}}
+                     "input": {"op": "theme dark"}}
                 ],
                 "stop_reason": "tool_use"
             }),
@@ -1797,7 +1458,8 @@ mod tests {
         ])
         .await;
         let out = run(
-            "建一个登录页并修复",
+            &ENGINE,
+            "建一个登录页并切换主题",
             None,
             "sk-test",
             "MiniMax-M3",
@@ -1813,7 +1475,7 @@ mod tests {
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(
             out["ops"],
-            json!(["template login rt", "fix rt"]),
+            json!(["template login rt", "theme dark"]),
             "两个 tool_use 应都被归一化并执行"
         );
         assert_eq!(out["stopReason"], json!("done"));
@@ -1883,8 +1545,8 @@ mod tests {
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。
     #[tokio::test]
     async fn mid_run_llm_failure_preserves_committed_work() {
-        if crate::engine_cli_binary().is_err() {
-            eprintln!("跳过：本机无引擎二进制");
+        if !engine_ready().await {
+            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
             return;
         }
         // mock 只服务第一轮（bootstrap tool_call），之后 listener 关闭 → 第二轮连接被拒
@@ -1894,7 +1556,7 @@ mod tests {
                  "arguments": "{\"op\": \"template login lg\"}"}}
             ]}}]
         })]).await;
-        let out = run("建一个登录页", None, "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
+        let out = run(&ENGINE, "建一个登录页", None, "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "部分成功应 ok:true: {out}");
         assert!(out["partial_error"].is_string(), "应带 partial_error: {out}");
@@ -1905,25 +1567,15 @@ mod tests {
         assert!(out["render"]["artboards"].is_array(), "错误路径也要有 render 兜底");
     }
 
-    /// 只读会话（仅 read_mbt）：终态 render 不得为 null（render-mbt-b64 兜底）。
+    /// 只读会话（仅 read_mbt）：终态 render 不得为 null（render_mbt 兜底）。
     #[tokio::test]
     async fn readonly_session_gets_render_fallback() {
-        if crate::engine_cli_binary().is_err() {
-            eprintln!("跳过：本机无引擎二进制");
+        if !engine_ready().await {
+            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
             return;
         }
-        // 用真实引擎生成一个 mbt 文档作为输入
-        let rs = tokio::task::spawn_blocking(move || {
-            crate::exec_cli_pipeline(vec!["template login rt".into(), "export-mbt-human".into()])
-        })
-        .await
-        .unwrap();
-        let mbt_b64 = match rs {
-            Ok(rs) => rs.iter().find(|r| r.get("mbt").map(|v| v.is_string()).unwrap_or(false))
-                .and_then(|r| r.get("mbt").and_then(|v| v.as_str()).map(String::from)),
-            Err(_) => None,
-        };
-        let Some(mbt) = mbt_b64 else { eprintln!("跳过：引擎未产出 mbt"); return };
+        // 输入用静态种子文档（合法 canonical，无需引擎生成）
+        let mbt = seed_doc("rt", 390, 844);
 
         let (port, mock, _bodies) = spawn_mock_llm(vec![
             serde_json::json!({
@@ -1932,10 +1584,10 @@ mod tests {
                 ]}}]
             }),
             serde_json::json!({
-                "choices": [{"message": {"role": "assistant", "content": "当前文档包含登录页 rt。"}}]
+                "choices": [{"message": {"role": "assistant", "content": "当前文档包含画板 rt。"}}]
             }),
         ]).await;
-        let out = run("看下现在的文档", Some(&b64_encode(&mbt)), "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
+        let out = run(&ENGINE, "看下现在的文档", Some(&b64_encode(&mbt)), "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(out["stopReason"], json!("done"));

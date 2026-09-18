@@ -5,22 +5,20 @@
 #   --fresh：先 kill 旧进程 + 清 WebView 缓存，确保加载最新前端
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-export MOONVIZ_DIR="${MOONVIZ_DIR:-$(cd "$ROOT/../moonviz" 2>/dev/null && pwd)}"
 
-# 引擎只走独立二进制（无 moon run 回退）：缺失时现场构建
-ENGINE_BIN="$MOONVIZ_DIR/_build/native/release/build/cli/cli.exe"
-if [ ! -x "$ENGINE_BIN" ]; then
-  echo "→ 引擎二进制缺失，构建中（moon build --release --target native cli）…"
-  (cd "$MOONVIZ_DIR" && moon build --release --target native cli)
+# 引擎为预编译 wasm 产物（frontend/vendor/moonviz.wasm）：
+# 缺失时现场拉取（npm moonviz-engine-wasm，sha512 校验 + 真机契约探针，需 node ≥24）
+if [ ! -f "$ROOT/frontend/vendor/moonviz.wasm" ]; then
+  echo "→ 引擎 wasm 产物缺失，同步中（node scripts/sync-engine.mjs）…"
+  (cd "$ROOT" && node scripts/sync-engine.mjs)
 fi
-export MOONVIZ_CLI="${MOONVIZ_CLI:-$ENGINE_BIN}"
-echo "→ 引擎二进制：$MOONVIZ_CLI"
+echo "→ 引擎产物：frontend/vendor/moonviz.wasm（WebView 内进程执行）"
 
 # --fresh 或检测到旧进程：清理
 if [ "${1:-}" = "--fresh" ] || pgrep -f "deepDesign Studio" >/dev/null 2>&1 || pgrep -f "tauri dev" >/dev/null 2>&1; then
   echo "→ 清理旧进程与 WebView 缓存…"
   pkill -f "deepDesign Studio" 2>/dev/null || true
-  pkill -f "tauri dev" 2>/dev/null || true
+  pkill -f "tauri dev" >/dev/null 2>&1 || true
   sleep 0.5
   rm -rf "$HOME/Library/WebKit/com.deepcode.deepdesign" 2>/dev/null || true
   rm -rf "$HOME/Library/Caches/com.deepcode.deepdesign" 2>/dev/null || true
@@ -34,6 +32,5 @@ if [ -z "$TAURI_BIN" ]; then
 fi
 
 echo "→ debug 模式编译并启动 deepDesign Studio"
-echo "  引擎：$MOONVIZ_CLI（独立二进制）"
 echo "  提示：tauri dev 只 watch src-tauri/；改 frontend/ 后请在窗口按 ⌘R 刷新"
 cd "$ROOT" && exec "$TAURI_BIN" dev

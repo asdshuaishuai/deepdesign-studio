@@ -5,4 +5,9 @@ tmp_icons/
 __pycache__/
 .DS_Store
 *.log
+# 旧引擎 CLI 二进制目录（预编译 wasm 集成后不再使用，留一行防旧目录复活）
 src-tauri/engine/
+# wasm 产物与 manifest 由 scripts/sync-engine.mjs 拉取（不入库）；
+# components.json 是入库的探针验证快照
+frontend/vendor/moonviz.wasm
+frontend/vendor/engine-manifest.json
