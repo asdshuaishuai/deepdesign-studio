@@ -30,9 +30,9 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dst = join(root, 'frontend', 'vendor');
 
 // —— 引擎版本锚点（升级 = 改这里 + 重跑本脚本 + cd src-tauri && cargo test）——
-const ENGINE_VERSION = '0.1.1-fix';
+const ENGINE_VERSION = '0.1.1-session';
 const RELEASE_TAG = `engine-v${ENGINE_VERSION}`;
-// 资产名里的 wasm 版本（与 release tag 后缀不同——tag 是 -fix 补丁，资产仍 0.1.1）
+// 资产名里的 wasm 版本（release tag 带会话面后缀 -session，资产命名沿用 0.1.1）
 const WASM_ARTIFACT_VERSION = '0.1.1';
 // 资产文件名（标准 classic wasm；变体叫 moonviz-wasm-gc-*，本仓库不用）
 const WASM_ASSET = `moonviz-wasm-classic-${WASM_ARTIFACT_VERSION}.wasm`;
@@ -42,7 +42,7 @@ const WASM_URL =
   `https://github.com/asdshuaishuai/moonviz/releases/download/${RELEASE_TAG}/${WASM_ASSET}`;
 // 下载的 .wasm 文件整体 sha512（npm 无此产物；校验值取自 release 资产）
 const WASM_SHA512 =
-  'sha512-xDQEtbLoz5f8g6loMel4zNlfntdUo5e1mZ8Rd3/YMmkzGWLGcdgfdQtQSDWpXDK57SqhwINX+hfxcP8rpeqviA==';
+  'sha512-FzIfadPPU07xIs2+LGB/ky3b724Bl4B2CJzO3ymhdT0ETIZBGLP6XzgSCZezG+/2LK5FPhTqnX/z8A3JegpwYg==';
 
 const REQUIRED_EXPORTS = [
   'apply_human_op', 'apply_agent_op', 'render_mbt', 'validate_mbt',
@@ -50,8 +50,10 @@ const REQUIRED_EXPORTS = [
 ];
 // 非 session 的检视导出（session API 之外的直调面）
 const INSPECTION_EXPORTS = ['list_components', 'list_ops', 'list_tokens', 'list_themes'];
-// session API（24 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
+// session API（26 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
 // 导出 SVG/交互运行时等）。agent.rs 的只读 op 路由依赖这组导出。
+// session_count（泄漏可测）与 session_open_project_json（save→open 回灌）
+// 是 engine-v0.1.1-session 新增（上游 issues #1/#4B）。
 const SESSION_EXPORTS = [
   'session_open', 'session_close', 'session_apply_agent', 'session_apply_human',
   'session_export_svg', 'session_lint', 'session_critique', 'session_auto_fix',
@@ -59,34 +61,66 @@ const SESSION_EXPORTS = [
   'session_states', 'session_spec', 'session_constrain', 'session_infer_page_type',
   'session_infer_missing', 'session_extract_design_system', 'session_generate_responsive',
   'session_benchmark', 'session_save', 'session_component_compile_b64',
-  'session_library_snapshot', 'session_tap',
+  'session_library_snapshot', 'session_tap', 'session_count', 'session_open_project_json',
 ];
 
-// 组件候选（引擎 core/component.mbt 的 builtin 清单，含 v3 扩展）。
-// 同步时逐个 place 探针：引擎不认的 id 不会进快照，所以宁多勿漏。
-const COMPONENT_CANDIDATES = [
-  ['button', 'rect', 'actions', ['primary', 'secondary', 'danger'], [120, 44], '操作按钮。支持 primary/secondary/danger。'],
-  ['text_input', 'rect', 'inputs', ['default', 'filled'], [280, 44], '文本输入框。'],
-  ['card', 'frame', 'layout', ['elevated'], [320, 200], '卡片容器。垂直布局。'],
-  ['app_bar', 'rect', 'layout', ['surface', 'primary'], [390, 56], '顶部导航栏。'],
-  ['divider', 'rect', 'layout', ['default'], [320, 1], '分隔线。'],
-  ['heading', 'text', 'display', ['h1', 'h2', 'h3', 'h4'], [280, 36], '标题。h1=32px h2=24px h3=20px h4=16px。'],
-  ['body_text', 'text', 'display', ['body', 'caption'], [280, 20], '正文。body=14px caption=12px。'],
-  ['badge', 'rect', 'display', ['primary', 'success'], [64, 24], '徽标。'],
-  ['rect', 'rect', 'layout', ['default', 'outline'], [200, 100], '通用矩形：面板/背景条/装饰块。'],
-  ['checkbox', 'rect', 'selection', ['unchecked', 'checked'], [22, 22], '复选框。'],
-  ['switch', 'rect', 'selection', ['off', 'on'], [46, 26], '开关。'],
-  ['radio', 'rect', 'selection', ['unchecked', 'checked'], [20, 20], '单选圆点。'],
-  ['avatar', 'rect', 'display', ['circle', 'square'], [40, 40], '头像占位。'],
-  ['search_bar', 'rect', 'inputs', ['default', 'filled'], [240, 38], '搜索框（占位文字 text 设置）。'],
-  ['progress', 'rect', 'display', ['default', 'secondary'], [180, 6], '进度条。'],
-  ['chip', 'rect', 'display', ['default', 'selected'], [72, 30], '筛选/标签 chip。'],
-  ['fab', 'rect', 'actions', ['primary', 'error'], [56, 56], '悬浮操作按钮。'],
-  ['list_item', 'rect', 'layout', ['default', 'highlighted'], [320, 56], '列表行（text 为标题）。'],
-  ['tab_bar', 'rect', 'navigation', ['default', 'active'], [390, 56], '标签栏容器。'],
-  ['image', 'image', 'display', ['default', 'rounded'], [200, 140], '图片占位。'],
-  ['slider', 'rect', 'inputs', ['default', 'active'], [200, 4], '滑杆轨道。'],
-];
+// 组件描述词典（本地展示文案，前端面板 tooltip 与 agent list_components 共用）。
+// 组件的存在性/kind/category/variants/default_size 的**事实源是引擎
+// list_components 导出**（52 组件注册表）；导出无 description 字段，文案留本地。
+const COMPONENT_DESCRIPTIONS = {
+  button: '操作按钮。支持 primary/secondary/danger。',
+  text_input: '文本输入框。',
+  card: '卡片容器。垂直布局。',
+  app_bar: '顶部导航栏。',
+  divider: '分隔线。',
+  heading: '标题。h1=32px h2=24px h3=20px h4=16px。',
+  body_text: '正文。body=14px caption=12px。',
+  badge: '徽标。',
+  rect: '通用矩形：面板/背景条/装饰块。',
+  checkbox: '复选框。',
+  switch: '开关。',
+  radio: '单选圆点。',
+  avatar: '头像占位。',
+  search_bar: '搜索框（占位文字 text 设置）。',
+  progress: '进度条。',
+  chip: '筛选/标签 chip。',
+  fab: '悬浮操作按钮。',
+  list_item: '列表行（text 为标题）。',
+  tab_bar: '标签栏容器。',
+  image: '图片占位。',
+  slider: '滑杆轨道。',
+  alert: '警告条。info/success/error/warning。',
+  toast: '轻提示。',
+  snackbar: '底部通知条。',
+  skeleton: '加载骨架。text/circle/block。',
+  spinner: '加载指示器。',
+  meter: '度量条（用量指示）。',
+  dialog: '对话框。default/modal。',
+  drawer: '抽屉。left/right。',
+  popover: '气泡弹层。',
+  tooltip: '深色提示气泡。',
+  menu: '下拉菜单。',
+  breadcrumb: '面包屑导航。',
+  pagination: '分页器。',
+  stepper: '步骤指示点。',
+  navbar: 'Web 顶部导航条。',
+  bottom_nav: '底部导航栏。',
+  textarea: '多行文本输入。',
+  select: '下拉选择框。',
+  combobox: '可输入组合框。',
+  datepicker: '日期选择框。',
+  file_upload: '文件上传区。default/dashed。',
+  rating: '评分。',
+  tag: '标签。',
+  stat: '数据统计块。',
+  kbd: '键盘按键样式。',
+  table: '表格。default/striped。',
+  accordion: '折叠面板。',
+  carousel: '轮播容器。',
+  timeline: '时间轴。',
+  button_group: '按钮组。default/attached。',
+  link: '链接文字。',
+};
 
 // 与前端/agent 共用的最小种子文档（引擎要求至少一个视觉块才能承载 op）。
 const seedDoc = (id, w, h) => `---
@@ -191,14 +225,27 @@ async function contractProbe(exports, wasmBytes) {
   // classic wasm：字符串经内存编解码（与 engine-host.mjs 同构）
   const { readStr, writeStr } = makeStrCodec(exports);
 
-  // session 生命周期实跑（不只是存在性）：种子文档 open → lint → close
+  // session 生命周期实跑（不只是存在性）：种子文档 open → lint → save 回灌 → close
   const probeDoc = seedDoc('__seed', 390, 844);
+  const count0 = exports.session_count();
+  if (typeof count0 !== 'number') fail(`session_count 应返回裸数字，得到 ${typeof count0}`);
   const handle = exports.session_open(writeStr(probeDoc));
   if (!Number.isInteger(handle) || handle < 0) fail(`session_open 失败：handle=${handle}`);
-  // lint 返回违规数组（空数组=无违规），不是 {ok} 对象——可解析即通过
+  if (exports.session_count() !== count0 + 1) fail('session_count 未随 open 递增（上游 #1 回归）');
+  // lint 自 engine-v0.1.1-session 起经 {ok,data} 信封返回（data=违规数组）——可解析即通过
   try { JSON.parse(readStr(exports.session_lint(handle, writeStr('__seed')))); }
   catch { fail('session_lint 返回非 JSON'); }
+  // save→open 回灌（上游 #4B）：session_save 的 data 必须经 session_open_project_json 还原
+  const sv = JSON.parse(readStr(exports.session_save(handle)));
+  if (sv.ok !== true || typeof sv.data !== 'string' || !sv.data) {
+    fail(`session_save 信封异常：${JSON.stringify(sv).slice(0, 120)}`);
+  }
+  const hRe = exports.session_open_project_json(writeStr(sv.data));
+  if (!Number.isInteger(hRe) || hRe < 0) fail(`session_open_project_json 回灌失败：handle=${hRe}`);
+  if (exports.session_count() !== count0 + 2) fail('session_count 未计入回灌会话');
+  if (!exports.session_close(hRe)) fail('回灌会话 close 失败');
   if (!exports.session_close(handle)) fail('session_close 失败');
+  if (exports.session_count() !== count0) fail('session_close 后计数未归零（会话泄漏回归）');
   // list_ops 应给出 mutating op 注册表（op 面事实源）
   const ops = JSON.parse(readStr(exports.list_ops()));
   if (!Array.isArray(ops) || ops.length < 20) fail(`list_ops 异常：${JSON.stringify(ops).slice(0, 120)}`);
@@ -213,15 +260,30 @@ async function contractProbe(exports, wasmBytes) {
     fail(`模板清单与 agent.rs ENGINE_TEMPLATES 不一致（差异：${drift.join(', ')}）——两边必须一起改`);
   }
 
+  // 组件清单：引擎 list_components 导出是**事实源**（完整注册表，本仓库不再
+  // 手工维护候选清单），逐个 place 探针验证可放置（自动裁剪异常 id），
+  // description 取本地 COMPONENT_DESCRIPTIONS（导出无此字段）。
+  const listed = JSON.parse(readStr(exports.list_components()));
+  if (!Array.isArray(listed) || !listed.length) fail(`list_components 异常：${JSON.stringify(listed).slice(0, 120)}`);
   const dummy = seedDoc('__seed', 390, 844);
   const components = [];
-  for (const [id, kind, category, variants, size, description] of COMPONENT_CANDIDATES) {
+  for (const c of listed) {
+    if (!c || typeof c.id !== 'string' || !Array.isArray(c.variants)) {
+      fail(`list_components 条目形状异常：${JSON.stringify(c).slice(0, 80)}`);
+    }
     const r = JSON.parse(readStr(exports.apply_human_op(
       writeStr(dummy),
-      writeStr(`place __seed ${id} probe_${id} - 10 10`),
+      writeStr(`place __seed ${c.id} probe_${c.id} - 10 10`),
     )));
-    if (r.ok) components.push({ id, kind, category, variants, default_size: size, description });
-    else console.warn(`[sync-engine] 组件 ${id} 探针失败（跳过）：${r.error}`);
+    if (r.ok) {
+      components.push({
+        id: c.id, kind: c.kind, category: c.category,
+        variants: c.variants, default_size: c.default_size,
+        description: COMPONENT_DESCRIPTIONS[c.id] || '',
+      });
+    } else {
+      console.warn(`[sync-engine] 组件 ${c.id} place 探针失败（跳过）：${r.error}`);
+    }
   }
   if (!components.length) fail('组件探针全部失败——引擎产物或探针种子有异常');
   return { components, engineIds };

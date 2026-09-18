@@ -595,8 +595,8 @@ impl<'a> EngineState<'a> {
         }
     }
 
-    /// 组件清单：经桥取前端同源快照（wasm 0.1.1 未导出 list_components；
-    /// 快照由 sync-engine.mjs 用真机探针验证生成）。
+    /// 组件清单：经桥取前端同源快照（sync-engine.mjs 依引擎 list_components
+    /// 导出生成；桥不直调 wasm——快照带 description 文案并并入用户组件）。
     async fn list_components(&self) -> Value {
         let r = self.call("list_components", "", "").await;
         match r.get("components").and_then(|v| v.as_array()) {
@@ -1678,16 +1678,18 @@ mod tests {
             return;
         }
         let seed = seed_doc("sd", 390, 844);
+        // engine-v0.1.1-session 起只读 session 导出统一 {ok,data} 信封（上游 #4C）
         let lint = ENGINE.call("session_lint", &seed, "sd").await.unwrap();
-        // lint 返回违规数组（空=无违规）——可解析即通过
-        serde_json::from_str::<Value>(lint.to_string().as_str()).unwrap();
+        assert_eq!(lint["ok"], json!(true), "session_lint 应返回信封：{lint}");
+        assert!(lint["data"].is_array(), "session_lint 的 data 应为违规数组：{lint}");
         let flows = ENGINE.call("session_flows", &seed, "").await.unwrap();
-        serde_json::from_str::<Value>(flows.to_string().as_str()).unwrap();
+        assert_eq!(flows["ok"], json!(true), "session_flows 应返回信封：{flows}");
+        assert!(flows["data"].is_array(), "session_flows 的 data 应为数组：{flows}");
         let arts = ENGINE.call("session_list_artboards", &seed, "").await.unwrap();
-        let arr = arts.as_array().expect("session_list_artboards 应返回数组");
+        let arr = arts["data"].as_array().expect("session_list_artboards 的 data 应为数组");
         assert!(arr.iter().any(|a| a.get("id").and_then(|v| v.as_str()) == Some("sd")));
         let bench = ENGINE.call("session_benchmark", &seed, "").await.unwrap();
-        assert!(bench.get("avg_score").is_some(), "session_benchmark 应返回评分对象：{bench}");
+        assert!(!bench["data"]["avg_score"].is_null(), "session_benchmark 应返回评分对象：{bench}");
         // 直调检视导出
         let tokens = ENGINE.call("list_tokens", "", "").await.unwrap();
         assert!(tokens.get("colors").is_some(), "list_tokens 应返回颜色分组：{tokens}");
@@ -1747,5 +1749,20 @@ mod tests {
         assert!(out["render"].is_object(), "只读会话 render 必须兜底非 null: {out}");
         assert!(out["render"]["artboards"].is_array(), "兜底 render 应含 artboards");
         assert!(out["mbt_b64"].is_string(), "mbt 应原样回传");
+    }
+
+    /// session 泄漏契约（上游 issues #1 补了 session_count 导出后可测）：
+    /// 同一宿主进程内 open×2 → count=+2 → close×2 → count 归零。
+    /// 引擎没有该导出时此项不可测（变异保持绿），现在锁定防回归。
+    #[tokio::test]
+    async fn session_count_zero_after_close() {
+        if !engine_ready().await {
+            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
+            return;
+        }
+        let r = ENGINE.call("session_count_probe", &seed_doc(SEED_BOARD, 390, 844), "").await.unwrap();
+        assert_eq!(r["before"], json!(0), "独立宿主进程初始计数应为 0：{r}");
+        assert_eq!(r["during"], json!(2), "两次 open 后计数应为 2：{r}");
+        assert_eq!(r["after"], json!(0), "close 后计数未归零——会话泄漏回归：{r}");
     }
 }

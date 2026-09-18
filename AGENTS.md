@@ -27,7 +27,7 @@ docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体
   的 `moonviz-wasm-classic-<version>.wasm`——**纯 WASM MVP、宿主中立、零 import**；
   docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
   Builtins 提案、仅 V8 类引擎可跑，本仓库不用）。sync-engine.mjs 拉取 + sha512 校验 +
-  真机契约探针（7 经典/4 检视/24 session 导出 + 模板/组件）。字符串是 linear memory
+  真机契约探针（7 经典/4 检视/26 session 导出 + 模板/组件/会话计数）。字符串是 linear memory
   对象（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），宿主侧编解码（sync/engine-host/
   前端桥三处同构）；写入区锚在「当前内存大小+余量」之上，引擎 bump 堆顶不超过当前内存
   大小，故永不碰撞。**宿主中立 = wasmtime/Boa 等规范运行时均可加载**——终局纯 Rust

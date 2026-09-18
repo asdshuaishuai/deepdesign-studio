@@ -293,5 +293,427 @@
       4
     ],
     "description": "滑杆轨道。"
+  },
+  {
+    "id": "alert",
+    "kind": "rect",
+    "category": "feedback",
+    "variants": [
+      "info",
+      "success",
+      "error",
+      "warning"
+    ],
+    "default_size": [
+      320,
+      52
+    ],
+    "description": "警告条。info/success/error/warning。"
+  },
+  {
+    "id": "toast",
+    "kind": "rect",
+    "category": "feedback",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      240,
+      44
+    ],
+    "description": "轻提示。"
+  },
+  {
+    "id": "snackbar",
+    "kind": "rect",
+    "category": "feedback",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      300,
+      48
+    ],
+    "description": "底部通知条。"
+  },
+  {
+    "id": "skeleton",
+    "kind": "rect",
+    "category": "feedback",
+    "variants": [
+      "text",
+      "circle",
+      "block"
+    ],
+    "default_size": [
+      160,
+      16
+    ],
+    "description": "加载骨架。text/circle/block。"
+  },
+  {
+    "id": "spinner",
+    "kind": "rect",
+    "category": "feedback",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      24,
+      24
+    ],
+    "description": "加载指示器。"
+  },
+  {
+    "id": "meter",
+    "kind": "rect",
+    "category": "feedback",
+    "variants": [
+      "default",
+      "success"
+    ],
+    "default_size": [
+      140,
+      8
+    ],
+    "description": "度量条（用量指示）。"
+  },
+  {
+    "id": "dialog",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "default",
+      "modal"
+    ],
+    "default_size": [
+      360,
+      220
+    ],
+    "description": "对话框。default/modal。"
+  },
+  {
+    "id": "drawer",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "left",
+      "right"
+    ],
+    "default_size": [
+      300,
+      600
+    ],
+    "description": "抽屉。left/right。"
+  },
+  {
+    "id": "popover",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      220,
+      120
+    ],
+    "description": "气泡弹层。"
+  },
+  {
+    "id": "tooltip",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "dark"
+    ],
+    "default_size": [
+      140,
+      30
+    ],
+    "description": "深色提示气泡。"
+  },
+  {
+    "id": "menu",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      180,
+      160
+    ],
+    "description": "下拉菜单。"
+  },
+  {
+    "id": "breadcrumb",
+    "kind": "rect",
+    "category": "navigation",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      220,
+      28
+    ],
+    "description": "面包屑导航。"
+  },
+  {
+    "id": "pagination",
+    "kind": "rect",
+    "category": "navigation",
+    "variants": [
+      "default",
+      "active"
+    ],
+    "default_size": [
+      220,
+      32
+    ],
+    "description": "分页器。"
+  },
+  {
+    "id": "stepper",
+    "kind": "rect",
+    "category": "navigation",
+    "variants": [
+      "default",
+      "active"
+    ],
+    "default_size": [
+      28,
+      28
+    ],
+    "description": "步骤指示点。"
+  },
+  {
+    "id": "navbar",
+    "kind": "rect",
+    "category": "navigation",
+    "variants": [
+      "default",
+      "primary"
+    ],
+    "default_size": [
+      1100,
+      60
+    ],
+    "description": "Web 顶部导航条。"
+  },
+  {
+    "id": "bottom_nav",
+    "kind": "rect",
+    "category": "navigation",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      390,
+      56
+    ],
+    "description": "底部导航栏。"
+  },
+  {
+    "id": "textarea",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default",
+      "filled"
+    ],
+    "default_size": [
+      280,
+      96
+    ],
+    "description": "多行文本输入。"
+  },
+  {
+    "id": "select",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      200,
+      40
+    ],
+    "description": "下拉选择框。"
+  },
+  {
+    "id": "combobox",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      220,
+      40
+    ],
+    "description": "可输入组合框。"
+  },
+  {
+    "id": "datepicker",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      160,
+      40
+    ],
+    "description": "日期选择框。"
+  },
+  {
+    "id": "file_upload",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "default",
+      "dashed"
+    ],
+    "default_size": [
+      280,
+      120
+    ],
+    "description": "文件上传区。default/dashed。"
+  },
+  {
+    "id": "rating",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "off",
+      "on"
+    ],
+    "default_size": [
+      22,
+      22
+    ],
+    "description": "评分。"
+  },
+  {
+    "id": "tag",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "default",
+      "outline"
+    ],
+    "default_size": [
+      56,
+      24
+    ],
+    "description": "标签。"
+  },
+  {
+    "id": "stat",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      140,
+      80
+    ],
+    "description": "数据统计块。"
+  },
+  {
+    "id": "kbd",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      26,
+      24
+    ],
+    "description": "键盘按键样式。"
+  },
+  {
+    "id": "table",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "default",
+      "striped"
+    ],
+    "default_size": [
+      480,
+      200
+    ],
+    "description": "表格。default/striped。"
+  },
+  {
+    "id": "accordion",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "default",
+      "expanded"
+    ],
+    "default_size": [
+      320,
+      48
+    ],
+    "description": "折叠面板。"
+  },
+  {
+    "id": "carousel",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "default",
+      "wide"
+    ],
+    "default_size": [
+      320,
+      180
+    ],
+    "description": "轮播容器。"
+  },
+  {
+    "id": "timeline",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      12,
+      12
+    ],
+    "description": "时间轴。"
+  },
+  {
+    "id": "button_group",
+    "kind": "rect",
+    "category": "actions",
+    "variants": [
+      "default",
+      "attached"
+    ],
+    "default_size": [
+      180,
+      36
+    ],
+    "description": "按钮组。default/attached。"
+  },
+  {
+    "id": "link",
+    "kind": "text",
+    "category": "actions",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      80,
+      20
+    ],
+    "description": "链接文字。"
   }
 ]

@@ -90,6 +90,20 @@ function handle(req) {
     const comps = existsSync(COMPONENTS) ? readFileSync(COMPONENTS, 'utf8') : '[]';
     return { id, ok: true, json: JSON.stringify({ ok: true, components: JSON.parse(comps) }) };
   }
+  // 泄漏契约探针（上游 #1 提供 session_count 后可测）：同一进程内 open×2 →
+  // count +2 → close×2 → count 归零。Rust 侧断言 before/during/after。
+  if (fn === 'session_count_probe') {
+    const before = ex.session_count();
+    const h1 = ex.session_open(writeStr(req.mbt ?? ''));
+    const h2 = ex.session_open(writeStr(req.mbt ?? ''));
+    if (!Number.isInteger(h1) || h1 < 0 || !Number.isInteger(h2) || h2 < 0) {
+      return { id, ok: false, error: `session_open_failed:${h1}/${h2}` };
+    }
+    const during = ex.session_count();
+    ex.session_close(h1);
+    ex.session_close(h2);
+    return { id, ok: true, json: JSON.stringify({ before, during, after: ex.session_count() }) };
+  }
   if (!(fn in ARITY) && !fn.startsWith('session_')) {
     return { id, ok: false, error: `unknown_fn:${fn}` };
   }
