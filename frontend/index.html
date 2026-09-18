@@ -940,19 +940,46 @@ function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';cle
 function utf8ToB64(text){return btoa(unescape(encodeURIComponent(text)));}
 function b64ToUtf8(text){return decodeURIComponent(escape(atob(text)));}
 /* ---------- wasm 引擎（预编译产物，WebView 内进程执行，无子进程） ----------
- * 产物 frontend/vendor/moonviz.wasm 由 scripts/sync-engine.mjs 从官方
- * moonviz-engine-wasm 发布件拉取（sha512 校验 + 真机契约探针）。
- * WasmGC + js-string builtins：WebView2(Chromium 119+)/WKWebView(Safari 18.2+)。
+ * 产物 frontend/vendor/moonviz.wasm 是 MoonViz 的**标准** wasm（GitHub Releases
+ * classic wasm——纯 WASM MVP、宿主中立、零 import；docs 的 #wasm 节「标准 wasm 产物」）。
+ * 字符串是 linear memory 对象（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），
+ * 宿主经 engReadStr/engWriteStr 编解码；写入区锚在「当前内存大小+余量」之上，
+ * 引擎 bump 堆顶不超过当前内存大小，故永不被覆盖。
  * 供测试注入的接缝：window.__ENGINE_STUB__ = {apply,render} 存在时优先走桩。 */
 let engineExports=null,engineFailed='',engineReady=null;
+let engWriteOff=0,engLastMem=0;
+function engReadStr(ptr){
+  const mem=new DataView(engineExports.memory.buffer);
+  const len=mem.getUint32(ptr-4,true)&0x0FFFFFFF;
+  let s='';
+  for(let i=0;i<len;i++)s+=String.fromCharCode(mem.getUint16(ptr+i*2,true));
+  return s;
+}
+function engWriteStr(s){
+  const ex=engineExports;
+  const cur=ex.memory.buffer.byteLength;
+  if(cur!==engLastMem){engWriteOff=Math.max(engWriteOff,cur+65536);engLastMem=cur;}
+  const need=16+s.length*2;
+  if(ex.memory.buffer.byteLength<engWriteOff+need){
+    ex.memory.grow(Math.ceil((engWriteOff+need+65536-ex.memory.buffer.byteLength)/65536));
+  }
+  const mem=new DataView(ex.memory.buffer);
+  mem.setUint32(engWriteOff-8,0xFFFFFFE0,true);
+  mem.setUint32(engWriteOff-4,s.length,true);
+  for(let i=0;i<s.length;i++)mem.setUint16(engWriteOff+i*2,s.charCodeAt(i),true);
+  const ptr=engWriteOff;
+  engWriteOff=ptr+need+4096;
+  return ptr;
+}
 function loadEngine(){
   if(engineReady)return engineReady;
   engineReady=(async()=>{
     try{
       const r=await fetch('vendor/moonviz.wasm');
       if(!r.ok)throw new Error('wasm fetch HTTP '+r.status);
-      const mod=new WebAssembly.Module(await r.arrayBuffer(),{builtins:['js-string'],importedStringConstants:'_'});
-      engineExports=new WebAssembly.Instance(mod,{}).exports;
+      engineExports=new WebAssembly.Instance(new WebAssembly.Module(await r.arrayBuffer()),{}).exports;
+      engWriteOff=engineExports.memory.buffer.byteLength+4096;
+      engLastMem=engineExports.memory.buffer.byteLength;
     }catch(err){engineFailed=String(err&&err.message||err);}
   })();
   return engineReady;
@@ -963,7 +990,7 @@ async function engApply(gate,mbt,op){
   await loadEngine();
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
   const t0=performance.now();
-  const out=JSON.parse(engineExports[gate==='agent'?'apply_agent_op':'apply_human_op'](mbt,op));
+  const out=JSON.parse(engReadStr(engineExports[gate==='agent'?'apply_agent_op':'apply_human_op'](engWriteStr(mbt),engWriteStr(op))));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
   return out;
 }
@@ -973,19 +1000,19 @@ async function engRender(mbt){
   await loadEngine();
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
   const t0=performance.now();
-  const out=JSON.parse(engineExports.render_mbt(mbt));
+  const out=JSON.parse(engReadStr(engineExports.render_mbt(engWriteStr(mbt))));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
   return out;
 }
 async function engValidate(mbt){
   await loadEngine();
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
-  return JSON.parse(engineExports.validate_mbt(mbt));
+  return JSON.parse(engReadStr(engineExports.validate_mbt(engWriteStr(mbt))));
 }
 async function engTemplates(){
   await loadEngine();
   if(!engineExports)return[];
-  try{return JSON.parse(engineExports.list_templates()).map(t=>t.id??t.template_id??t);}catch(_){return[];}
+  try{return JSON.parse(engReadStr(engineExports.list_templates())).map(t=>t.id??t.template_id??t);}catch(_){return[];}
 }
 /* 引擎要求文档至少一个视觉块才能承载 op——空项目起步用最小种子画板引导，
  * 首条 op 落地后随即删掉种子（create 直接以种子为画板，一次 render 即成）。 */
@@ -1005,7 +1032,8 @@ async function bootstrapFirstBoard(cmd,id,w,h){
  *
  * session API（fn 以 session_ 开头）：单次请求内完成
  * session_open(mbt) → session_X(handle, ...args) → session_close 生命周期，
- * 与 scripts/engine-host.mjs 同构（测试与生产走同一份驱动逻辑）。 */
+ * 与 scripts/engine-host.mjs 同构（测试与生产走同一份驱动逻辑）。
+ * 全部调用经 engReadStr/engWriteStr 编解码（标准 classic wasm 的线性内存字符串）。 */
 if(IS_TAURI&&window.__TAURI__.event){
   const SESSION_WHOLE_ARG=new Set(['session_apply_agent','session_apply_human','session_component_compile_b64']);
   window.__TAURI__.event.listen('engine-req',async ev=>{
@@ -1019,15 +1047,21 @@ if(IS_TAURI&&window.__TAURI__.event){
         out={ok:true,components:allComps||[]};
       }else if(fn&&fn.startsWith('session_')){
         if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
-        const h=engineExports.session_open(p.mbt||'');
+        const h=engineExports.session_open(engWriteStr(p.mbt||''));
         if(!Number.isInteger(h)||h<0)throw new Error('session_open_failed:'+h);
         const op=String(p.op||'');
-        const args=SESSION_WHOLE_ARG.has(fn)?[op]:op.split(/\s+/).filter(Boolean);
-        try{out=JSON.parse(engineExports[fn](h,...args));}
+        const parts=op.split(/\s+/).filter(Boolean);
+        let args;
+        if(fn==='session_tap'){
+          args=parts.length>=3?[engWriteStr(parts[0]),Number(parts[1]),Number(parts[2])]:[engWriteStr(parts[0]||''),0,0];
+        }else{
+          args=SESSION_WHOLE_ARG.has(fn)?[engWriteStr(op)]:parts.map(engWriteStr);
+        }
+        try{out=JSON.parse(engReadStr(engineExports[fn](h,...args)));}
         finally{engineExports.session_close(h);}
       }else{
         if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
-        out=JSON.parse(engineExports[fn](p.mbt||'',p.op||''));
+        out=JSON.parse(engReadStr(engineExports[fn](engWriteStr(p.mbt||''),engWriteStr(p.op||''))));
       }
     }catch(err){out={ok:false,error:String(err&&err.message||err)};}
     try{await window.__TAURI__.core.invoke('engine_res',{id:p.id,json:JSON.stringify(out)});}catch(_){}

@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// 引擎同步（预编译 wasm 产物）：把 MoonViz 引擎的官方 WasmGC 产物拉到 frontend/vendor/。
+// 引擎同步（预编译 wasm 产物）：把 MoonViz 引擎的**标准** wasm 产物拉到 frontend/vendor/。
 //
-// 引擎不再以兄弟仓库源码 + MoonBit 现场构建的方式集成；唯一分发物是 GitHub Releases
-// 的 `moonviz-wasm-gc-<version>.wasm`（标准 wasm SDK，与 engine-v* tag 同源），一份 wasm
-// 全平台通用（WebView 内进程执行），无子进程、无工具链。
+// 引擎以 GitHub Releases 的 classic wasm（`moonviz-wasm-classic-<version>.wasm`，docs 的
+// #wasm 节的「标准 wasm 产物」——纯 WASM MVP、宿主中立、零 import）分发；wasm-gc 变体
+// （npm moonviz-engine-wasm）依赖 JS String Builtins 提案、仅 V8 类引擎可跑，本仓库不用。
+// classic 的字符串是 linear memory 对象（[refcnt][len][UTF-16LE]），宿主侧做编解码
+// （见 engine-host.mjs 的 makeStrCodec）；入参方向暂无引擎堆分配辅助，宿主在初始内存
+// 之上写字符串对象（高水位上移防碰撞）。
 //
 // 产物：
 //   frontend/vendor/moonviz.wasm          引擎本体（gitignore，构建/开发期拉取）
@@ -31,13 +34,15 @@ const ENGINE_VERSION = '0.1.1-fix';
 const RELEASE_TAG = `engine-v${ENGINE_VERSION}`;
 // 资产名里的 wasm 版本（与 release tag 后缀不同——tag 是 -fix 补丁，资产仍 0.1.1）
 const WASM_ARTIFACT_VERSION = '0.1.1';
+// 资产文件名（标准 classic wasm；wasm-gc 变体叫 moonviz-wasm-gc-*）
+const WASM_ASSET = `moonviz-wasm-classic-${WASM_ARTIFACT_VERSION}.wasm`;
 // 标准 wasm SDK：GitHub Releases 的 WasmGC 直链 .wasm（非 tarball）
 const WASM_URL =
   process.env.MOONVIZ_WASM_URL ||
-  `https://github.com/asdshuaishuai/moonviz/releases/download/${RELEASE_TAG}/moonviz-wasm-gc-${WASM_ARTIFACT_VERSION}.wasm`;
+  `https://github.com/asdshuaishuai/moonviz/releases/download/${RELEASE_TAG}/${WASM_ASSET}`;
 // 下载的 .wasm 文件整体 sha512（npm 无此产物；校验值取自 release 资产）
 const WASM_SHA512 =
-  'sha512-/z1z0wjTWKEq9meR+is3UCUBru6f9R6US7CXC3rUTfaH+EEE1JtRE7galKOWAH8jNK8alUP3NHRn+vFquHH21Q==';
+  'sha512-xDQEtbLoz5f8g6loMel4zNlfntdUo5e1mZ8Rd3/YMmkzGWLGcdgfdQtQSDWpXDK57SqhwINX+hfxcP8rpeqviA==';
 
 const REQUIRED_EXPORTS = [
   'apply_human_op', 'apply_agent_op', 'render_mbt', 'validate_mbt',
@@ -123,12 +128,49 @@ async function download() {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function instantiate(bytes) {
-  const mod = new WebAssembly.Module(bytes, {
-    builtins: ['js-string'],
-    importedStringConstants: '_',
-  });
-  return new WebAssembly.Instance(mod, {}).exports;
+// classic wasm：零 import，标准实例化；字符串经内存编解码（与 engine-host.mjs 同构）
+function instantiate(bytes) {
+  return new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
+}
+
+/// 宿主侧字符串编解码：classic 的字符串对象布局为
+/// [refcnt@ptr-8][长度@ptr-4][UTF-16LE 数据@ptr+0]。
+/// 写入用负 refcnt（不朽，引擎 GC 不回收），地址取引擎初始内存之上的高水位区
+/// （每次上移，防引擎 bump 堆长入后碰撞）。
+function makeStrCodec(ex) {
+  const INITIAL = ex.memory.buffer.byteLength;
+  // 写入区安全不变量：引擎的 bump 堆顶**永远不超过当前内存大小**（超了它就会先 grow）。
+  // 所以只要写入区位于「当前内存大小 + 余量」之上，就绝不会被引擎堆覆盖。
+  // 引擎增长过内存（其堆顶上移）时，把写入区重新锚到当前内存之上。
+  let writeOff = INITIAL + 4096;
+  let lastSize = INITIAL;
+  const readStr = (ptr) => {
+    const mem = new DataView(ex.memory.buffer);
+    const len = mem.getUint32(ptr - 4, true) & 0x0FFFFFFF;
+    let s = '';
+    for (let i = 0; i < len; i++) s += String.fromCharCode(mem.getUint16(ptr + i * 2, true));
+    return s;
+  };
+  const writeStr = (s) => {
+    const cur = ex.memory.buffer.byteLength;
+    if (cur !== lastSize) {
+      // 引擎增长过内存 → 其堆已上移 → 写入区跳到当前内存之上（64KB 余量）
+      writeOff = Math.max(writeOff, cur + 65536);
+      lastSize = cur;
+    }
+    const need = 16 + s.length * 2;
+    if (ex.memory.buffer.byteLength < writeOff + need) {
+      ex.memory.grow(Math.ceil((writeOff + need + 65536 - ex.memory.buffer.byteLength) / 65536));
+    }
+    const mem = new DataView(ex.memory.buffer);
+    mem.setUint32(writeOff - 8, 0xFFFFFFE0, true);   // refcnt 负值 = 不朽对象，引擎 GC 不回收
+    mem.setUint32(writeOff - 4, s.length, true);     // header = 长度
+    for (let i = 0; i < s.length; i++) mem.setUint16(writeOff + i * 2, s.charCodeAt(i), true);
+    const ptr = writeOff;
+    writeOff = ptr + need + 4096;
+    return ptr;
+  };
+  return { readStr, writeStr };
 }
 
 function agentTemplateIds() {
@@ -146,19 +188,22 @@ async function contractProbe(exports, wasmBytes) {
   const missSess = SESSION_EXPORTS.filter((n) => typeof exports[n] !== 'function');
   if (missSess.length) fail(`wasm 缺少 session API 导出：${missSess.join(', ')}`);
 
+  // classic wasm：字符串经内存编解码（与 engine-host.mjs 同构）
+  const { readStr, writeStr } = makeStrCodec(exports);
+
   // session 生命周期实跑（不只是存在性）：种子文档 open → lint → close
   const probeDoc = seedDoc('__seed', 390, 844);
-  const handle = exports.session_open(probeDoc);
+  const handle = exports.session_open(writeStr(probeDoc));
   if (!Number.isInteger(handle) || handle < 0) fail(`session_open 失败：handle=${handle}`);
   // lint 返回违规数组（空数组=无违规），不是 {ok} 对象——可解析即通过
-  try { JSON.parse(exports.session_lint(handle, '__seed')); }
+  try { JSON.parse(readStr(exports.session_lint(handle, writeStr('__seed')))); }
   catch { fail('session_lint 返回非 JSON'); }
   if (!exports.session_close(handle)) fail('session_close 失败');
   // list_ops 应给出 mutating op 注册表（op 面事实源）
-  const ops = JSON.parse(exports.list_ops());
+  const ops = JSON.parse(readStr(exports.list_ops()));
   if (!Array.isArray(ops) || ops.length < 20) fail(`list_ops 异常：${JSON.stringify(ops).slice(0, 120)}`);
 
-  const engineIds = JSON.parse(exports.list_templates())
+  const engineIds = JSON.parse(readStr(exports.list_templates()))
     .map((t) => t.id ?? t.template_id ?? t);
   const agentIds = agentTemplateIds();
   const drift =
@@ -171,7 +216,10 @@ async function contractProbe(exports, wasmBytes) {
   const dummy = seedDoc('__seed', 390, 844);
   const components = [];
   for (const [id, kind, category, variants, size, description] of COMPONENT_CANDIDATES) {
-    const r = JSON.parse(exports.apply_human_op(dummy, `place __seed ${id} probe_${id} - 10 10`));
+    const r = JSON.parse(readStr(exports.apply_human_op(
+      writeStr(dummy),
+      writeStr(`place __seed ${id} probe_${id} - 10 10`),
+    )));
     if (r.ok) components.push({ id, kind, category, variants, default_size: size, description });
     else console.warn(`[sync-engine] 组件 ${id} 探针失败（跳过）：${r.error}`);
   }
@@ -184,16 +232,16 @@ async function main() {
   const wasmPath = join(dst, 'moonviz.wasm');
   const manifestPath = join(dst, 'engine-manifest.json');
 
-  // 跳过判断：现存 wasm 的哈希与上次 manifest 记录一致且版本未变 → 不再下载
+  // 跳过判断：现存 wasm 的哈希必须与**当前锚点**一致（换工件类型如 gc→classic 时
+  // 锚点变了，旧文件自然不匹配 → 重新下载；只比对 manifest 记录值会被旧产物骗过）
   let manifest = { version: ENGINE_VERSION, source: WASM_URL, releaseTag: RELEASE_TAG };
   let skipDownload = false;
-  if (existsSync(wasmPath) && existsSync(manifestPath)) {
+  if (existsSync(wasmPath)) {
     try {
-      const prev = JSON.parse(readFileSync(manifestPath, 'utf8'));
-      if (prev.version === ENGINE_VERSION && prev.wasm_sha512 === sha512Base64(readFileSync(wasmPath))) {
+      if (sha512Base64(readFileSync(wasmPath)) === WASM_SHA512) {
         skipDownload = true;
       }
-    } catch { /* manifest 损坏 → 重新下载 */ }
+    } catch { /* 读取异常 → 重新下载 */ }
   }
 
   let bytes;
@@ -229,7 +277,7 @@ async function main() {
       `${SESSION_EXPORTS.length} session API（open→lint→close 实跑）/ ${engineIds.length} 模板 / ${components.length} 组件`
     );
   } catch (e) {
-    // Node < 24 无法实例化 WasmGC + js-string：产物本身没问题，但契约没人背书
+    // 实例化/编解码异常：产物本身没问题，但契约没人背书
     console.warn(`[sync-engine] 跳过契约探针（${e.message}）——请用 Node ≥ 24 重跑以验证导出面与组件快照`);
   }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');

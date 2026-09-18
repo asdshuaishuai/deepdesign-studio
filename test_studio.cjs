@@ -146,15 +146,19 @@ applyMbtResult({ok:true,mbt:'canonical',entry:'a',revision:1,artboards:[{id:'a',
  }else{
    let ex;
    try{
-     const mod=new WebAssembly.Module(fs.readFileSync(wasmPath),{builtins:['js-string'],importedStringConstants:'_'});
-     ex=new WebAssembly.Instance(mod,{}).exports;
+     // 标准 classic wasm：零 import，标准实例化（wasm-gc 变体才需要 js-string builtins）
+     ex=new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(wasmPath)),{}).exports;
    }catch(e){
-     console.warn('跳过 wasm 契约：本机 Node 无法实例化 WasmGC（需 ≥24）：'+e.message);
+     console.warn('跳过 wasm 契约：无法实例化 wasm 产物：'+e.message);
    }
    if(ex){
      for(const name of ['apply_human_op','apply_agent_op','render_mbt','validate_mbt','list_templates','export_html','version_info'])
        assert.equal(typeof ex[name],'function',`wasm 缺导出 ${name}——引擎产物面变了，同步前端与 agent`);
-     const engineIds=JSON.parse(ex.list_templates()).map(t=>t.id??t.template_id??t);
+     // classic wasm 字符串是 linear memory 对象：header(长度)@ptr-4、UTF-16LE@ptr+0
+     const readStr=(ptr)=>{const mem=new DataView(ex.memory.buffer);
+       const len=mem.getUint32(ptr-4,true)&0x0FFFFFFF;let s='';
+       for(let i=0;i<len;i++)s+=String.fromCharCode(mem.getUint16(ptr+i*2,true));return s;};
+     const engineIds=JSON.parse(readStr(ex.list_templates())).map(t=>t.id??t.template_id??t);
      const agentSrc=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
      const tplBlock=agentSrc.match(/const ENGINE_TEMPLATES[^=]*=\s*r?"([\s\S]*?)";/);
      assert(tplBlock,'无法从 agent.rs 解析 ENGINE_TEMPLATES');

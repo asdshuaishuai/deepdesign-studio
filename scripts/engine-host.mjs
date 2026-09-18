@@ -1,9 +1,13 @@
 #!/usr/bin/env node
-// engine-host.mjs —— MoonViz wasm 引擎的 Node 宿主。
+// engine-host.mjs —— MoonViz **标准** wasm 引擎（classic，宿主中立）的 Node 宿主。
 //
 // 生产环境引擎跑在 WebView（frontend 内嵌 wasm）；Rust 侧（agent.rs）通过
 // Tauri 事件桥调用。本脚本是同一份 wasm 的命令行宿主，供 cargo test 在无
-// WebView 的环境里驱动「真引擎」跑端到端与契约测试（node ≥ 24）。
+// WebView 的环境里驱动「真引擎」跑端到端与契约测试。
+//
+// classic wasm 无 import、`(i32)->i32` 签名，字符串是 linear memory 对象
+// （[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]）——字符串进出全部经 makeStrCodec
+// 编解码（写入区锚在「当前内存大小 + 余量」之上，防引擎 bump 堆覆盖）。
 //
 // 两种模式：
 //   1. 行协议（长驻）：stdin 每行一个请求 {"id":n,"fn":...,"mbt":...,"op":...}，
@@ -35,8 +39,39 @@ if (!existsSync(WASM)) {
   process.exit(1);
 }
 const bytes = readFileSync(WASM);
-const mod = new WebAssembly.Module(bytes, { builtins: ['js-string'], importedStringConstants: '_' });
-const ex = new WebAssembly.Instance(mod, {}).exports;
+const ex = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
+
+// classic wasm 字符串编解码（与 sync-engine.mjs 同构）：
+// 写入区始终锚在「当前内存大小 + 余量」之上——引擎 bump 堆顶不超过当前内存大小，
+// 故该区永不与引擎堆碰撞；引擎增长过内存时重新锚定。
+const INITIAL_MEM = ex.memory.buffer.byteLength;
+let writeOff = INITIAL_MEM + 4096;
+let lastMemSize = INITIAL_MEM;
+const readStr = (ptr) => {
+  const mem = new DataView(ex.memory.buffer);
+  const len = mem.getUint32(ptr - 4, true) & 0x0FFFFFFF;
+  let s = '';
+  for (let i = 0; i < len; i++) s += String.fromCharCode(mem.getUint16(ptr + i * 2, true));
+  return s;
+};
+const writeStr = (s) => {
+  const cur = ex.memory.buffer.byteLength;
+  if (cur !== lastMemSize) {
+    writeOff = Math.max(writeOff, cur + 65536);
+    lastMemSize = cur;
+  }
+  const need = 16 + s.length * 2;
+  if (ex.memory.buffer.byteLength < writeOff + need) {
+    ex.memory.grow(Math.ceil((writeOff + need + 65536 - ex.memory.buffer.byteLength) / 65536));
+  }
+  const mem = new DataView(ex.memory.buffer);
+  mem.setUint32(writeOff - 8, 0xFFFFFFE0, true);
+  mem.setUint32(writeOff - 4, s.length, true);
+  for (let i = 0; i < s.length; i++) mem.setUint16(writeOff + i * 2, s.charCodeAt(i), true);
+  const ptr = writeOff;
+  writeOff = ptr + need + 4096;
+  return ptr;
+};
 
 const ARITY = {
   apply_agent_op: 2, apply_human_op: 2, render_mbt: 1, validate_mbt: 1,
@@ -60,27 +95,36 @@ function handle(req) {
   if (typeof ex[fn] !== 'function') {
     return { id, ok: false, error: `unknown_fn:${fn}` };
   }
-  // session API：单次调用内完成 open → op → close 生命周期
-  if (fn.startsWith('session_')) {
-    try {
-      const handle = ex.session_open(req.mbt ?? '');
+  // 全部调用经编解码（classic wasm 字符串是内存对象）；返回值为字符串指针。
+  // session_tap 例外：artboard 是字符串，x/y 是 f64 参数（不能当指针传）。
+  try {
+    if (fn.startsWith('session_')) {
+      const handle = ex.session_open(writeStr(req.mbt ?? ''));
       if (!Number.isInteger(handle) || handle < 0) {
         return { id, ok: false, error: `session_open_failed:${handle}` };
       }
       const op = String(req.op ?? '');
-      const args = SESSION_WHOLE_ARG.has(fn)
-        ? [op]
-        : op.split(/\s+/).filter(Boolean);
-      const out = ex[fn](handle, ...args);
+      const parts = op.split(/\s+/).filter(Boolean);
+      let args;
+      if (fn === 'session_tap') {
+        args = parts.length >= 3
+          ? [writeStr(parts[0]), Number(parts[1]), Number(parts[2])]
+          : [writeStr(parts[0] ?? ''), 0, 0];
+      } else {
+        args = SESSION_WHOLE_ARG.has(fn)
+          ? [writeStr(op)]
+          : parts.map(writeStr);
+      }
+      const outPtr = ex[fn](handle, ...args);
       ex.session_close(handle);
-      return { id, ok: true, json: out };
-    } catch (e) {
-      return { id, ok: false, error: `wasm_panic:${e.message}` };
+      return { id, ok: true, json: readStr(outPtr) };
     }
-  }
-  const args = ARITY[fn] === 0 ? [] : ARITY[fn] === 1 ? [req.mbt ?? ''] : [req.mbt ?? '', req.op ?? ''];
-  try {
-    return { id, ok: true, json: ex[fn](...args) };
+    const args = ARITY[fn] === 0
+      ? []
+      : ARITY[fn] === 1
+        ? [writeStr(req.mbt ?? '')]
+        : [writeStr(req.mbt ?? ''), writeStr(req.op ?? '')];
+    return { id, ok: true, json: readStr(ex[fn](...args)) };
   } catch (e) {
     return { id, ok: false, error: `wasm_panic:${e.message}` };
   }

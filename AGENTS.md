@@ -11,7 +11,7 @@ frontend/index.html        纯静态单文件前端（无打包器、无 HTTP �
 src-tauri/src/lib.rs       Tauri 命令层：engine_res / invoke_fx_sdk / save_ddp / open_ddp / diagnostics / model_registry + EngineHost
 src-tauri/src/node_host.rs node 子进程引擎宿主（cargo test 专用，驱动同一份 wasm 产物）
 src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI/Anthropic 工具调用 × 引擎事件桥）
-scripts/sync-engine.mjs    引擎产物同步：npm 拉 moonviz-engine-wasm → sha512 校验 → 真机契约探针 → frontend/vendor/
+scripts/sync-engine.mjs    引擎产物同步：GitHub Releases 拉标准 classic wasm → sha512 校验 → 真机契约探针 → frontend/vendor/
 vendor/moonviz-ddp/        vendored DDP 编解码 crate（引擎仓库 MIT 副本，见其 README）
 docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体 + wasmtime 纯 Rust 宿主
 ```
@@ -23,10 +23,15 @@ docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
 - **人类操作与 Agent 操作走不同引擎入口**：画布/Agent 共用 wasm 面的 `apply_human_op` /
   `apply_agent_op`（与 CLI 双门同一分发器），语义差异由门实现，不要在前端绕过门直接改数据。
-- **引擎是预编译 WasmGC + js-string builtins 产物**（`frontend/vendor/moonviz.wasm`，
-  sync-engine.mjs 从 npm `moonviz-engine-wasm` 拉取、sha512 校验、编译期 include_bytes 嵌入
-  Rust 侧；前端经 `fetch('vendor/moonviz.wasm')` 实例化）。**只有真 JS 引擎能加载它**
-  （WebView / Node ≥24 / Rusty V8）——wasmtime、Boa 等无 js-string builtins 的运行时不行。
+- **引擎是标准 classic wasm 产物**（`frontend/vendor/moonviz.wasm`，GitHub Releases
+  的 `moonviz-wasm-classic-<version>.wasm`——**纯 WASM MVP、宿主中立、零 import**；
+  docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
+  Builtins 提案、仅 V8 类引擎可跑，本仓库不用）。sync-engine.mjs 拉取 + sha512 校验 +
+  真机契约探针（7 经典/4 检视/24 session 导出 + 模板/组件）。字符串是 linear memory
+  对象（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），宿主侧编解码（sync/engine-host/
+  前端桥三处同构）；写入区锚在「当前内存大小+余量」之上，引擎 bump 堆顶不超过当前内存
+  大小，故永不碰撞。**宿主中立 = wasmtime/Boa 等规范运行时均可加载**——终局纯 Rust
+  宿主不再需要等上游变体。
 - 两个引擎实例（WebView 画布 + node 测试宿）**只交换 canonical `.mbt.md` 文本**，无共享状态；
   前端调 `engApply/engRender`（wasm 直调），agent 循环经**结构化事件桥**（`engine-req` 事件 →
   前端 wasm 执行 → `engine_res` 命令回传，serde 对象直达无 JS 拼接）——**终局是 wasmtime 纯
@@ -115,9 +120,10 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
 - **Windows 本机编译需 MSVC 工具链**：tauri/webview2 链接在 GNU 工具链下失败
   （`linking with x86_64-w64-mingw32-gcc failed`）。本机默认是 GNU 时用
   `cargo +stable-x86_64-pc-windows-msvc test`，或 `rustup default stable-x86_64-pc-windows-msvc`。
-- **测试引擎依赖 node ≥24**（WasmGC + js-string builtins）：cargo test 的引擎契约/端到端走
-  `node_host.rs` → `scripts/engine-host.mjs`，node 缺失/过旧时这些测试**静默跳过**（eprintln
-  提示，仍算绿）——看到绿先确认没有 "跳过" 输出。前端契约测试 `test_studio.cjs` 同理。
+- **测试引擎依赖 node**（classic wasm 无 WasmGC 要求，旧 node 亦可实例化）：cargo test 的
+  引擎契约/端到端走 `node_host.rs` → `scripts/engine-host.mjs`，node 缺失时这些测试
+  **静默跳过**（eprintln 提示，仍算绿）——看到绿先确认没有 "跳过" 输出。前端契约测试
+  `test_studio.cjs` 同理。
 - **改 `frontend/` 后 `tauri dev` 不会热更**（它只 watch `src-tauri/`）。需在窗口按 ⌘R，
   或用 `./dev.sh --fresh`。`lib.rs` 里还有一段强制 `?v=<timestamp>` 重载，是为了绕 WKWebView 缓存——
   不要删。

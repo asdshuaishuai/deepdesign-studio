@@ -1,12 +1,15 @@
 # MoonViz: AI-Native Prototype Design Engine
 
-> **本文件是 deepDesign 仓库的引擎能力字典（vendored 副本，随 engine-v0.1.1-fix 适配到 wasm session API）。**
+> **本文件是 deepDesign 仓库的引擎能力字典（vendored 副本，已适配到标准 classic wasm + session API）。**
 > 源自 `../moonviz/SKILL.md`。本副本额外保留 deepDesign 特有部分（双门表、机器可读
 > 清单块、验证附录）。**op 语法内核不变**（wasm 的 apply_human_op/apply_agent_op 吃的
-> 还是同一套 op 串）；变的是**引擎接口形态**：从 CLI 独立二进制（stdin/stdout）改为
-> GitHub Releases 的预编译 wasm 工件（35 导出：7 经典 + 4 检视直调 + 24 session API）。
+> 还是同一套 op 串）；变的是**引擎接口形态**：CLI 独立二进制（stdin/stdout）→ GitHub
+> Releases 的**标准 classic wasm**（`moonviz-wasm-classic-<version>.wasm`，纯 WASM MVP、
+> 宿主中立、零 import；docs #wasm 的「标准 wasm」。**wasm-gc 变体**（npm
+> moonviz-engine-wasm，依赖 JS String Builtins 提案、仅 V8 类引擎）本仓库不用）。
+> 35 导出 = 7 经典 + 4 检视直调 + 24 session API；字符串经宿主线性内存编解码。
 > 只读检视命令经 session API 可达（list-tools/doc-json 无对应导出除外）。
-> 引擎更新后：`node scripts/sync-engine.mjs`（release 拉取 + 全量导出探针）→ `cargo test`。
+> 引擎更新后：`node scripts/sync-engine.mjs`（release 拉取 + sha512 + 全量导出探针）→ `cargo test`。
 
 ## What This Is
 
