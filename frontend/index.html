@@ -1329,7 +1329,7 @@ async function createFlow(from,to,node){
 async function switchSession(id){
   const s=sessions[id];if(!s||id===active)return;
   active=id;baseCmd=s.baseCmd;currentW=s.w;currentH=s.h;
-  opCmds=mbtText?[]:s.ops.slice();currentSvg=s.svg||currentSvg;nodes=s.nodes||nodes;selected=null;closeAgentPop();
+  opCmds=mbtText?[]:s.ops.slice();currentSvg=s.svg||'';nodes=s.nodes||[];selected=null;closeAgentPop();  // 渲染缺失回退空,不沿用上一画板
   setStatus('human',`切换到 ${id}`,true,'');
   await refresh();
   if(mode==='decl')loadDeclMain();
