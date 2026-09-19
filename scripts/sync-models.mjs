@@ -46,13 +46,17 @@ console.log(`[sync-models] fetching ${SOURCE} ...`);
 const resp = await fetch(SOURCE);
 if (!resp.ok) fail(`拉取失败 HTTP ${resp.status}`);
 const api = await resp.json();
-if (!api || typeof api !== 'object') fail('api.json 不是对象');
+if (!api || typeof api !== 'object' || Array.isArray(api)) fail('api.json 不是对象');
 
 const keep = [...new Set(Object.values(PROVIDER_MAP))];
 const providers = {};
 for (const pid of keep) {
   const p = api[pid];
   if (!p) fail(`api.json 缺提供商 ${pid}——上游改名了？同步更新 PROVIDER_MAP`);
+  // 温和 schema 漂移照写会让坏快照静默入库、拖到 cargo test 才红——这里直接拒
+  if (typeof p.name !== 'string') fail(`提供商 ${pid} 的 name 不是字符串`);
+  if (typeof p.api !== 'string' || !/^https:\/\//.test(p.api)) fail(`提供商 ${pid} 的 api 端点异常：${String(p.api)}`);
+  if (p.models && typeof p.models !== 'object') fail(`提供商 ${pid} 的 models 不是对象`);
   const models = {};
   for (const [mid, m] of Object.entries(p.models || {})) {
     models[mid] = {

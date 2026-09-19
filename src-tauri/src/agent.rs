@@ -335,7 +335,7 @@ fn thinking_extra_body(model: &str, level: &str, protocol: Protocol) -> Option<V
     }
 
     // GLM-5.3 家族（含 5.3-flash，bigmodel/z.ai 同构）：强制思考，仅 low/high/max
-    if m.contains("glm-5.3") || m.contains("glm-5.3-flash") {
+    if m.contains("glm-5.3") { // -flash 后缀被前项包含
         return Some(json!({"reasoning_effort": match level {
             "off" | "low" => "low",
             "medium" | "high" => "high",
@@ -405,10 +405,10 @@ fn thinking_extra_body(model: &str, level: &str, protocol: Protocol) -> Option<V
 /// 现已转回路由白名单语义（本注释处的预言成真）。变更类 op 绝不能入表——
 /// 入表会被只读分支拦下而非提交。list-tools/doc-json 无对应 wasm 导出，
 /// 路由时保持诚实报错（见 moonviz_op 的 unavailable 分支）。
-const READONLY_OPS: [&str; 20] = [
-    // 无参清点类
+const READONLY_OPS: [&str; 21] = [
+    // 无参清点类（list-ops：变更 op 注册表，与 SKILL/INSTRUCTIONS 推荐一致）
     "list", "list-templates", "list-components", "list-tools", "list-tokens", "list-themes",
-    "flows", "benchmark",
+    "list-ops", "flows", "benchmark",
     // 需 <artboard> 的检视类
     "lint", "critique", "query", "infer", "spec", "missing", "doc-json", "states",
     "interactions", "export-svg", "export-html",
@@ -542,6 +542,7 @@ impl<'a> EngineState<'a> {
                 "list-components" => ("list_components", false),
                 "list-tokens" => ("list_tokens", false),
                 "list-themes" => ("list_themes", false),
+                "list-ops" => ("list_ops", false),
                 "export-html" => ("export_html", false),
                 // 无对应 wasm 导出：保持诚实报错（不假装可用）
                 "list-tools" | "doc-json" => {
@@ -760,12 +761,12 @@ async fn chat_once(
     let resp = req
         .send()
         .await
-        .map_err(|e| format!("llm_request_failed:{e}"))?;
+        .map_err(|e| redact_userinfo(format!("llm_request_failed:{e}")))?;
     let status = resp.status();
     let text = resp
         .text()
         .await
-        .map_err(|e| format!("llm_read_failed:{e}"))?;
+        .map_err(|e| redact_userinfo(format!("llm_read_failed:{e}")))?;
     if !status.is_success() {
         return Err(format!("llm_http_{}:{}", status.as_u16(), text.chars().take(200).collect::<String>()));
     }
@@ -795,6 +796,31 @@ async fn chat_once(
     }
 }
 
+/// 错误串里的 URL 可能带 userinfo（https://u:p@host，url crate 的 Display 会原样
+/// 保留）——回显前脱敏，避免凭据进错误信封/前端 toast。
+fn redact_userinfo(s: String) -> String {
+    if let Some(scheme_end) = s.find("://") {
+        let rest_start = scheme_end + 3;
+        if let Some(at) = s[rest_start..].find('@') {
+            let cred = &s[rest_start..rest_start + at];
+            if !cred.contains('/') && cred.contains(':') {
+                return format!("{}//***@{}", &s[..rest_start], &s[rest_start + at + 1..]);
+            }
+        }
+    }
+    s
+}
+
+/// 瞬时 LLM 错误判定：限流/过载/服务端错误/传输层失败（一轮内重试一次）。
+/// 4xx（鉴权/参数）与解析错误是语义性的，重试只会重复失败。
+fn is_transient_llm_error(e: &str) -> bool {
+    e.starts_with("llm_request_failed")
+        || e.starts_with("llm_read_failed")
+        || e.contains("llm_http_429")
+        || e.contains("llm_http_5")
+        || e.contains("overloaded")
+}
+
 /// 主循环：chat → tool_calls → 引擎执行 → 回填 → 直至 assistant 总结或 maxSteps。
 pub async fn run(
     host: &EngineHost,
@@ -817,7 +843,14 @@ pub async fn run(
         Err(e) => return json!({"ok": false, "error": e}),
     };
 
-    let Ok(client) = reqwest::Client::builder().timeout(LLM_TIMEOUT).build() else {
+    // 不跟随重定向：safe_base_url 只审计首跳，reqwest 默认会跟 10 跳且剥离名单
+    // 不含 x-api-key（跨主机泄 key）/不拦 https→http 降级（泄 bearer）。
+    // API 端点不应重定向——真发生时把 3xx 亮给用户，而不是静默带凭据跟跳。
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(LLM_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
         return json!({"ok": false, "error": "client_build_failed", "ops": state.ops, "text": ""});
     };
 
@@ -827,7 +860,15 @@ pub async fn run(
     ];
 
     for step in 0..MAX_STEPS {
-        let resp = match chat_once(&client, &base, api_key, model, thinking, &messages).await {
+        let mut resp = chat_once(&client, &base, api_key, model, thinking, &messages).await;
+        if let Err(e) = &resp {
+            // 瞬时错误（限流/过载/网络抖动）重试一次；4xx 语义错误不重试
+            if is_transient_llm_error(e) {
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                resp = chat_once(&client, &base, api_key, model, thinking, &messages).await;
+            }
+        }
+        let resp = match resp {
             Ok(r) => r,
             Err(e) => {
                 // 中途 LLM 失败：已提交的引擎操作不丢弃（对齐旧桥语义）——
@@ -857,7 +898,9 @@ pub async fn run(
                 });
             }
             state.ensure_render().await;
-            let stop = if step + 1 >= MAX_STEPS { "max_turns" } else { "done" };
+            // 走到这里说明 assistant 已给出自然总结——即便恰在第 MAX_STEPS 轮,
+            // 语义是 done;max_turns 只属于循环耗尽仍无总结的路径（循环外兜底）
+            let stop = if text.trim().is_empty() && step + 1 >= MAX_STEPS { "max_turns" } else { "done" };
             return json!({
                 "ok": state.mbt.is_some(),
                 "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
@@ -875,15 +918,20 @@ pub async fn run(
             let id = call.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let name = call.pointer("/function/name").and_then(|v| v.as_str()).unwrap_or("");
             let args_raw = call.pointer("/function/arguments").and_then(|v| v.as_str()).unwrap_or("{}");
-            let args: Value = serde_json::from_str(args_raw).unwrap_or(json!({}));
-            let result = match name {
-                "moonviz_op" => {
-                    let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    state.moonviz_op(&op).await
-                }
-                "read_mbt" => state.read_mbt().await,
-                "list_components" => state.list_components().await,
-                other => json!({"ok": false, "error": format!("unknown_tool:{other}")}),
+            // 畸形 JSON 带原文片段报错，模型可据此自纠（归并为 op_invalid 会多耗一轮）
+            let result = match serde_json::from_str::<Value>(args_raw) {
+                Err(_) => json!({"ok": false, "error": format!(
+                    "op_arguments_invalid_json:{}", args_raw.chars().take(60).collect::<String>()
+                )}),
+                Ok(args) => match name {
+                    "moonviz_op" => {
+                        let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        state.moonviz_op(&op).await
+                    }
+                    "read_mbt" => state.read_mbt().await,
+                    "list_components" => state.list_components().await,
+                    other => json!({"ok": false, "error": format!("unknown_tool:{other}")}),
+                },
             };
             messages.push(json!({
                 "role": "tool",
@@ -950,6 +998,7 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Value {
     };
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none()) // 同 chat client：不跟重定向
         .build();
     let Ok(client) = client else {
         return json!({"ok": false, "error": "client_build_failed"});
@@ -1030,6 +1079,10 @@ mod tests {
         assert_eq!(thinking_extra_body("qwen3-max", "high", Protocol::OpenAi), None);
         // 旧值 on → high
         assert_eq!(thinking_extra_body("deepseek-flash", "on", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
+        assert_eq!(thinking_extra_body("MiniMax-M3", "on", Protocol::OpenAi), None); // 开关型家族 on→high 仍不传等级
+        // GLM-5.2 low 档 + 未知模型 off(直传标准字段)——方言表覆盖差补锁
+        assert_eq!(thinking_extra_body("glm-5.2", "low", Protocol::OpenAi), Some(json!({"reasoning_effort": "low"})));
+        assert_eq!(thinking_extra_body("mystery-model", "off", Protocol::OpenAi), Some(json!({"thinking": {"type": "disabled"}})));
         // 未知模型：OpenAI 标准字段直传
         assert_eq!(thinking_extra_body("some-model", "high", Protocol::OpenAi), Some(json!({"reasoning_effort": "high"})));
     }
@@ -1187,6 +1240,7 @@ mod tests {
         assert!(is_readonly_op("flows"));
         assert!(is_readonly_op("list-components"));
         assert!(is_readonly_op("list-themes"));
+        assert!(is_readonly_op("list-ops"));
         assert!(is_readonly_op("benchmark"));
         // 带画板参数的检视类（引擎 0.1.0 新增：spec/missing/doc-json/states/interactions/export-svg）
         assert!(is_readonly_op("spec login"));
@@ -1223,6 +1277,7 @@ mod tests {
             eprintln!("跳过：wasm 产物不可用（先跑 node scripts/sync-engine.mjs）");
             return;
         }
+        let _engine_gate = engine_test_gate();
 
         // 种子文档可承载变更 op（空文档会 mbt_no_visual_blocks——种子引导的前提）
         let r = ENGINE
@@ -1259,6 +1314,7 @@ mod tests {
             eprintln!("跳过：wasm 产物不可用");
             return;
         };
+        let _engine_gate = engine_test_gate();
         let mut engine_ids: Vec<String> = arr
             .iter()
             .filter_map(|t| t.get("id").and_then(|v| v.as_str()).map(String::from))
@@ -1328,6 +1384,14 @@ mod tests {
         assert!(safe_base_url("ftp://x").is_none());
     }
 
+    /// 引擎门测试串行化：并行 spawn node 宿主会争抢（传输层瞬态失败，全 session
+    /// 约 1/5 概率闪红；已有传输层重试但只治标）。锁只包引擎门测试体，非引擎
+    /// 测试（方言表/协议/模型快照等纯单测）不受影响、照常并行。
+    static ENGINE_TEST_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn engine_test_gate() -> std::sync::MutexGuard<'static, ()> {
+        ENGINE_TEST_GATE.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// 引擎（node 宿主 × 真 wasm 产物）可用性探针：不可用即跳过，绿不是假绿。
     /// 引擎就绪门。**产物缺失 → 合法跳过**（eprintln + return）；
     /// **产物在场但调用失败 → panic**——wasm 坏了或宿主/编解码损坏必须红，
@@ -1365,6 +1429,7 @@ mod tests {
             eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
             return;
         }
+        let _engine_gate = engine_test_gate();
         // mock /chat/completions：第 1 轮返回 bootstrap 工具调用，第 2 轮返回总结
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -1512,6 +1577,7 @@ mod tests {
             eprintln!("跳过：V8 宿主或 wasm 产物不可用");
             return;
         }
+        let _engine_gate = engine_test_gate();
         // 第一轮：同消息两个 tool_use（触发两 tool 结果的批处理路径）
         // 第二轮：单个 tool_use；第三轮：文本总结
         let (port, mock, bodies) = spawn_mock_llm(vec![
@@ -1630,6 +1696,7 @@ mod tests {
             eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
             return;
         }
+        let _engine_gate = engine_test_gate();
         let (port, mock, bodies) = spawn_mock_llm(vec![
             // 第一轮：bootstrap 建板 + 一个只读 lint（同一消息两个 tool_use）
             serde_json::json!({
@@ -1692,6 +1759,7 @@ mod tests {
             eprintln!("跳过：V8 宿主或 wasm 产物不可用");
             return;
         }
+        let _engine_gate = engine_test_gate();
         let seed = seed_doc("sd", 390, 844);
         // engine-v0.1.1-session 起只读 session 导出统一 {ok,data} 信封（上游 #4C）
         let lint = ENGINE.call("session_lint", &seed, "sd").await.unwrap();
@@ -1719,6 +1787,7 @@ mod tests {
             eprintln!("跳过：V8 宿主或 wasm 产物不可用");
             return;
         }
+        let _engine_gate = engine_test_gate();
         // mock 只服务第一轮（bootstrap tool_call），之后 listener 关闭 → 第二轮连接被拒
         let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
             "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
@@ -1744,6 +1813,7 @@ mod tests {
             eprintln!("跳过：V8 宿主或 wasm 产物不可用");
             return;
         }
+        let _engine_gate = engine_test_gate();
         // 输入用静态种子文档（合法 canonical，无需引擎生成）
         let mbt = seed_doc("rt", 390, 844);
 
@@ -1775,6 +1845,7 @@ mod tests {
             eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
             return;
         }
+        let _engine_gate = engine_test_gate();
         let r = ENGINE.call("session_count_probe", &seed_doc(SEED_BOARD, 390, 844), "").await.unwrap();
         assert_eq!(r["before"], json!(0), "独立宿主进程初始计数应为 0：{r}");
         assert_eq!(r["during"], json!(2), "两次 open 后计数应为 2：{r}");
@@ -1792,6 +1863,7 @@ mod tests {
             eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
             return;
         }
+        let _engine_gate = engine_test_gate();
         fn line_request(
             stdin: &mut std::process::ChildStdin,
             out: &mut std::io::BufReader<std::process::ChildStdout>,

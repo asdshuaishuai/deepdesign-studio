@@ -18,9 +18,9 @@ jobs:
       - name: Checkout deepDesign
         uses: actions/checkout@v4
 
-      # 引擎以预编译 wasm 产物集成：sync-engine.mjs 从 npm registry 拉取
-      # moonviz-engine-wasm（pin 版本 + sha512 校验 + 真机契约探针）到
-      # frontend/vendor/。无 MoonBit 工具链、无兄弟仓库依赖。
+      # 引擎以预编译 wasm 产物集成：sync-engine.mjs 从 GitHub Releases 直链拉取
+      # classic wasm（版本锚定 + sha512 校验 + 真机契约探针）到 frontend/vendor/。
+      # 无 MoonBit 工具链、无兄弟仓库依赖。
       - name: Setup Node 24
         uses: actions/setup-node@v4
         with:

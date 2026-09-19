@@ -8,7 +8,7 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 
 ```
 frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）+ 画布侧 wasm 引擎实例（含 agent 桥监听）
-src-tauri/src/lib.rs       Tauri 命令层：engine_res / invoke_fx_sdk / save_ddp / open_ddp / diagnostics / model_registry + EngineHost
+src-tauri/src/lib.rs       Tauri 命令层：engine_res / invoke_fx_sdk / save_ddp / open_ddp / model_registry + EngineHost
 src-tauri/src/node_host.rs node 子进程引擎宿主（cargo test 专用，驱动同一份 wasm 产物）
 src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI/Anthropic 工具调用 × 引擎事件桥）
 scripts/sync-engine.mjs    引擎产物同步：GitHub Releases 拉标准 classic wasm → sha512 校验 → 真机契约探针 → frontend/vendor/
@@ -73,6 +73,9 @@ node test_studio.cjs            # 前端侧 wasm 契约（模板清单 vs agent.
 
 探针会**自动裁剪**组件快照（引擎不认的 id 不写入 components.json）并在模板清单与
 `agent.rs::ENGINE_TEMPLATES` 漂移时直接失败——两边必须一起改。
+⚠️ 核对哈希时注意编码：锚点是 **base64**（`sha512-FzIfadPP…`），而 `shasum -a 512`
+输出 **hex**——两者是同一份字节的不同编码，直接目测对比会误判「产物被换」
+（R5 审查中的真实假警报：hex `17321f69…` ⇄ base64 `FzIfadPP…` 是同一份 wasm）。
 `frontend/vendor/moonviz.wasm` 与 `engine-manifest.json` 已 gitignore；`components.json`
 入库（它是探针验证过的快照，前端组件面板与 agent list_components 共用）。
 
@@ -250,7 +253,8 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 5. **不要为了"清理"而把 parity 断言改成自己比自己。** `9f48220` 把 `test_studio.cjs` 的读取目标
    从根 `index.html` 改成 `frontend/index.html`，于是 `assert.equal(readFileSync(...), html)` 变成恒真式。
    该恒真断言已删除，改为断言 `tauri.conf.json` 的 `frontendDist === "../frontend"`。
-6. **CI 从不运行 `test_studio.cjs`**（`windows-build.yml` 只有 cargo + `tauri build`）。
+6. **CI 现状**（windows-build.yml，2026-09 起）：tag `v*` / 手动触发时跑
+   `test_studio.cjs` + `cargo test --release` + `tauri build`——**普通 push/PR 不跑任何 CI**。
    本地改动前端后务必手动 `node test_studio.cjs`。
 
 ## 已知缺口
@@ -260,6 +264,13 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   改菜单时**同时**更新 `lib.rs`、前端映射表与 `docs/menus.md`（链路：`lib.rs::on_menu_event`
   经 `win.eval("nativeMenuAction(id)")` 直调前端全局函数；`event.listen` 曾因 Tauri ACL
   未放行而弃用——menus.md 已按此修正）。
+- **Agent 长任务与人类编辑的丢失更新**：agent run 以请求起点的 `mbtText` 快照驱动
+  （Rust 侧 EngineState 每请求重建），秒级窗口内人类提交的 op 会被 agent 终态整体
+  覆盖。修法需要 rebase/合并机制（把 agent 的 op 流重放到最新 canonical），属设计决策；
+  交互缓解：agent 执行期间避免并发编辑。
+- **工具结果无截断**：`read_mbt`/export 类结果全量入 LLM 历史（引擎 canonical 的
+  `mbt check` 块把节点声明重复第二遍，有效载荷约 2 倍），多屏任务 token 成本随轮次
+  线性膨胀。截断会伤模型对文档 id 的可见性——分层裁剪方案未决。
 - **用户组件库三入口（画板沉淀 `saveAsComponent` / MCF 导入导出）仍是诚实降级 stub**
   （`USERCOMP_UNAVAILABLE` 提示）：引擎 session 面已导出 `session_component_compile_b64` /
   `session_library_snapshot`，但用户组件注册表只存活在**会话内**——画布是无状态 per-op

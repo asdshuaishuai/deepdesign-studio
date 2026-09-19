@@ -21,7 +21,7 @@ zeroize = "1.8"
 # 不引入类型化 chat 客户端：thinking 家族等非标字段需在序列化后注入，
 # 类型层反而被绕过（评估阶段已验证 async-openai 0.42 无 extra-fields 口子）。
 reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["time", "net"] }
+tokio = { version = "1", features = ["time", "net", "sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

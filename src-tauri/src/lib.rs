@@ -112,8 +112,10 @@ impl EngineHost {
 }
 
 /// 保存唯一事实源：引擎交付 canonical MBT，Rust codec 输出不透明 `.ddp`。
+/// async 命令（跑在 tokio worker）：blocking_* 对话框禁止在主线程调用
+/// （同步命令在 macOS WKWebView IPC 回调 = 主线程内联执行，sheet 会冻结）。
 #[tauri::command]
-fn save_ddp(
+async fn save_ddp(
     app: tauri::AppHandle,
     mbt_b64: String,
     password: String,
@@ -131,19 +133,22 @@ fn save_ddp(
     let mbt = std::str::from_utf8(&mbt_bytes).map_err(|_| "ddp_mbt_not_utf8".to_string())?;
     let ddp = encrypt_ddp(mbt, &password)?;
 
-    let path = app
+    let Some(path) = app
         .dialog()
         .file()
-        .add_filter("deepDesign 加密视觉文档", &["ddp"])
+        .add_filter("deepDesign 视觉文档", &["ddp"])
         .blocking_save_file()
         .map(|p| {
             let mut s = p.to_string();
-            if !s.ends_with(".ddp") {
+            if !s.to_lowercase().ends_with(".ddp") {
                 s.push_str(".ddp");
             }
             PathBuf::from(s)
         })
-        .ok_or("canceled")?;
+    else {
+        // 用户取消：Ok(Null) 而非 Err——Err 会 reject 前端 promise 落进 catch 弹「失败」toast
+        return Ok(serde_json::Value::Null);
+    };
     std::fs::write(&path, &ddp).map_err(|e| format!("ddp_write_failed:{e}"))?;
     Ok(serde_json::json!({
         "ok": true,
@@ -155,13 +160,15 @@ fn save_ddp(
 /// 打开不透明 DDP，并把解密后的 MBT 作为 Base64 传回给 Moonviz 引擎验证。
 /// Rust 不解释 Markdown、MoonBit block 或视觉语义。
 #[tauri::command]
-fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json::Value, String> {
-    let path = app
+async fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json::Value, String> {
+    let Some(path) = app
         .dialog()
         .file()
-        .add_filter("deepDesign 加密视觉文档", &["ddp"])
+        .add_filter("deepDesign 视觉文档", &["ddp"])
         .blocking_pick_file()
-        .ok_or("canceled")?;
+    else {
+        return Ok(serde_json::Value::Null); // 用户取消，见 save_ddp 注释
+    };
     let pb = path
         .into_path()
         .map_err(|e| format!("ddp_path_invalid:{e}"))?;
@@ -183,22 +190,6 @@ fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json::Value
     }))
 }
 
-#[tauri::command]
-fn diagnostics() -> serde_json::Value {
-    // 引擎面在 WebView（wasm 实例）；这里只报宿主形态与产物可见性。
-    // 产物契约（导出面/模板/组件）由 sync-engine.mjs 与 test_studio.cjs 锚定。
-    let wasm = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("frontend")
-        .join("vendor")
-        .join("moonviz.wasm");
-    serde_json::json!({
-        "engine": "moonviz-wasm（WebView 内进程执行）",
-        "engine_wasm_present": wasm.is_file(),
-        "version": env!("CARGO_PKG_VERSION"),
-    })
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -208,7 +199,6 @@ pub fn run() {
             invoke_fx_sdk,
             save_ddp,
             open_ddp,
-            diagnostics,
             model_registry
         ])
         .setup(|app| {
@@ -448,4 +438,31 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .build()?;
     app.set_menu(menu)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DDP 容器往返契约（仓库唯一密码学代码的回归守护）：vendor crate 自带的
+    /// 5 个单测不在默认测试面（非 workspace 成员，`cd src-tauri && cargo test`
+    /// 不会跑路径依赖的单元测试），这里把加解密往返 + 错密码/篡改拒绝锁进主套件。
+    #[test]
+    fn ddp_roundtrip_and_rejects() {
+        let mbt = "---
+moonviz:
+  format: visual-document
+".repeat(64);
+        let ddp = encrypt_ddp(&mbt, "pw").expect("encrypt");
+        assert_eq!(decrypt_ddp(&ddp, "pw").expect("decrypt").to_string(), mbt, "往返必须无损");
+        assert_eq!(
+            decrypt_ddp(&ddp, "wrong"),
+            Err("ddp_authentication_failed".to_string()),
+            "错密码与篡改同报错（无预言机）"
+        );
+        let mut tampered = ddp.clone();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 0xFF;
+        assert!(decrypt_ddp(&tampered, "pw").is_err(), "篡改任意字节必须拒绝");
+    }
 }

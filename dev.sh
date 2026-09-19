@@ -7,7 +7,9 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # 引擎为预编译 wasm 产物（frontend/vendor/moonviz.wasm）：
-# 缺失时现场拉取（npm moonviz-engine-wasm，sha512 校验 + 真机契约探针，需 node（classic wasm 无版本门槛））
+# 缺失时现场拉取（GitHub Releases 直链 classic wasm，sha512 锚定 + 真机契约探针；
+# 需 node——classic 产物无 WasmGC 门槛。注意 --fresh 的缓存清理路径仅 macOS，
+# Windows 的 WKWebView 缓存在 %LOCALAPPDATA%，Git Bash 下清不掉、用 ?v= 时间戳重载兜底）
 if [ ! -f "$ROOT/frontend/vendor/moonviz.wasm" ]; then
   echo "→ 引擎 wasm 产物缺失，同步中（node scripts/sync-engine.mjs）…"
   (cd "$ROOT" && node scripts/sync-engine.mjs)
