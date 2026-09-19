@@ -1057,8 +1057,11 @@ async function bootstrapFirstBoard(cmd,id,w,h){
  * 全部调用经 engReadStr/engWriteStr 编解码（标准 classic wasm 的线性内存字符串）。 */
 if(IS_TAURI&&window.__TAURI__.event){
   const SESSION_WHOLE_ARG=new Set(['session_apply_agent','session_apply_human','session_component_compile_b64']);
-  // 会改变文档/会话状态的导出：成功后缓存键前移到新 canonical（失败则文档未动，键仍有效）
-  const SESSION_MUTATING=new Set(['session_apply_agent','session_apply_human','session_auto_fix','session_constrain']);
+  // 变更类导出（信封回传 canonical）：成功后缓存键前移到新 canonical（失败则文档未动，键仍有效）
+  const SESSION_MUTATING=new Set(['session_apply_agent','session_apply_human']);
+  // 会改会话文档但信封不回传 canonical 的导出（新键不可知）——调用后弃缓存，
+  // 避免后续 op 命中「文档已漂移」的旧键脏缓存
+  const SESSION_EVICT=new Set(['session_auto_fix','session_constrain']);
   const agentSession=(mbt)=>{
     if(sessCache&&sessCache.mbt===mbt)return sessCache.handle;
     if(sessCache){engineExports.session_close(sessCache.handle);sessCache=null;}
@@ -1091,12 +1094,21 @@ if(IS_TAURI&&window.__TAURI__.event){
         out=JSON.parse(engReadStr(engineExports[fn](h,...args)));
         if(SESSION_MUTATING.has(fn)&&out.ok===true&&typeof out.mbt==='string'){
           sessCache.mbt=out.mbt;
-          // session 路径信封只有 {ok,mbt}——同句柄补画板索引（内存查询，无重解析），
-          // 工具响应保留 artboards 反馈
-          if(fn==='session_apply_agent'||fn==='session_apply_human'){
+        }
+        if(fn==='session_apply_agent'||fn==='session_apply_human'){
+          // session 信封只有 {ok,mbt}——同句柄补画板索引（内存查询，无重解析）。
+          // best-effort：补索引失败不得把**已提交**的 op 报成失败（响应保持 ok），
+          // 但 wasm trap 后会话状态不可信 → 弃缓存（下次按权威 mbt 重开）。
+          try{
             const la=JSON.parse(engReadStr(engineExports.session_list_artboards(h)));
-            if(la.ok===true&&Array.isArray(la.data))out.artboards=la.data;
+            if(la.ok===true&&Array.isArray(la.data)&&out.ok===true)out.artboards=la.data;
+          }catch(_){
+            try{engineExports.session_close(h);}catch(_2){}
+            sessCache=null;
           }
+        }else if(SESSION_EVICT.has(fn)){
+          try{engineExports.session_close(h);}catch(_){}
+          sessCache=null;
         }
       }else{
         if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
@@ -1974,8 +1986,9 @@ function toggleCompGuide(){
   if(g)g.style.display=hasUser?'none':'block';
 }
 async function loadComponents(){
-  // 引擎 wasm 0.1.1 未导出 list_components：清单来自同步脚本用真机探针
-  // 验证过的快照（frontend/vendor/components.json，入库），升级引擎时自动再验证
+  // 清单来自 frontend/vendor/components.json（入库快照）：sync-engine.mjs 依引擎
+  // list_components 权威导出生成 + place 探针验证，升级引擎时自动再验证；桥不直调
+  // 该导出——快照带本地 description 文案并并入用户组件（与 agent 工具同源）
   let comps;
   try{
     const r=await fetch('vendor/components.json');
@@ -1994,11 +2007,15 @@ function renderCompTree(filter){
   const tree=$('comp-tree');tree.innerHTML='';
   const byCat={};
   allComps.filter(c=>!filter||c.id.includes(filter)).forEach(c=>{const k=c.category||'other';(byCat[k]=byCat[k]||[]).push(c);});
-  Object.keys(COMP_META).forEach(cat=>{
+  // 渲染 COMP_META 已知类别 + 兜底桶（引擎新增 category 静默不可见 = 潜伏缺陷，
+  // 类别名来自快照数据，经 escHtml 后才进 innerHTML）
+  const orderedCats=Object.keys(COMP_META).concat(Object.keys(byCat).filter(k=>!COMP_META[k]&&k!=='user'));
+  orderedCats.forEach(cat=>{
     const items=byCat[cat];if(!items||!items.length)return;
     const wrap=document.createElement('div');wrap.className='cat';
     const head=document.createElement('div');head.className='cathead open';
-    head.innerHTML=`<span class="arr">▶</span>${COMP_META[cat].label}<span class="n">${items.length}</span>`;
+    const label=COMP_META[cat]?COMP_META[cat].label:escHtml(cat);
+    head.innerHTML=`<span class="arr">▶</span>${label}<span class="n">${items.length}</span>`;
     const grid=document.createElement('div');grid.className='catgrid';
     items.forEach(c=>{
       const cell=document.createElement('div');cell.className='compcell'+(c.source==='user'?' uc':'');cell.title=c.description||'';

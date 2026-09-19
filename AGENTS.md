@@ -223,7 +223,7 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
   `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`、
   `session_count_zero_after_close`（会话泄漏契约）、`agent_session_cache_reuse`（会话缓存命中，
   经行协议宿主的 session_cache_stats 断言，变异验证过必红）。
-  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数仍是 22。
+  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数仍是 24。
 
 ## 删前端代码前必读（真实事故，勿重演）
 

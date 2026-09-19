@@ -140,10 +140,11 @@ benchmark               性能基准
 
 ### CLI-pipeline-only（两道门都不可达）
 
-`constrain <ab> <intent_text>` —— **两门 apply 均拒绝**（`mbt_operation_unsupported`），
-但 **session API 已导出 `session_constrain`**——agent.rs 目前未接入（布局推理走
-update 键），需要时经 session 路由可达。上游 SKILL.md 把它列在共享语法里是**错的**
-（共享的是 session 面，不是 apply 门）。
+`constrain <ab> <intent_text>` —— **两门 apply 均拒绝**（`mbt_operation_unsupported`）。
+session API 虽导出 `session_constrain`，但**不可用**：多词意图引擎侧 `cannot_parse`
+（实测 `constrain w make the title bigger` 失败），单词条虽可达但成功信封不回传
+canonical（新键不可知，会话缓存只能弃）。布局推理走 update 键。上游 SKILL.md 把它
+列在共享语法里是**错的**（共享的是 session 面，不是 apply 门；session 面也不完整）。
 改节点名用 `update <ab> <node> name=<id>`，不要教 Agent 用 `constrain` 或独立 `name` op。
 
 ## MCP Server

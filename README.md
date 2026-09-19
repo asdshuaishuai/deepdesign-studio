@@ -35,7 +35,7 @@ wasm 产物、DDP codec 已 vendored，clone 后两步即可构建，无需 Moon
 ## 测试
 
 ```bash
-cd src-tauri && cargo test    # 22 个测试（含 4 个 mock-LLM × 真 wasm 端到端）
+cd src-tauri && cargo test    # 24 个测试（含 4 个 mock-LLM × 真 wasm 端到端）
 node test_studio.cjs          # 前端状态机冒烟 + wasm 产物契约
 ```
 

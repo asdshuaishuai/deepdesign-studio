@@ -1,11 +1,12 @@
 //! 进程内 Agent 基座：OpenAI/Anthropic 工具调用循环 × MoonViz wasm 引擎。
 //!
 //! 引擎是标准 classic wasm 产物（frontend/vendor/moonviz.wasm，宿主中立），本模块经
-//! `EngineHost`（Rusty V8 进程内宿主，与前端画布各自持有实例、只交换
-//! canonical 文本）调用：变更 op → apply_agent_op（与 CLI apply-agent-mbt-op-b64
-//! 同一分发器，AgentGate），空项目起步 → 种子文档 + apply_human_op 引导。
+//! `EngineHost`（生产 = WebView 事件桥，测试 = node 子进程宿主；与前端画布各自
+//! 持有实例、只交换 canonical 文本）调用：变更 op → session_apply_agent
+//! （engine-v0.1.1-session 起与无状态 apply_agent_op 同门同分发器，AgentGate；
+//! 宿主按 mbt 键控复用会话），空项目起步 → 种子文档 + apply_human_op 引导。
 //! 只读检视面（lint/critique/query/...）经 wasm session API 路由可达
-//! （engine-v0.1.1-fix 导出 24 个 session_*；仅 list-tools/doc-json 无对应导出）。
+//! （导出 26 个 session_*；仅 list-tools/doc-json 无对应导出）。
 //! 请求体为 OpenAI chat wire format 或 Anthropic Messages wire
 //! （协议按 base_url 探测，json! 字面量），thinking 家族等非标字段在构造时
 //! 直接注入。返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text}。
@@ -516,8 +517,8 @@ impl<'a> EngineState<'a> {
 
         // 只读 op：路由到 session API / 直调导出（engine-v0.1.1-fix 起检视面可达）。
         // 路由表：CLI op 头 → (wasm 导出名, 是否走 session 包装)。session 类导出的
-        // 参数（artboard / x y）由 op 的剩余部分携带，宿主在单次调用内完成
-        // open→call→close 生命周期。
+        // 参数（artboard / x y）由 op 的剩余部分携带；宿主按 mbt 键控缓存复用会话
+        // （缓存键与变更路径同源——只读突发在变更间免重解析）。
         if is_readonly_op(op) {
             let head = op.split_whitespace().next().unwrap_or("");
             let args = op[head.len()..].trim();
@@ -601,6 +602,11 @@ impl<'a> EngineState<'a> {
         if rendered.get("mbt").is_some_and(|v| v.is_string()) {
             self.last_render = Some(rendered);
             self.rendered_mbt = Some(mbt);
+        } else {
+            // 渲染失败：清掉陈旧 last_render——宁可诚实 null（前端走本地重渲染
+            // 兜底）也不要旧 render 与新 canonical 配对发出（画布会显示变更前画面）
+            self.last_render = None;
+            self.rendered_mbt = None;
         }
     }
 

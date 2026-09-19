@@ -84,10 +84,12 @@ const ARITY = {
 const SESSION_WHOLE_ARG = new Set([
   'session_apply_agent', 'session_apply_human', 'session_component_compile_b64',
 ]);
-// 会改变文档/会话状态的导出：成功后缓存键前移到新 canonical
-const SESSION_MUTATING = new Set([
-  'session_apply_agent', 'session_apply_human', 'session_auto_fix', 'session_constrain',
-]);
+// 变更类导出（信封回传 canonical）：成功后缓存键前移到新 canonical
+const SESSION_MUTATING = new Set(['session_apply_agent', 'session_apply_human']);
+// 会改会话文档但信封**不回传 canonical** 的导出（auto_fix/constrain 的新键不可
+// 知，且多词意图在引擎侧 cannot_parse）——唯一安全语义是调用后弃缓存，避免
+// 后续 op 命中「文档已漂移」的旧键脏缓存（审查实证过该污染链）
+const SESSION_EVICT = new Set(['session_auto_fix', 'session_constrain']);
 
 // mbt 键控会话缓存：命中即复用句柄；失配即关旧开新（缓存至多持有一个活会话，
 // 不会泄漏）。与 frontend/index.html 桥的 agentSession 同构。hits/misses 计数
@@ -175,20 +177,31 @@ function handle(req) {
         return { id, ok: false, error: `wasm_panic:${e.message}` };
       }
       if (SESSION_MUTATING.has(fn)) {
+        let r = null;
         try {
-          const r = JSON.parse(outStr);
-          if (r.ok === true && typeof r.mbt === 'string') {
-            sessCache.mbt = r.mbt;
-            // session 信封只有 {ok,mbt}——同句柄补画板索引（内存查询，无重解析）
-            if (fn === 'session_apply_agent' || fn === 'session_apply_human') {
-              const la = JSON.parse(readStr(ex.session_list_artboards(handle)));
-              if (la.ok === true && Array.isArray(la.data)) {
-                r.artboards = la.data;
-                outStr = JSON.stringify(r);
-              }
-            }
-          }
+          r = JSON.parse(outStr);
         } catch { /* 信封形状异常：原样透传给调用方判断 */ }
+        if (r && r.ok === true && typeof r.mbt === 'string') {
+          sessCache.mbt = r.mbt;
+        }
+        if (fn === 'session_apply_agent' || fn === 'session_apply_human') {
+          // session 信封只有 {ok,mbt}——同句柄补画板索引（内存查询，无重解析）。
+          // best-effort：补索引失败不得把**已提交**的 op 报成失败（响应保持 ok），
+          // 但 wasm trap 后会话状态不可信 → 弃缓存（下次按权威 mbt 重开）。
+          try {
+            const la = JSON.parse(readStr(ex.session_list_artboards(handle)));
+            if (la.ok === true && Array.isArray(la.data) && r && r.ok === true) {
+              r.artboards = la.data;
+              outStr = JSON.stringify(r);
+            }
+          } catch (_) {
+            try { ex.session_close(handle); } catch (_) { /* 实例已不可用 */ }
+            sessCache = null;
+          }
+        }
+      } else if (SESSION_EVICT.has(fn)) {
+        try { ex.session_close(handle); } catch (_) { /* 实例已不可用 */ }
+        sessCache = null;
       }
       return { id, ok: true, json: outStr };
     }
@@ -199,6 +212,10 @@ function handle(req) {
         : [writeStr(req.mbt ?? ''), writeStr(req.op ?? '')];
     return { id, ok: true, json: readStr(ex[fn](...args)) };
   } catch (e) {
+    // 异常后会话状态不可信（含 cachedSession 内 close/open 自身 trap）→ 弃缓存，
+    // 下次按权威 mbt 重开（对齐前端桥的外层 catch 语义）
+    try { if (sessCache) ex.session_close(sessCache.handle); } catch (_) { /* 实例已不可用 */ }
+    sessCache = null;
     return { id, ok: false, error: `wasm_panic:${e.message}` };
   }
 }

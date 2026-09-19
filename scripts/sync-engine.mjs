@@ -276,6 +276,9 @@ async function contractProbe(exports, wasmBytes) {
       writeStr(`place __seed ${c.id} probe_${c.id} - 10 10`),
     )));
     if (r.ok) {
+      if (!COMPONENT_DESCRIPTIONS[c.id]) {
+        console.warn(`[sync-engine] 组件 ${c.id} 无本地描述文案（tooltip 将为空）——补 COMPONENT_DESCRIPTIONS`);
+      }
       components.push({
         id: c.id, kind: c.kind, category: c.category,
         variants: c.variants, default_size: c.default_size,
