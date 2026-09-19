@@ -271,6 +271,11 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - **工具结果无截断**：`read_mbt`/export 类结果全量入 LLM 历史（引擎 canonical 的
   `mbt check` 块把节点声明重复第二遍，有效载荷约 2 倍），多屏任务 token 成本随轮次
   线性膨胀。截断会伤模型对文档 id 的可见性——分层裁剪方案未决。
+- **vendored DDP 长度门潜在不一致**：`vendor/moonviz-ddp` 全局门 `16MiB+16` 与 DDP1 专属门
+  `16MiB+45` 不一致（当前不可达——8MiB 明文压缩后到不了 16MiB；上调明文上限时会先撞全局门）。
+  **不改**：vendored 副本与上游 `../moonviz` 按 md5 对账（README 记录基线 commit），改它破坏同步保真——应上游修。
+- **apiKey 明文存 localStorage**（`deepdesign-fx-config`）：桌面单用户场景的常见做法，但与 Rust 侧
+  Zeroizing 的谨慎不一致；改为 OS keychain 属增强项，未排期。
 - **用户组件库三入口（画板沉淀 `saveAsComponent` / MCF 导入导出）仍是诚实降级 stub**
   （`USERCOMP_UNAVAILABLE` 提示）：引擎 session 面已导出 `session_component_compile_b64` /
   `session_library_snapshot`，但用户组件注册表只存活在**会话内**——画布是无状态 per-op

@@ -2300,7 +2300,7 @@ function playApplySession(id){
   const s=sessions[id];if(!s)return;
   baseCmd=s.baseCmd;currentW=s.w;currentH=s.h;
   opCmds=mbtText?[]:s.ops.slice();
-  currentSvg=s.svg||currentSvg;nodes=s.nodes||nodes;
+  currentSvg=s.svg||'';nodes=s.nodes||[];  // 渲染缺失回退空,不沿用上一画板(跨板渗漏)
 }
 async function playTap(fromAb,nodeId){
   const graph=studioFlows.length?studioFlows:flows;
