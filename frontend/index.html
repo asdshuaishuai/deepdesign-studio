@@ -130,7 +130,7 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .czoom .fit{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--tx3)}
 .czoom .fit:hover{color:var(--acc)}
 /* 多 Frame 并排 */
-.stage{position:relative;display:flex;align-items:flex-start;gap:96px;padding:56px 64px 140px;min-width:max-content;min-height:100%}
+.stage{position:relative;display:flex;align-items:flex-start;gap:96px;padding:56px 64px 48px;min-width:max-content;min-height:100%}
 .frame-wrap{flex-shrink:0;transition:transform .2s}
 .frame-chrome{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f0f1f5;border:1px solid rgba(0,0,0,.09);border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;cursor:pointer;user-select:none}
 .frame-wrap.active .frame-chrome{background:#fff;border-color:rgba(0,122,255,.45);border-bottom:none}
@@ -151,7 +151,12 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .ghost-new{display:flex;align-items:center;justify-content:center;width:150px;height:220px;border-radius:var(--r-lg);border:2px dashed rgba(0,0,0,.18);color:var(--tx3);font-size:12px;cursor:pointer;flex-shrink:0;align-self:center;gap:6px;flex-direction:column;transition:all .15s cubic-bezier(.25,.1,.25,1)}
 .ghost-new:hover{border-color:var(--acc);color:var(--acc);background:rgba(0,122,255,.04)}
 /* 底部全局 Prompt 条 */
-.promptbar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:25;width:max-content;max-width:min(680px,90%);display:flex;flex-direction:column;gap:7px;padding:9px;border-radius:var(--r-xl);box-shadow:var(--sh-pop);background:rgba(255,255,255,.92);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,.08)}
+/* 底部 dock:canvas-hint + 提示词输入条——固定在中栏底部(滚动容器之外),
+   内容再高也无需滚动即可见(修复:此前 promptbar 绝对定位挂在 overflow:auto
+   容器内,矮窗口下被顶到滚动区下方) */
+.canvas-dock{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 14px 12px;pointer-events:none}
+.canvas-hint{font-size:10.5px;color:var(--tx3);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.promptbar{pointer-events:auto;width:100%;max-width:680px;display:flex;flex-direction:column;gap:7px;padding:9px;border-radius:var(--r-xl);box-shadow:var(--sh-pop);background:rgba(255,255,255,.92);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,.08)}
 .pchips{display:flex;align-items:center;gap:5px;overflow-x:auto;font-size:11px;padding-top:1px;position:relative;z-index:30}
 .pchips .lbl{font-size:10px;color:var(--tx3);font-weight:700;text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;align-self:center}
 .pchip{height:30px;display:inline-flex;align-items:center;padding:0 12px;border-radius:99px;background:rgba(0,0,0,.05);color:var(--tx);border:1px solid rgba(0,0,0,.07);cursor:pointer;flex-shrink:0;font-size:11.5px;font-weight:500;white-space:nowrap;transition:all .15s cubic-bezier(.25,.1,.25,1)}
@@ -377,7 +382,7 @@ body[data-theme="deep"] #decl-stage #decl-text{background:#0F1420;border-color:#
 .pm-hot:hover{background:rgba(40,167,69,.12)}
 body.mode-play .play-chip{display:flex}
 body.mode-play .left,body.mode-play .right,body.mode-play .ctools,body.mode-play .czoom,
-body.mode-play .promptbar,body.mode-play .canvas-hint,body.mode-play .flow-wires,
+body.mode-play .canvas-dock,body.mode-play .flow-wires,
 body.mode-play .ghost-new,body.mode-play #agent-pop{display:none!important}
 body.mode-play .frame-wrap:not(.active){display:none!important}
 body.mode-play .frame-chrome{pointer-events:none;opacity:.55}
@@ -457,7 +462,7 @@ body[data-theme="glass"] .canvas-scroll{background-image:radial-gradient(circle,
 
 /* 模式隔离：聊天只存在于设计画布；Map/Prototype 是纯阅读/播放空间 */
 body:not(.design-active) .promptbar,body:not(.design-active) #agent-pop{display:none!important}
-body.mode-decl .ctools,body.mode-decl .czoom,body.mode-decl .canvas-hint,body.mode-decl .empty-stage{display:none!important}
+body.mode-decl .ctools,body.mode-decl .czoom,body.mode-decl .canvas-hint,body.mode-decl .empty-stage,body.mode-decl .promptbar{display:none!important}
 body.mode-wireframe .frame-body svg rect{fill:#fff!important;stroke:#9aa4b2!important;stroke-width:1!important;filter:none!important}
 body.mode-wireframe .frame-body svg text{fill:#52606d!important}
 body.mode-wireframe .frame-body svg{background:#fff}
@@ -665,7 +670,6 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         <button class="fit" onclick="zoomReset()">1:1</button>
       </div>
       <div class="stage" id="stage"></div>
-      <div class="canvas-hint" id="canvas-hint">选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流</div>
       <div class="empty-stage" id="empty-state">
         <div class="empty-card">
           <div class="big"></div>
@@ -690,6 +694,9 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <textarea id="decl-text" spellcheck="false" placeholder="DDP 解密后显示完整 .mbt.md 源码；提交会经过引擎校验…" oncontextmenu="event.preventDefault();declMenu(event.clientX,event.clientY)"></textarea>
         </div>
       </div>
+    </div>
+    <div class="canvas-dock">
+      <div class="canvas-hint" id="canvas-hint">选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流</div>
       <div class="promptbar">
         <div class="pchips">
           <span class="lbl">快捷</span>
