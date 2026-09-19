@@ -21,8 +21,9 @@ docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体
 - **前端只能经 `window.__TAURI__.core.invoke` 调上面 5 个命令**，没有 HTTP 层，不要引入 fetch/axios。
 - **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、进程内 V8 宿主、DDP 加解密。
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
-- **人类操作与 Agent 操作走不同引擎入口**：画布/Agent 共用 wasm 面的 `apply_human_op` /
-  `apply_agent_op`（与 CLI 双门同一分发器），语义差异由门实现，不要在前端绕过门直接改数据。
+- **人类操作与 Agent 操作走不同引擎入口**：画布走 `apply_human_op`，Agent 变更走
+  `session_apply_agent`（0.1.1-session 起与无状态 `apply_agent_op` 同门同分发器；宿主按
+  mbt 键控复用会话——内存棘轮减半、只读突发免重解析），语义差异由门实现，不要在前端绕过门直接改数据。
 - **引擎是标准 classic wasm 产物**（`frontend/vendor/moonviz.wasm`，GitHub Releases
   的 `moonviz-wasm-classic-<version>.wasm`——**纯 WASM MVP、宿主中立、零 import**；
   docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
@@ -216,10 +217,12 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
     动这些标记、改函数名、或把签名写成非 `function name(` 形式，都会让它**静默取到错东西**。
 - Rust 端到端测试的跳过门已收紧：**wasm 产物缺失 → 合法跳过**（eprintln 提示）；
   **产物在场但宿主/编解码调用失败 → panic**（静默跳过曾把 codec 损坏伪装成绿灯，变异实验实证）。
-  受影响的 8 个引擎门测试：`wasm_engine_surface_contract`、`template_ids_match_engine`、
+  受影响的 10 个引擎门测试：`wasm_engine_surface_contract`、`template_ids_match_engine`、
   `agent_loop_with_mock_llm_and_real_engine`、`agent_loop_anthropic_protocol_with_mock_llm_and_real_engine`、
   `agent_loop_readonly_op_via_session_api`、`session_api_host_contract`、
-  `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`。
+  `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`、
+  `session_count_zero_after_close`（会话泄漏契约）、`agent_session_cache_reuse`（会话缓存命中，
+  经行协议宿主的 session_cache_stats 断言，变异验证过必红）。
   判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数仍是 22。
 
 ## 删前端代码前必读（真实事故，勿重演）

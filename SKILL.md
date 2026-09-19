@@ -29,9 +29,11 @@ MoonViz is a prototype design engine built entirely in MoonBit. It treats one Mo
 node scripts/sync-engine.mjs
 
 # 变更 op（两门，wasm 导出名）：
-#   apply_human_op <mbt> <op>    —— 人类画布操作
-#   apply_agent_op <mbt> <op>    —— Agent 单 op（仅变更类）
-# 只读检视经 session API（宿主包装 open→op→close 生命周期）：
+#   apply_human_op <mbt> <op>      —— 人类画布操作
+#   apply_agent_op <mbt> <op>      —— Agent 单 op 无状态入口（仅变更类）
+#   session_apply_agent <h> <op>   —— Agent 会话入口（同门同分发器；agent.rs
+#                                     变更路径走这里，宿主 mbt 键控缓存复用会话）
+# 只读检视经 session API（宿主 mbt 键控缓存会话）：
 #   session_lint / session_critique / session_query_nodes / session_spec /
 #   session_infer_missing / session_states / session_interactions / session_flows /
 #   session_export_svg / session_tap / session_benchmark / session_list_artboards …
@@ -43,7 +45,7 @@ node scripts/sync-engine.mjs
 |------|------|------|
 | `apply_human_op` | 人类画布操作（前端 inspector） | 变更类 op |
 | `apply_agent_op` | Agent 单 op | **仅变更类**；只读 op 不得走此路（用 session API） |
-| `session_open` + `session_*` | 只读检视 | 检视命令（宿主单次调用内完成 open→op→close） |
+| `session_open` + `session_*` | 只读检视/Agent 变更 | 检视命令 + `session_apply_agent`（宿主 mbt 键控缓存会话，见上） |
 | `render_mbt` / `validate_mbt` | 整篇文档渲染/校验 | 整篇 canonical |
 
 实测结论：同一篇文档经人类门逐 op 全通过，整篇提交给 Agent 门仍可能被

@@ -70,8 +70,8 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
    Use "interact" for anything richer than navigation (show_toast, set_state, haptic, play_sound) —
    and define the target with "state" first if you want a pressed/selected visual.
 5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired; no dangling refs.
-   Run "fix <artboard>" if violations accumulated (on docs carrying human-canvas debt it may be
-   rejected — the debt count in each apply result tells you how much is left).
+   Run "fix <artboard>" if violations accumulated. Agent ops are gate-checked:
+   violations are rejected outright with mbt_gate_block (debt tolerance is human-canvas only).
 6. REPORT: stop calling tools and summarize: screens built and the flow map.
 
 ## Tweak loop (document already loaded)
@@ -129,7 +129,7 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 - Errors: unknown_artboard/unknown_node/unknown_component/unknown_template → read_mbt then retry with real ids.
   Predicate violations (overflow, overlap) reject the op with predicate + node_id + detail → adjust values;
   if stuck run fix <artboard>. Never repeat an identical failing op.
-- debt = remaining tolerated violations; keep it 0. All changes go through moonviz_op only."#;
+- keep ops gate-clean (violations → mbt_gate_block rejection, not tolerated debt). All changes go through moonviz_op only."#;
 
 fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
@@ -428,6 +428,9 @@ struct EngineState<'a> {
     host: &'a EngineHost,
     mbt: Option<String>,
     last_render: Option<Value>,
+    /// last_render 渲染时的 canonical。session 变更路径不逐 op 渲染（省 N-1 次
+    /// 全量渲染），终态据此判断 render 是否已过期、要不要补一次 render_mbt。
+    rendered_mbt: Option<String>,
     ops: Vec<String>,
 }
 
@@ -453,6 +456,7 @@ impl<'a> EngineState<'a> {
                 _ => None,
             },
             last_render: None,
+            rendered_mbt: None,
             ops: Vec::new(),
         })
     }
@@ -496,6 +500,7 @@ impl<'a> EngineState<'a> {
                 return json!({"ok": false, "error": format!("seed_cleanup_failed:{op}")});
             }
             self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
+            self.rendered_mbt = self.mbt.clone();
             self.last_render = Some(r.clone());
             self.ops.push(op.to_string());
             return json!({
@@ -558,16 +563,19 @@ impl<'a> EngineState<'a> {
             return json!({"ok": true, "op": op, "result": r});
         }
 
-        // 变更操作：apply_agent_op（与 CLI apply-agent-mbt-op-b64 同一分发器，AgentGate）
-        let r = self.call("apply_agent_op", &mbt, op).await;
+        // 变更操作：session_apply_agent（AgentGate——engine-v0.1.1-session 修复
+        // 上游 issue #2 的门旁路后，与无状态 apply_agent_op 同门同分发器；引擎
+        // 内部经 canonical 往返 + 门检查，CPU 与无状态持平）。宿主按 mbt 键控
+        // 复用会话的收益：内存棘轮减半（200 op 实测 +37MB vs +84MB，降低 192MB
+        // 实例回收频率）、只读突发（lint/critique/query 连发）免重解析、上游
+        // 优化 session 内部实现时零改动受益。信封 {ok,mbt,artboards}（宿主同
+        // 句柄补画板索引），无 per-op render——终态经 ensure_render 兜底一次。
+        let r = self.call("session_apply_agent", &mbt, op).await;
         if r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some() {
             self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
-            self.last_render = Some(r.clone());
             self.ops.push(op.to_string());
             json!({
                 "ok": true, "op": op,
-                "debt": r.get("debt").cloned().unwrap_or(json!(0)),
-                "revision": r.get("revision").cloned().unwrap_or(json!(0)),
                 "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
             })
         } else {
@@ -585,13 +593,14 @@ impl<'a> EngineState<'a> {
     /// 终态 render 兜底（移植自 JS 桥）：无 apply 渲染的会话（只读尝试/零变更）
     /// 用 render_mbt 补齐，保证前端 applyMbtResult 拿到的不是 null。
     async fn ensure_render(&mut self) {
-        if self.last_render.is_some() {
+        let Some(mbt) = self.mbt.clone() else { return };
+        if self.last_render.is_some() && self.rendered_mbt.as_deref() == Some(mbt.as_str()) {
             return;
         }
-        let Some(mbt) = self.mbt.clone() else { return };
         let rendered = self.call("render_mbt", &mbt, "").await;
         if rendered.get("mbt").is_some_and(|v| v.is_string()) {
             self.last_render = Some(rendered);
+            self.rendered_mbt = Some(mbt);
         }
     }
 
@@ -1764,5 +1773,87 @@ mod tests {
         assert_eq!(r["before"], json!(0), "独立宿主进程初始计数应为 0：{r}");
         assert_eq!(r["during"], json!(2), "两次 open 后计数应为 2：{r}");
         assert_eq!(r["after"], json!(0), "close 后计数未归零——会话泄漏回归：{r}");
+    }
+
+    /// 会话缓存契约（agent 变更路径迁到 session_apply_agent 的核心机制）：
+    /// 行协议长驻宿主下，链式变更 op 的第二 op 必须命中缓存（宿主 hits/misses
+    /// 计数断言 hits=1/misses=1；若退回逐次 open→close 会 misses=2、hits=0 → 红）。
+    /// 静息 session_count 无法区分命中与失配重开（缓存槽两种情况都持有 1 个会话），
+    /// 故宿主提供 session_cache_stats。once-file 模式每次新进程天然不命中。
+    #[tokio::test]
+    async fn agent_session_cache_reuse() {
+        if !engine_ready().await {
+            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
+            return;
+        }
+        fn line_request(
+            stdin: &mut std::process::ChildStdin,
+            out: &mut std::io::BufReader<std::process::ChildStdout>,
+            req: &str,
+        ) -> Value {
+            use std::io::{BufRead, Write};
+            stdin.write_all((req.to_string() + "\n").as_bytes()).unwrap();
+            stdin.flush().unwrap();
+            loop {
+                let mut line = String::new();
+                assert!(out.read_line(&mut line).unwrap() > 0, "宿主提前退出");
+                let t = line.trim();
+                if !t.starts_with('{') {
+                    continue; // 宿主诊断输出，跳过
+                }
+                let env: Value = serde_json::from_str(t).unwrap();
+                assert_eq!(env["ok"], json!(true), "宿主信封失败：{env}");
+                return serde_json::from_str(env["json"].as_str().unwrap()).unwrap();
+            }
+        }
+        let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..").join("scripts").join("engine-host.mjs");
+        let mut child = std::process::Command::new("node")
+            .arg(script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn node 失败（node 在 PATH？）");
+        let mut stdin = child.stdin.take().unwrap();
+        let mut out = std::io::BufReader::new(child.stdout.take().unwrap());
+
+        let seed = seed_doc(SEED_BOARD, 390, 844);
+        let r1 = line_request(&mut stdin, &mut out, &json!({
+            "id": 1, "fn": "session_apply_agent", "mbt": seed,
+            "op": "place __seed button cb_b - 10 10"
+        }).to_string());
+        assert_eq!(r1["ok"], json!(true), "首个变更应成功：{r1}");
+        assert!(r1["artboards"].is_array(), "宿主应补画板索引：{r1}");
+        let mbt1 = r1["mbt"].as_str().unwrap().to_string();
+
+        // 链式第二 op 之前：缓存的会话应存活（静息计数 1，而非 0）
+        let c1 = line_request(&mut stdin, &mut out, &json!({
+            "id": 2, "fn": "session_count_probe", "mbt": mbt1.clone(), "op": ""
+        }).to_string());
+        assert_eq!(c1["before"], json!(1), "变更后缓存会话应存活（静息计数 1）：{c1}");
+
+        let r2 = line_request(&mut stdin, &mut out, &json!({
+            "id": 3, "fn": "session_apply_agent", "mbt": mbt1,
+            "op": "update __seed cb_b text=\"hi\""
+        }).to_string());
+        assert_eq!(r2["ok"], json!(true), "链式第二 op 应命中缓存成功：{r2}");
+        assert!(r2["mbt"].as_str().unwrap_or("").contains("hi"), "canonical 应含更新：{r2}");
+
+        // 命中统计：r1 失配开库 1 次，r2 必须命中（hits=1/misses=1）。
+        // 静息 session_count 无法区分「命中复用」与「失配重开」，故用宿主计数。
+        let st = line_request(&mut stdin, &mut out, &json!({
+            "id": 4, "fn": "session_cache_stats", "mbt": "", "op": ""
+        }).to_string());
+        assert_eq!(st["hits"], json!(1), "链式第二 op 必须命中缓存：{st}");
+        assert_eq!(st["misses"], json!(1), "只有首次开库应失配：{st}");
+
+        let c2 = line_request(&mut stdin, &mut out, &json!({
+            "id": 5, "fn": "session_count_probe",
+            "mbt": r2["mbt"].as_str().unwrap_or("").to_string(), "op": ""
+        }).to_string());
+        assert_eq!(c2["before"], json!(1), "缓存键前移后仍应恰好持有一个会话：{c2}");
+
+        drop(stdin);
+        let _ = child.wait();
     }
 }

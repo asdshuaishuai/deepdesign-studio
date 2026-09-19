@@ -20,11 +20,12 @@
 //      render_mbt | validate_mbt | list_templates | export_html | version_info
 //   2. 检视直调（arity 0）：list_tokens | list_themes | list_ops；
 //      list_components 读同步脚本产出的 components.json 快照（与前端同源）
-//   3. session API（有状态）：fn 以 session_ 开头——宿主在单次调用内完成
-//      session_open(mbt) → session_X(handle, ...args) → session_close 生命周期。
+//   3. session API（有状态）：fn 以 session_ 开头——会话按 **mbt 键控缓存**
+//      复用（与前端桥同构）：行协议长驻模式下连续请求命中同一句柄（内存棘轮
+//      减半、只读突发免重解析）；--once-file 每次新进程自然不命中，语义等价。
 //      args 取自 op 字段（空白切分）；session_apply_agent/human/component_compile_b64
 //      的 op 是完整串（含空格），原样单参传入。Rust 侧（agent.rs）的只读 op
-//      路由依赖这组导出——wasm session 面已导出全部检视命令。
+//      路由与变更路径（session_apply_agent）依赖这组导出。
 import { createInterface } from 'node:readline';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -83,12 +84,42 @@ const ARITY = {
 const SESSION_WHOLE_ARG = new Set([
   'session_apply_agent', 'session_apply_human', 'session_component_compile_b64',
 ]);
+// 会改变文档/会话状态的导出：成功后缓存键前移到新 canonical
+const SESSION_MUTATING = new Set([
+  'session_apply_agent', 'session_apply_human', 'session_auto_fix', 'session_constrain',
+]);
+
+// mbt 键控会话缓存：命中即复用句柄；失配即关旧开新（缓存至多持有一个活会话，
+// 不会泄漏）。与 frontend/index.html 桥的 agentSession 同构。hits/misses 计数
+// 供 cargo test 的缓存契约断言（静息 session_count 无法区分命中与失配重开）。
+let sessCache = null;
+const cacheStats = { hits: 0, misses: 0 };
+function cachedSession(mbt) {
+  if (sessCache && sessCache.mbt === mbt) {
+    cacheStats.hits += 1;
+    return sessCache.handle;
+  }
+  cacheStats.misses += 1;
+  if (sessCache) ex.session_close(sessCache.handle);
+  const h = ex.session_open(writeStr(mbt));
+  if (!Number.isInteger(h) || h < 0) {
+    sessCache = null;
+    return -1;
+  }
+  sessCache = { handle: h, mbt };
+  return h;
+}
 
 function handle(req) {
   const { id, fn } = req;
   if (fn === 'list_components') {
     const comps = existsSync(COMPONENTS) ? readFileSync(COMPONENTS, 'utf8') : '[]';
     return { id, ok: true, json: JSON.stringify({ ok: true, components: JSON.parse(comps) }) };
+  }
+  // 缓存命中统计（cargo test 的 agent_session_cache_reuse 断言）：
+  // 链式 op 必须 hits ≥ 1（失配重开则 misses 增长、hits 恒 0 → 测试红）。
+  if (fn === 'session_cache_stats') {
+    return { id, ok: true, json: JSON.stringify({ ok: true, ...cacheStats }) };
   }
   // 泄漏契约探针（上游 #1 提供 session_count 后可测）：同一进程内 open×2 →
   // count +2 → close×2 → count 归零。Rust 侧断言 before/during/after。
@@ -116,7 +147,7 @@ function handle(req) {
   const SESSION_MIN_ARGS = { session_tap: 3 };  // 其余 session_<ab> 类：0 或 1 参皆合法
   try {
     if (fn.startsWith('session_')) {
-      const handle = ex.session_open(writeStr(req.mbt ?? ''));
+      const handle = cachedSession(req.mbt ?? '');
       if (!Number.isInteger(handle) || handle < 0) {
         return { id, ok: false, error: `session_open_failed:${handle}` };
       }
@@ -124,7 +155,6 @@ function handle(req) {
       const parts = op.split(/\s+/).filter(Boolean);
       const minArgs = SESSION_MIN_ARGS[fn] ?? 0;
       if (parts.length < minArgs) {
-        ex.session_close(handle);
         return { id, ok: false, error: `op_missing_args:${fn} 需要 ${minArgs} 个参数，得到 ${parts.length}` };
       }
       let args;
@@ -135,15 +165,32 @@ function handle(req) {
           ? [writeStr(op)]
           : parts.map(writeStr);
       }
-      // 先读结果再关会话（对齐前端桥），finally 兜底回收句柄防泄漏
-      let out;
+      let outStr;
       try {
-        const outPtr = ex[fn](handle, ...args);
-        out = { id, ok: true, json: readStr(outPtr) };
-      } finally {
-        ex.session_close(handle);
+        outStr = readStr(ex[fn](handle, ...args));
+      } catch (e) {
+        // wasm trap/半途失败：会话状态不可信 → 弃缓存，下次按权威 mbt 重开
+        try { ex.session_close(handle); } catch (_) { /* 实例已不可用 */ }
+        sessCache = null;
+        return { id, ok: false, error: `wasm_panic:${e.message}` };
       }
-      return out;
+      if (SESSION_MUTATING.has(fn)) {
+        try {
+          const r = JSON.parse(outStr);
+          if (r.ok === true && typeof r.mbt === 'string') {
+            sessCache.mbt = r.mbt;
+            // session 信封只有 {ok,mbt}——同句柄补画板索引（内存查询，无重解析）
+            if (fn === 'session_apply_agent' || fn === 'session_apply_human') {
+              const la = JSON.parse(readStr(ex.session_list_artboards(handle)));
+              if (la.ok === true && Array.isArray(la.data)) {
+                r.artboards = la.data;
+                outStr = JSON.stringify(r);
+              }
+            }
+          }
+        } catch { /* 信封形状异常：原样透传给调用方判断 */ }
+      }
+      return { id, ok: true, json: outStr };
     }
     const args = ARITY[fn] === 0
       ? []
