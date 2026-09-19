@@ -65,8 +65,23 @@ fn call_sync(fn_name: &str, mbt: &str, op: &str) -> Result<serde_json::Value, St
             .unwrap_or(0)
     ));
     let request = serde_json::json!({ "id": 1, "fn": fn_name, "mbt": mbt, "op": op });
-    std::fs::write(&req_path, request.to_string())
-        .map_err(|e| format!("node_host_req_write:{e}"))?;
+    // 载荷含用户文档全文——0600 落盘（默认 0644 会短驻泄露给本机其他用户；
+    // 崩溃残留时同样受此保护，下次同进程 id 才可能覆盖）
+    #[cfg(unix)]
+    let write_req = || {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&req_path)
+            .and_then(|mut f| f.write_all(request.to_string().as_bytes()))
+    };
+    #[cfg(not(unix))]
+    let write_req = || std::fs::write(&req_path, request.to_string());
+    write_req().map_err(|e| format!("node_host_req_write:{e}"))?;
     let result = run_once(&script, &req_path);
     let _ = std::fs::remove_file(&req_path);
     result
