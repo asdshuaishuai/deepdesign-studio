@@ -1082,6 +1082,9 @@ if(IS_TAURI&&window.__TAURI__.event){
         out={ok:true,components:allComps||[]};
       }else if(fn&&fn.startsWith('session_')){
         if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
+        // 宿主编排型导出（句柄/计数由桥管理）：直调会以 i32/bool 当字符串指针读垃圾
+        if(fn==='session_open'||fn==='session_close'||fn==='session_open_project_json'||fn==='session_count')
+          throw new Error('host_orchestrated_fn:'+fn);
         const h=agentSession(p.mbt||'');
         const op=String(p.op||'');
         const parts=op.split(/\s+/).filter(Boolean);

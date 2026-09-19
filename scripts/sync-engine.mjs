@@ -248,7 +248,8 @@ async function contractProbe(exports, wasmBytes) {
   if (exports.session_count() !== count0) fail('session_close 后计数未归零（会话泄漏回归）');
   // list_ops 应给出 mutating op 注册表（op 面事实源）
   const ops = JSON.parse(readStr(exports.list_ops()));
-  if (!Array.isArray(ops) || ops.length < 20) fail(`list_ops 异常：${JSON.stringify(ops).slice(0, 120)}`);
+  // SKILL/AGENTS 承诺 ≥25（引擎 v0.1.1-session 实际 25 op）——探针与文档口径一致
+  if (!Array.isArray(ops) || ops.length < 25) fail(`list_ops 注册表收缩（期望 ≥25）：${JSON.stringify(ops).slice(0, 120)}`);
 
   const engineIds = JSON.parse(readStr(exports.list_templates()))
     .map((t) => t.id ?? t.template_id ?? t);

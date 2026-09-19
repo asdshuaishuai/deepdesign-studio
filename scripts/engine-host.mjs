@@ -118,6 +118,13 @@ function handle(req) {
     const comps = existsSync(COMPONENTS) ? readFileSync(COMPONENTS, 'utf8') : '[]';
     return { id, ok: true, json: JSON.stringify({ ok: true, components: JSON.parse(comps) }) };
   }
+  // 宿主编排型导出：句柄与计数由宿主管理（缓存生命周期），经通用 session 分支
+  // 直调会以 i32/bool 返回值当字符串指针解读出垃圾——明确拒绝。需要 count 时
+  // 用 session_count_probe（宿主侧 open×2/close×2 编排）。
+  if (fn === 'session_open' || fn === 'session_close' ||
+      fn === 'session_open_project_json' || fn === 'session_count') {
+    return { id, ok: false, error: `host_orchestrated_fn:${fn}` };
+  }
   // 缓存命中统计（cargo test 的 agent_session_cache_reuse 断言）：
   // 链式 op 必须 hits ≥ 1（失配重开则 misses 增长、hits 恒 0 → 测试红）。
   if (fn === 'session_cache_stats') {

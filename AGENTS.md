@@ -24,6 +24,8 @@ docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体
 - **人类操作与 Agent 操作走不同引擎入口**：画布走 `apply_human_op`，Agent 变更走
   `session_apply_agent`（0.1.1-session 起与无状态 `apply_agent_op` 同门同分发器；宿主按
   mbt 键控复用会话——内存棘轮减半、只读突发免重解析），语义差异由门实现，不要在前端绕过门直接改数据。
+  画布保持无状态是有意的：人类 op 每次都需要同步渲染，会话路径信封不带 render，迁移反而多一次
+  `render_mbt`——别把它「优化」到会话路径。
 - **引擎是标准 classic wasm 产物**（`frontend/vendor/moonviz.wasm`，GitHub Releases
   的 `moonviz-wasm-classic-<version>.wasm`——**纯 WASM MVP、宿主中立、零 import**；
   docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
@@ -210,10 +212,10 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
 
 - `test_studio.cjs` 有**两道防线**，改测试前先分清：
   - **静态防线（4 道断言）**：内联 HTML 处理器引用的函数必须有定义；`INTERACTIVE_SURFACE`
-    清单（35 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
+    清单（36 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
     `lib.rs` 的原生菜单 id 必须全部被 `nativeMenuAction` 映射。这几道是**为历史事故专门加的**（见下）。
   - **动态防线**：靠字符串切片取真实状态机——`indexOf("const APP_VER")` 到
-    `indexOf('async function execCli')` 划区段，再 `indexOf('function NAME(')` 逐函数抽。
+    `indexOf('function mbtResult(')` 划区段，再 `indexOf('function NAME(')` 逐函数抽。
     动这些标记、改函数名、或把签名写成非 `function name(` 形式，都会让它**静默取到错东西**。
 - Rust 端到端测试的跳过门已收紧：**wasm 产物缺失 → 合法跳过**（eprintln 提示）；
   **产物在场但宿主/编解码调用失败 → panic**（静默跳过曾把 codec 损坏伪装成绿灯，变异实验实证）。
@@ -255,10 +257,13 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 
 - 原生菜单桥已随 `9f48220` 事故一并修复：`nativeMenuAction` 已在前端实现，id → 函数映射由
   `test_studio.cjs` 检查 D 锁定（从 `lib.rs` 解析菜单 id，逐个断言已被映射）。
-  改菜单时**同时**更新 `lib.rs`、前端映射表与 `docs/menus.md`。
-  ⚠️ `docs/menus.md` 开头声称菜单项"只发出 `native-menu` 事件"——**这句是错的**，
-  实际链路是 `lib.rs::on_menu_event` 经 `win.eval("nativeMenuAction(id)")` 直调前端全局函数
-  （`event.listen` 曾因 Tauri ACL 未放行而弃用）。以代码为准，改菜单时顺手修这份文档。
+  改菜单时**同时**更新 `lib.rs`、前端映射表与 `docs/menus.md`（链路：`lib.rs::on_menu_event`
+  经 `win.eval("nativeMenuAction(id)")` 直调前端全局函数；`event.listen` 曾因 Tauri ACL
+  未放行而弃用——menus.md 已按此修正）。
+- **用户组件库三入口（画板沉淀 `saveAsComponent` / MCF 导入导出）仍是诚实降级 stub**
+  （`USERCOMP_UNAVAILABLE` 提示）：引擎 session 面已导出 `session_component_compile_b64` /
+  `session_library_snapshot`，但用户组件注册表只存活在**会话内**——画布是无状态 per-op
+  路径、会话缓存轮换即丢；持久化模型（引擎侧全局注册表导出 vs 文档嵌入）未决，接线前先定设计。
 - 根目录那份 2412 行的 `index.html` 旧副本已在 `9f48220` 删除，确认无任何引用
   （`tauri.conf.json` 的 `frontendDist` 指向 `../frontend`）。前端只有 `frontend/index.html` 一份。
 

@@ -1,10 +1,10 @@
 # deepDesign Studio 中文菜单文案清单
 
-所有菜单动作最终都经引擎 CLI 落到唯一事实源 `.mbt.md`；菜单本身只是壳的具现化入口。
+所有菜单动作最终经 WebView 内的 wasm 引擎落到唯一事实源 `.mbt.md`；菜单本身只是壳的具现化入口（无 CLI、无子进程）。
 
 ## 1. 原生菜单栏（macOS 全局菜单）
 
-由 Tauri 2 原生菜单构建（`src-tauri/src/lib.rs::build_native_menus`）。菜单项只发出 `native-menu` 事件（载荷 = 菜单 id），前端 `nativeMenuAction()` 映射到既有函数执行。
+由 Tauri 2 原生菜单构建（`src-tauri/src/lib.rs::build_native_menus`）。菜单项点击后 `lib.rs::on_menu_event` 经 `win.eval("nativeMenuAction(id)")` **直调**前端全局函数（`event.listen` 曾因 Tauri ACL 未放行而弃用），由它映射到既有函数执行。
 
 ### deepDesign Studio（应用菜单）
 | 菜单项 | 说明 |
@@ -120,6 +120,6 @@
 
 ## 5. 实现边界
 
-- 菜单不持有任何状态：每个动作都调用既有前端函数，最终走 `runOp`/`execCli` → 引擎 CLI → `apply-*-mbt-op-b64` → canonical `.mbt.md` 回写 → 重新渲染。
+- 菜单不持有任何状态：每个动作都调用既有前端函数，最终走 `runOp` → `engApply`（WebView 内 wasm `apply_human_op` 直调）→ canonical `.mbt.md` 回写 → 重新渲染。
 - 引擎 `duplicate` 操作已加入 MBT 操作表（`cli/main.mbt::apply_mbt_operation`），与直接命令 `duplicate <src> <new_name>` 同源。
 - 右键菜单容器 `#ctxmenu` 动态构建；点击任意处 / 窗口失焦自动关闭。
