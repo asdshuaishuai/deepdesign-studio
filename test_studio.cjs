@@ -72,13 +72,12 @@ const INTERACTIVE_SURFACE=[
   // restoreThinkingOptions 与 THINK_LABEL 是档位恢复路径的承重符号——
   // 缺失时点预设后 select 静默不收窄/不恢复（9f48220 同类盲区，勿删）
   'restoreThinkingOptions',
-  // agent 引擎桥的会话缓存（生产变更路径 session_apply_agent 的宿主侧核心；
-  // 桥块守卫在 vm 里恒短路，删掉它动态防线不红——bug-hunt 审查变异证实）
-  'agentSession',
+  // agent 引擎桥已随 wasmtime 纯 Rust 宿主删除（agent 不再经前端桥执行，
+  // agentSession/sessCache 等桥侧符号一并移除——2026-09 wasmtime 迁移）
 ];
 const SURFACE_CONSTS=['THINK_LABEL'];
 // 断言条目数：否则删一个名字会同时缩短清单与提示信息，防线静默变弱
-assert.equal(INTERACTIVE_SURFACE.length,36,'交互层清单条目数变了——增删都必须是有意的');
+assert.equal(INTERACTIVE_SURFACE.length,35,'交互层清单条目数变了——增删都必须是有意的');
 const missingConsts=SURFACE_CONSTS.filter(n=>!new RegExp('(const|let|var)\\s+'+n+'\\b').test(script));
 assert.deepEqual(missingConsts,[],`承重常量未定义：${missingConsts}`);
 const missingSurface=INTERACTIVE_SURFACE.filter(n=>!defined.has(n));

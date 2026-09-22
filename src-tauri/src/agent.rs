@@ -1263,7 +1263,9 @@ mod tests {
 
     /// 共享宿主实例：测试无 WebView，走 node 子进程宿主驱动同一份 wasm 产物
     /// （node ≥24）。产物缺失/宿主不可用时调用返回 Err（各测试据此跳过）。
-    const ENGINE: EngineHost = EngineHost::NodeWasm;
+    /// 共享宿主实例：wasmtime 进程内承载 classic wasm（与生产 agent 同路）。
+    /// wasm 产物编译期嵌入（缺失=编译失败），调用失败即回归必红。
+    const ENGINE: EngineHost = EngineHost;
 
     /// 引擎 wasm 面契约：经 node 宿主驱动**真产物**——种子文档可承载 op、
     /// AgentGate 拒绝带债提交、canonical mbt 回传、组件快照非空。
@@ -1392,32 +1394,13 @@ mod tests {
         ENGINE_TEST_GATE.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// 引擎（node 宿主 × 真 wasm 产物）可用性探针：不可用即跳过，绿不是假绿。
-    /// 引擎就绪门。**产物缺失 → 合法跳过**（eprintln + return）；
-    /// **产物在场但调用失败 → panic**——wasm 坏了或宿主/编解码损坏必须红，
-    /// 静默跳过会把真回归伪装成绿灯（变异实验实证过这一掩蔽路径）。
+    /// 引擎（wasmtime 宿主 × 编译期嵌入的真 wasm 产物）可用性门。
+    /// **失败即 panic**——产物随二进制嵌入不存在"缺失"路径，宿主/编解码损坏
+    /// 是回归不是环境缺失，静默跳过会把真回归伪装成绿灯（变异实验实证过）。
     async fn engine_ready() -> bool {
-        let wasm = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("frontend")
-            .join("vendor")
-            .join("moonviz.wasm");
         match ENGINE.call("version_info", "", "").await {
             Ok(v) if v.get("ok") == Some(&json!(true)) => true,
-            _ if !wasm.is_file() => {
-                eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
-                false
-            }
-            // 并行测试下多个 node 宿主进程争抢，首呼可能瞬态失败——重试一次再判死刑
-            bad => {
-                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                match ENGINE.call("version_info", "", "").await {
-                    Ok(v) if v.get("ok") == Some(&json!(true)) => true,
-                    bad2 => panic!(
-                        "wasm 产物在场但引擎调用两次均失败（宿主或编解码损坏，这是回归不是环境缺失）：{bad2:?}（首呼 {bad:?}）"
-                    ),
-                }
-            }
+            bad => panic!("wasm 引擎不可用（嵌入产物损坏或宿主编解码回归，这是回归不是环境缺失）：{bad:?}"),
         }
     }
 
@@ -1846,6 +1829,8 @@ mod tests {
             return;
         }
         let _engine_gate = engine_test_gate();
+        // 常驻实例：前序测试可能留下缓存会话——重置后「初始计数 0」断言才成立
+        crate::wasmtime_host::hard_reset();
         let r = ENGINE.call("session_count_probe", &seed_doc(SEED_BOARD, 390, 844), "").await.unwrap();
         assert_eq!(r["before"], json!(0), "独立宿主进程初始计数应为 0：{r}");
         assert_eq!(r["during"], json!(2), "两次 open 后计数应为 2：{r}");
@@ -1853,10 +1838,10 @@ mod tests {
     }
 
     /// 会话缓存契约（agent 变更路径迁到 session_apply_agent 的核心机制）：
-    /// 行协议长驻宿主下，链式变更 op 的第二 op 必须命中缓存（宿主 hits/misses
+    /// 常驻 wasmtime 实例下，链式变更 op 的第二 op 必须命中缓存（宿主 hits/misses
     /// 计数断言 hits=1/misses=1；若退回逐次 open→close 会 misses=2、hits=0 → 红）。
     /// 静息 session_count 无法区分命中与失配重开（缓存槽两种情况都持有 1 个会话），
-    /// 故宿主提供 session_cache_stats。once-file 模式每次新进程天然不命中。
+    /// 故宿主提供 session_cache_stats。
     #[tokio::test]
     async fn agent_session_cache_reuse() {
         if !engine_ready().await {
@@ -1864,74 +1849,39 @@ mod tests {
             return;
         }
         let _engine_gate = engine_test_gate();
-        fn line_request(
-            stdin: &mut std::process::ChildStdin,
-            out: &mut std::io::BufReader<std::process::ChildStdout>,
-            req: &str,
-        ) -> Value {
-            use std::io::{BufRead, Write};
-            stdin.write_all((req.to_string() + "\n").as_bytes()).unwrap();
-            stdin.flush().unwrap();
-            loop {
-                let mut line = String::new();
-                assert!(out.read_line(&mut line).unwrap() > 0, "宿主提前退出");
-                let t = line.trim();
-                if !t.starts_with('{') {
-                    continue; // 宿主诊断输出，跳过
-                }
-                let env: Value = serde_json::from_str(t).unwrap();
-                assert_eq!(env["ok"], json!(true), "宿主信封失败：{env}");
-                return serde_json::from_str(env["json"].as_str().unwrap()).unwrap();
-            }
-        }
-        let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..").join("scripts").join("engine-host.mjs");
-        let mut child = std::process::Command::new("node")
-            .arg(script)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .expect("spawn node 失败（node 在 PATH？）");
-        let mut stdin = child.stdin.take().unwrap();
-        let mut out = std::io::BufReader::new(child.stdout.take().unwrap());
+        // 常驻实例：hits/misses 是绝对值断言，重置后从零计数
+        crate::wasmtime_host::hard_reset();
 
         let seed = seed_doc(SEED_BOARD, 390, 844);
-        let r1 = line_request(&mut stdin, &mut out, &json!({
-            "id": 1, "fn": "session_apply_agent", "mbt": seed,
-            "op": "place __seed button cb_b - 10 10"
-        }).to_string());
+        let r1 = ENGINE
+            .call("session_apply_agent", &seed, "place __seed button cb_b - 10 10")
+            .await
+            .unwrap();
         assert_eq!(r1["ok"], json!(true), "首个变更应成功：{r1}");
         assert!(r1["artboards"].is_array(), "宿主应补画板索引：{r1}");
         let mbt1 = r1["mbt"].as_str().unwrap().to_string();
 
         // 链式第二 op 之前：缓存的会话应存活（静息计数 1，而非 0）
-        let c1 = line_request(&mut stdin, &mut out, &json!({
-            "id": 2, "fn": "session_count_probe", "mbt": mbt1.clone(), "op": ""
-        }).to_string());
+        let c1 = ENGINE.call("session_count_probe", &mbt1, "").await.unwrap();
         assert_eq!(c1["before"], json!(1), "变更后缓存会话应存活（静息计数 1）：{c1}");
 
-        let r2 = line_request(&mut stdin, &mut out, &json!({
-            "id": 3, "fn": "session_apply_agent", "mbt": mbt1,
-            "op": "update __seed cb_b text=\"hi\""
-        }).to_string());
+        let r2 = ENGINE
+            .call("session_apply_agent", &mbt1, "update __seed cb_b text=\"hi\"")
+            .await
+            .unwrap();
         assert_eq!(r2["ok"], json!(true), "链式第二 op 应命中缓存成功：{r2}");
         assert!(r2["mbt"].as_str().unwrap_or("").contains("hi"), "canonical 应含更新：{r2}");
 
         // 命中统计：r1 失配开库 1 次，r2 必须命中（hits=1/misses=1）。
         // 静息 session_count 无法区分「命中复用」与「失配重开」，故用宿主计数。
-        let st = line_request(&mut stdin, &mut out, &json!({
-            "id": 4, "fn": "session_cache_stats", "mbt": "", "op": ""
-        }).to_string());
+        let st = ENGINE.call("session_cache_stats", "", "").await.unwrap();
         assert_eq!(st["hits"], json!(1), "链式第二 op 必须命中缓存：{st}");
         assert_eq!(st["misses"], json!(1), "只有首次开库应失配：{st}");
 
-        let c2 = line_request(&mut stdin, &mut out, &json!({
-            "id": 5, "fn": "session_count_probe",
-            "mbt": r2["mbt"].as_str().unwrap_or("").to_string(), "op": ""
-        }).to_string());
+        let c2 = ENGINE
+            .call("session_count_probe", r2["mbt"].as_str().unwrap_or(""), "")
+            .await
+            .unwrap();
         assert_eq!(c2["before"], json!(1), "缓存键前移后仍应恰好持有一个会话：{c2}");
-
-        drop(stdin);
-        let _ = child.wait();
     }
 }

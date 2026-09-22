@@ -1,8 +1,11 @@
 # 上游需求：moonviz classic wasm ABI 契约化（wasmtime 纯 Rust 宿主的最后一块）
 
-状态：**另行立项**。studio 自 1b34b78 起消费 GitHub Releases 的**标准 classic wasm**
-（`moonviz-wasm-classic-<version>.wasm`——纯 WASM MVP、宿主中立、零 import），
-过渡期用 WebView 事件桥（`engine-req`/`engine_res`）+ node 测试宿。
+状态：**宿主已实施，ABI 契约化诉求保留**（2026-09）。wasmtime 纯 Rust 宿主已接入
+（`src-tauri/src/wasmtime_host.rs`，wasmtime 49）：agent 循环与 cargo test 进程内
+直调 classic wasm，node 子进程宿主与 WebView 事件桥已删除——纯 WASM MVP 产物的
+加载没有阻碍。**本文的未尽事项只剩 ABI 契约化**：宿主依赖的字符串布局与内存写入
+不变量仍是逆向的实现细节（见下），三处同构 codec + 契约测试是当前防线，上游文档化
+（或 `_bytes` 边界导出）后才能升格为受支持的契约。
 
 ## 背景与动机
 

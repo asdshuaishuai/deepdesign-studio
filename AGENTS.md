@@ -7,19 +7,19 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 ## 三层架构与边界（改代码前先读）
 
 ```
-frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）+ 画布侧 wasm 引擎实例（含 agent 桥监听）
-src-tauri/src/lib.rs       Tauri 命令层：engine_res / invoke_fx_sdk / save_ddp / open_ddp / model_registry + EngineHost
-src-tauri/src/node_host.rs node 子进程引擎宿主（cargo test 专用，驱动同一份 wasm 产物）
-src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI/Anthropic 工具调用 × 引擎事件桥）
+frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）+ 画布侧 wasm 引擎实例
+src-tauri/src/lib.rs       Tauri 命令层：invoke_fx_sdk / save_ddp / open_ddp / model_registry + EngineHost
+src-tauri/src/wasmtime_host.rs  wasmtime 进程内引擎宿主（纯 Rust 运行时，agent 循环与 cargo test 共用）
+src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI/Anthropic 工具调用 × wasmtime 引擎宿主）
 scripts/sync-engine.mjs    引擎产物同步：GitHub Releases 拉标准 classic wasm → sha512 校验 → 真机契约探针 → frontend/vendor/
 vendor/moonviz-ddp/        vendored DDP 编解码 crate（引擎仓库 MIT 副本，见其 README）
-docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体 + wasmtime 纯 Rust 宿主
+docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 classic 变体落地后接入，保留作背景与消费侧清单）
 ```
 
 必须守住的边界：
 
-- **前端只能经 `window.__TAURI__.core.invoke` 调上面 5 个命令**，没有 HTTP 层，不要引入 fetch/axios。
-- **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、进程内 V8 宿主、DDP 加解密。
+- **前端只能经 `window.__TAURI__.core.invoke` 调上面 4 个命令**，没有 HTTP 层，不要引入 fetch/axios。
+- **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、wasmtime 宿主、DDP 加解密。
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
 - **人类操作与 Agent 操作走不同引擎入口**：画布走 `apply_human_op`，Agent 变更走
   `session_apply_agent`（0.1.1-session 起与无状态 `apply_agent_op` 同门同分发器；宿主按
@@ -31,15 +31,14 @@ docs/upstream-engine-ask.md  终局路线立项：上游字节边界 wasm 变体
   docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
   Builtins 提案、仅 V8 类引擎可跑，本仓库不用）。sync-engine.mjs 拉取 + sha512 校验 +
   真机契约探针（7 经典/4 检视/26 session 导出 + 模板/组件/会话计数）。字符串是 linear memory
-  对象（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），宿主侧编解码（sync/engine-host/
-  前端桥三处同构）；写入区锚在「当前内存大小+余量」之上，引擎 bump 堆顶不超过当前内存
-  大小，故永不碰撞。**宿主中立 = wasmtime/Boa 等规范运行时均可加载**——终局纯 Rust
-  宿主不再需要等上游变体。
-- 两个引擎实例（WebView 画布 + node 测试宿）**只交换 canonical `.mbt.md` 文本**，无共享状态；
-  前端调 `engApply/engRender`（wasm 直调），agent 循环经**结构化事件桥**（`engine-req` 事件 →
-  前端 wasm 执行 → `engine_res` 命令回传，serde 对象直达无 JS 拼接）——**终局是 wasmtime 纯
-  Rust 宿主，待上游字节边界变体**（见 `docs/upstream-engine-ask.md`）；
-  `capabilities/default.json`（core:event:default）只为这条桥存在，桥消失时一并删。
+  对象（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），宿主侧编解码（sync/wasmtime_host/
+  前端三处同构）；写入区锚在「当前内存大小+余量」之上，引擎 bump 堆顶不超过当前内存
+  大小，故永不碰撞。
+- **两个引擎实例（WebView 画布 + Rust wasmtime 宿主）只交换 canonical `.mbt.md` 文本**，
+  无共享状态；前端调 `engApply/engRender`（wasm 直调），agent 循环调 `EngineHost::call`
+  （wasmtime 进程内直调——**纯 Rust 运行时：无 node、无子进程、无 WebView 往返**；
+  字符串编解码与会话缓存编排在 wasmtime_host.rs，与 engine-host.mjs/前端三处同构）。
+  wasm 产物编译期 include_bytes! 嵌入 Rust——**缺失 = 编译错误**（先跑 sync-engine.mjs）。
 - 引擎要求文档至少一个视觉块——**空项目起步用种子文档引导**（前端 `seedDoc`/`bootstrapFirstBoard`，
   Rust `agent.rs::seed_doc`，两边逐字对齐；首 op 后删除 `__seed` 画板）。
 
@@ -113,8 +112,8 @@ readonly 路由由 agent.rs 的 `READONLY_OPS` 表锚定（`readonly_routing` �
 以产物行为为准。**对账的权威来源不是引擎的 `help` 文案，而是实际行为：
 
 ```bash
-echo '{"id":1,"fn":"list_templates","mbt":"","op":""}' | node scripts/engine-host.mjs   # 引擎产物直查
-node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时校验导出面/模板/组件
+node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时校验导出面/模板/组件/会话计数
+node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不依赖——wasmtime 宿主是唯一运行时）
 ```
 
 ## 硬性环境约束
@@ -125,10 +124,12 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
 - **Windows 本机编译需 MSVC 工具链**：tauri/webview2 链接在 GNU 工具链下失败
   （`linking with x86_64-w64-mingw32-gcc failed`）。本机默认是 GNU 时用
   `cargo +stable-x86_64-pc-windows-msvc test`，或 `rustup default stable-x86_64-pc-windows-msvc`。
-- **测试引擎依赖 node**（classic wasm 无 WasmGC 要求，旧 node 亦可实例化）：cargo test 的
-  引擎契约/端到端走 `node_host.rs` → `scripts/engine-host.mjs`，node 缺失时这些测试
-  **静默跳过**（eprintln 提示，仍算绿）——看到绿先确认没有 "跳过" 输出。前端契约测试
-  `test_studio.cjs` 同理。
+- **wasmtime 依赖对 rustc 有最低版本要求**（wasmtime 49 需 rustc ≥1.96）——工具链过旧会在
+  依赖解析阶段直接报错（不是静默降级）。`rustup update stable-x86_64-pc-windows-msvc`。
+- **引擎产物编译期嵌入 Rust（include_bytes!）**：`cargo build` 前必须先跑
+  `node scripts/sync-engine.mjs`，否则 `wasmtime_host.rs` 编译失败（显性错误优于静默）。
+- **node 只剩开发期用途**（sync 脚本 + 前端契约测试 `test_studio.cjs` + engine-host.mjs
+  调试工具）；**cargo test 已不依赖 node**——引擎测试走 wasmtime 进程内宿主，无外部运行时。
 - **改 `frontend/` 后 `tauri dev` 不会热更**（它只 watch `src-tauri/`）。需在窗口按 ⌘R，
   或用 `./dev.sh --fresh`。`lib.rs` 里还有一段强制 `?v=<timestamp>` 重载，是为了绕 WKWebView 缓存——
   不要删。
@@ -136,13 +137,12 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
   是前端实例化引擎 wasm 的硬前提，别删。Tauri codegen 在构建期为非空内联 `<script>` 自动注入
   sha256 hash，所以 `frontend/index.html` 里那一大坨内联脚本没问题；新增内联脚本同样会被自动
   hash，但**不要**改成外部 module script。
-- **capabilities/default.json 只放行 `core:event:default`**——它是引擎事件桥
-  （`engine-req`/`engine_res`）的生命线；当年 `event.listen` 因 ACL 未放行而弃用的坑，就是靠这个
-  capability 解开的。改权限面时最小化新增。
+- **无 capabilities 目录是常态**：前端不用任何 ACL 管辖的 core 面（事件桥已随 wasmtime
+  宿主删除）；自定义命令不经 ACL。别为"以防万一"加 capability。
 - 依赖刻意保持精简。引入类型化 chat 客户端（如 async-openai）已被评估否决：thinking 家族等非标字段
-  必须在序列化后注入，类型层反而被绕过。Rusty V8（进程内 JS 引擎宿主）也已评估并**否决**：
-  +30~80MB 安装包税 + 依赖链脆弱（temporal_rs/icu_calendar 编译断裂实证），事件桥够用；
-  终局走上游字节边界 wasm + wasmtime（见 `docs/upstream-engine-ask.md`）。
+  必须在序列化后注入，类型层反而被绕过。Rusty V8（进程内 JS 引擎宿主）已被评估并**否决**：
+  +30~80MB 安装包税 + 依赖链脆弱（temporal_rs/icu_calendar 编译断裂实证）；**wasmtime 为最终
+  形态**（classic wasm 宿主中立使然，见 `docs/upstream-engine-ask.md`）。
 
 ## Agent 基座约定（`agent.rs`）
 

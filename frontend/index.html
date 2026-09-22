@@ -946,7 +946,7 @@ function b64ToUtf8(text){return decodeURIComponent(escape(atob(text)));}
  * 引擎 bump 堆顶不超过当前内存大小，故永不被覆盖。
  * 供测试注入的接缝：window.__ENGINE_STUB__ = {apply,render} 存在时优先走桩。 */
 let engineExports=null,engineFailed='',engineReady=null;
-let engWriteOff=0,engLastMem=0,sessCache=null;
+let engWriteOff=0,engLastMem=0;
 function engReadStr(ptr){
   const mem=new DataView(engineExports.memory.buffer);
   // 钳制到内存边界：腐坏指针/长度不再放大成巨型读取
@@ -982,7 +982,6 @@ function engineRecycleIfNeeded(){
     engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
     engWriteOff=engineExports.memory.buffer.byteLength+65536;
     engLastMem=engineExports.memory.buffer.byteLength;
-    sessCache=null; // 新实例句柄从零计数，旧 session 句柄作废
   }
 }
 function loadEngine(){
@@ -1037,88 +1036,6 @@ async function bootstrapFirstBoard(cmd,id,w,h){
   let r=await engApply('human',seedDoc(SEED_BOARD,24,24),`${cmd} ${id} ${w} ${h}`);
   if(!r.ok)return r;
   return engApply('human',r.mbt,`delete-artboard ${SEED_BOARD}`);
-}
-/* Rust agent 循环的引擎桥：lib.rs 经结构化事件 engine-req 请求（serde 对象，
- * 无 JS 拼接，零注入面），本监听驱动 WebView 内 wasm 实例执行，
- * 结果经 engine_res 命令回传（id 配对）。fn 限定 wasm 导出名 + list_components。
- *
- * session API（fn 以 session_ 开头）：会话按 **mbt 键控缓存** 复用——收益是
- * 内存棘轮减半 + 只读突发免重解析（引擎 0.1.1-session 的 session_apply_agent
- * 内部经 canonical 往返 + 同门检查，变更 op 的 CPU 与无状态持平）。缓存键 =
- * 上次装载/产出的 canonical 串：agent.rs 回传的正是引擎上次输出，连续 op 必
- * 命中；mbt 变了（人类编辑/新文档）自然失配换开，语义与逐次 open 等价。
- * 与 scripts/engine-host.mjs 同构（测试与生产走同一份驱动逻辑）。
- * 全部调用经 engReadStr/engWriteStr 编解码（标准 classic wasm 的线性内存字符串）。 */
-if(IS_TAURI&&window.__TAURI__.event){
-  const SESSION_WHOLE_ARG=new Set(['session_apply_agent','session_apply_human','session_component_compile_b64']);
-  // 变更类导出（信封回传 canonical）：成功后缓存键前移到新 canonical（失败则文档未动，键仍有效）
-  const SESSION_MUTATING=new Set(['session_apply_agent','session_apply_human']);
-  // 会改会话文档但信封不回传 canonical 的导出（新键不可知）——调用后弃缓存，
-  // 避免后续 op 命中「文档已漂移」的旧键脏缓存
-  const SESSION_EVICT=new Set(['session_auto_fix','session_constrain']);
-  const agentSession=(mbt)=>{
-    if(sessCache&&sessCache.mbt===mbt)return sessCache.handle;
-    if(sessCache){engineExports.session_close(sessCache.handle);sessCache=null;}
-    const h=engineExports.session_open(engWriteStr(mbt));
-    if(!Number.isInteger(h)||h<0)throw new Error('session_open_failed:'+h);
-    sessCache={handle:h,mbt};
-    return h;
-  };
-  window.__TAURI__.event.listen('engine-req',async ev=>{
-    const p=ev.payload||{};
-    let out;
-    try{
-      await loadEngine();
-      if(!engineExports)throw new Error(engineFailed||'engine_wasm_unavailable');
-      engineRecycleIfNeeded();
-      const fn=p.fn;
-      if(fn==='list_components'){
-        out={ok:true,components:allComps||[]};
-      }else if(fn&&fn.startsWith('session_')){
-        if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
-        // 宿主编排型导出（句柄/计数由桥管理）：直调会以 i32/bool 当字符串指针读垃圾
-        if(fn==='session_open'||fn==='session_close'||fn==='session_open_project_json'||fn==='session_count')
-          throw new Error('host_orchestrated_fn:'+fn);
-        const h=agentSession(p.mbt||'');
-        const op=String(p.op||'');
-        const parts=op.split(/\s+/).filter(Boolean);
-        let args;
-        if(fn==='session_tap'){
-          args=parts.length>=3?[engWriteStr(parts[0]),Number(parts[1]),Number(parts[2])]:[engWriteStr(parts[0]||''),0,0];
-        }else{
-          args=SESSION_WHOLE_ARG.has(fn)?[engWriteStr(op)]:parts.map(engWriteStr);
-        }
-        out=JSON.parse(engReadStr(engineExports[fn](h,...args)));
-        if(SESSION_MUTATING.has(fn)&&out.ok===true&&typeof out.mbt==='string'){
-          sessCache.mbt=out.mbt;
-        }
-        if(fn==='session_apply_agent'||fn==='session_apply_human'){
-          // session 信封只有 {ok,mbt}——同句柄补画板索引（内存查询，无重解析）。
-          // best-effort：补索引失败不得把**已提交**的 op 报成失败（响应保持 ok），
-          // 但 wasm trap 后会话状态不可信 → 弃缓存（下次按权威 mbt 重开）。
-          try{
-            const la=JSON.parse(engReadStr(engineExports.session_list_artboards(h)));
-            if(la.ok===true&&Array.isArray(la.data)&&out.ok===true)out.artboards=la.data;
-          }catch(_){
-            try{engineExports.session_close(h);}catch(_2){}
-            sessCache=null;
-          }
-        }else if(SESSION_EVICT.has(fn)){
-          try{engineExports.session_close(h);}catch(_){}
-          sessCache=null;
-        }
-      }else{
-        if(typeof engineExports[fn]!=='function')throw new Error('unknown_fn:'+fn);
-        out=JSON.parse(engReadStr(engineExports[fn](engWriteStr(p.mbt||''),engWriteStr(p.op||''))));
-      }
-    }catch(err){
-      // 异常后会话状态不可信（wasm trap/半途失败）→ 弃缓存，下次按权威 mbt 重开
-      try{if(sessCache&&engineExports)engineExports.session_close(sessCache.handle);}catch(_){}
-      sessCache=null;
-      out={ok:false,error:String(err&&err.message||err)};
-    }
-    try{await window.__TAURI__.core.invoke('engine_res',{id:p.id,json:JSON.stringify(out)});}catch(_){}
-  });
 }
 function mbtResult(result){
   // wasm 引擎直接返回结果对象（不再是 CLI 行数组的形态）；保留函数名为调用点共用

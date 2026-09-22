@@ -1,20 +1,22 @@
 //! deepDesign Studio: Tauri 2 桌面应用
 //!
 //! 架构：
-//! - 前端 (纯静态): 多画板页签 + 拖拽画布 + **内嵌 wasm 引擎**（预编译产物，
-//!   WebView 内进程执行——画布与 agent 共用这个实例）+ Agent 控制台 + decl 视图
-//! - 后端 (Rust): DDP 加解密（vendored moonviz-ddp）+ agent（进程内
-//!   Agent 循环：OpenAI/Anthropic 工具调用 × 引擎事件桥）
+//! - 前端 (纯静态): 多画板页签 + 拖拽画布 + **内嵌 wasm 引擎**（classic 标准产物，
+//!   WebView 内进程执行，画布实时编辑）+ Agent 控制台 + decl 视图
+//! - 后端 (Rust): DDP 加解密（vendored moonviz-ddp）+ **wasmtime 进程内引擎宿主**
+//!   （agent 循环 × 同一份 wasm 产物，纯 Rust 运行时——无 node、无子进程、
+//!   无 WebView 往返）+ agent（OpenAI/Anthropic 工具调用）
 //!
 //! 引擎是 MoonViz 的标准 classic wasm 产物（frontend/vendor/moonviz.wasm，
-//! sync-engine.mjs 从 GitHub Releases 拉取 + sha512 + 契约探针）。唯一事实源是
-//! `.mbt.md`；DDP 只是它的认证加密表示，Rust 不解释视觉语义。无引擎子进程、
-//! 无 MoonBit 工具链。classic wasm 宿主中立（wasmtime 可加载）——终局 wasmtime
-//! 纯 Rust 宿主不再阻塞于上游变体，见 docs/upstream-engine-ask.md。
+//! sync-engine.mjs 从 GitHub Releases 拉取 + sha512 + 契约探针，编译期嵌入 Rust、
+//! 运行期被前端 fetch 实例化——同一份字节，两个宿主）。唯一事实源是 `.mbt.md`；
+//! DDP 只是它的认证加密表示，Rust 不解释视觉语义。无引擎子进程、无 JS 运行时。
 
 pub mod agent;
-mod node_host;
 pub mod models;
+mod wasmtime_host;
+
+pub use wasmtime_host::EngineHost;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use moonviz_ddp::{decrypt_ddp, encrypt_ddp};
@@ -23,93 +25,6 @@ use std::path::PathBuf;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
-
-/// 引擎宿主：wasm 引擎（frontend/vendor/moonviz.wasm）唯一实例活在
-/// WebView 里，agent 循环经事件桥调用；cargo test 在无 WebView 环境
-/// 用 node 子进程宿主（node_host.rs → scripts/engine-host.mjs）驱动同一份产物。
-pub enum EngineHost {
-    WebView(tauri::AppHandle),
-    NodeWasm,
-}
-
-/* ---------- WebView 引擎桥（agent 循环 ⇄ 前端 wasm 实例） ----------
- * 请求：结构化事件 engine-req（serde 对象，无 JS 字符串拼接——零注入面；
- * capabilities/default.json 放行 core:event:default 供前端 listen）。
- * 响应：前端 invoke('engine_res',{id,json}) 回填 oneshot。id 配对 + 超时清理。 */
-
-struct EngineBridgeState {
-    counter: std::sync::atomic::AtomicU64,
-    pending: std::sync::Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<String>>>,
-}
-
-static ENGINE_BRIDGE: std::sync::OnceLock<EngineBridgeState> = std::sync::OnceLock::new();
-
-fn bridge_state() -> &'static EngineBridgeState {
-    ENGINE_BRIDGE.get_or_init(|| EngineBridgeState {
-        counter: std::sync::atomic::AtomicU64::new(1),
-        pending: std::sync::Mutex::new(std::collections::HashMap::new()),
-    })
-}
-
-/// 前端引擎桥回传口（唯一写方是 frontend/index.html 的引擎事件监听）。
-#[tauri::command]
-async fn engine_res(id: u64, json: String) -> Result<(), String> {
-    if let Some(tx) = bridge_state().pending.lock().unwrap().remove(&id) {
-        let _ = tx.send(json);
-    }
-    Ok(())
-}
-
-async fn engine_bridge_call(
-    app: &tauri::AppHandle,
-    fn_name: &str,
-    mbt: &str,
-    op: &str,
-) -> Result<serde_json::Value, String> {
-    use tauri::Emitter as _;
-
-    const BRIDGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-    let id = bridge_state()
-        .counter
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    bridge_state().pending.lock().unwrap().insert(id, tx);
-    let cleanup = || {
-        bridge_state().pending.lock().unwrap().remove(&id);
-    };
-
-    let payload = serde_json::json!({ "id": id, "fn": fn_name, "mbt": mbt, "op": op });
-    if let Err(e) = app.emit("engine-req", &payload) {
-        cleanup();
-        return Err(format!("engine_bridge_emit:{e}"));
-    }
-
-    match tokio::time::timeout(BRIDGE_TIMEOUT, rx).await {
-        Ok(Ok(json)) => serde_json::from_str(&json).map_err(|e| format!("engine_bridge_bad_json:{e}")),
-        Ok(Err(_)) => {
-            cleanup();
-            Err("engine_bridge_dropped".into())
-        }
-        Err(_) => {
-            cleanup();
-            Err("engine_bridge_timeout".into())
-        }
-    }
-}
-
-impl EngineHost {
-    pub async fn call(
-        &self,
-        fn_name: &str,
-        mbt: &str,
-        op: &str,
-    ) -> Result<serde_json::Value, String> {
-        match self {
-            EngineHost::WebView(app) => engine_bridge_call(app, fn_name, mbt, op).await,
-            EngineHost::NodeWasm => node_host::call(fn_name, mbt, op).await,
-        }
-    }
-}
 
 /// 保存唯一事实源：引擎交付 canonical MBT，Rust codec 输出不透明 `.ddp`。
 /// async 命令（跑在 tokio worker）：blocking_* 对话框禁止在主线程调用
@@ -195,7 +110,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            engine_res,
             invoke_fx_sdk,
             save_ddp,
             open_ddp,
@@ -232,11 +146,7 @@ pub fn run() {
 /// payload = { mode?:'models', instruction, mbt_b64?, api_key?, model?, base_url?, thinking_level? }
 /// 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text} / models 列表。
 #[tauri::command]
-async fn invoke_fx_sdk(
-    app: tauri::AppHandle,
-    payload: String,
-    api_key: String,
-) -> Result<serde_json::Value, String> {
+async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
     let p: serde_json::Value =
         serde_json::from_str(&payload).map_err(|e| format!("fxsdk_payload_invalid:{e}"))?;
     let key = if !api_key.trim().is_empty() {
@@ -259,8 +169,7 @@ async fn invoke_fx_sdk(
     let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
     let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
-    let host = EngineHost::WebView(app);
-    Ok(agent::run(&host, instruction, mbt_b64, &key, model, base_url, thinking).await)
+    Ok(agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking).await)
 }
 
 /// 模型元数据注册表（vendored models.dev 快照）下发给前端：
