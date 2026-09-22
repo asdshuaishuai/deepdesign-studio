@@ -941,12 +941,13 @@ function b64ToUtf8(text){return decodeURIComponent(escape(atob(text)));}
 /* ---------- wasm 引擎（预编译产物，WebView 内进程执行，无子进程） ----------
  * 产物 frontend/vendor/moonviz.wasm 是 MoonViz 的**标准** wasm（GitHub Releases
  * classic wasm——纯 WASM MVP、宿主中立、零 import；docs 的 #wasm 节「标准 wasm 产物」）。
- * 字符串是 linear memory 对象（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），
- * 宿主经 engReadStr/engWriteStr 编解码；写入区锚在「当前内存大小+余量」之上，
- * 引擎 bump 堆顶不超过当前内存大小，故永不被覆盖。
+ * **输入走 `_in` 字节契约面**（engine-v0.1.2，上游 issue #8）：文档/op/artboard
+ * 文本经 in/arg/arg2 三槽压入（UTF-8 分块，每块小端 4 字节 + 有效长度，engSlotLoad），
+ * `*_in()` 变体从槽解码调用经典入口——写方向不再依赖逆向的字符串内存布局。
+ * 返回方向仍是引擎分配的字符串指针（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），
+ * engReadStr 保留读布局。无文本入参的导出（list_* 等）经典直调。
  * 供测试注入的接缝：window.__ENGINE_STUB__ = {apply,render} 存在时优先走桩。 */
 let engineExports=null,engineFailed='',engineReady=null;
-let engWriteOff=0,engLastMem=0;
 function engReadStr(ptr){
   const mem=new DataView(engineExports.memory.buffer);
   // 钳制到内存边界：腐坏指针/长度不再放大成巨型读取
@@ -955,21 +956,16 @@ function engReadStr(ptr){
   for(let i=0;i<len;i++)s+=String.fromCharCode(mem.getUint16(ptr+i*2,true));
   return s;
 }
-function engWriteStr(s){
-  const ex=engineExports;
-  const cur=ex.memory.buffer.byteLength;
-  if(cur!==engLastMem){engWriteOff=Math.max(engWriteOff,cur+65536);engLastMem=cur;}
-  const need=16+s.length*2;
-  if(ex.memory.buffer.byteLength<engWriteOff+need){
-    ex.memory.grow(Math.ceil((engWriteOff+need+65536-ex.memory.buffer.byteLength)/65536));
+/* `_in` 槽装载（engine-v0.1.2 写路径契约）：reset 清槽 → UTF-8 分块（每块 ≤4
+ * 字节，小端压入 u32 + 有效长度）。协议见引擎 wasm/main.mbt「写路径：分块字符串槽」。 */
+function engSlotLoad(reset,push,text){
+  engineExports[reset]();
+  const bytes=new TextEncoder().encode(text);
+  for(let i=0;i<bytes.length;i+=4){
+    const n=Math.min(4,bytes.length-i);
+    let le=0;for(let j=0;j<n;j++)le|=bytes[i+j]<<(8*j);
+    engineExports[push](le,n);
   }
-  const mem=new DataView(ex.memory.buffer);
-  mem.setUint32(engWriteOff-8,0xFFFFFFE0,true);
-  mem.setUint32(engWriteOff-4,s.length,true);
-  for(let i=0;i<s.length;i++)mem.setUint16(engWriteOff+i*2,s.charCodeAt(i),true);
-  const ptr=engWriteOff;
-  engWriteOff=ptr+need+4096;
-  return ptr;
 }
 let engineBytes=null;
 // 内存棘轮回收：引擎的 bump 堆只增不减（实测 ~250 次变更 op 后线性内存达数百 MB），
@@ -980,8 +976,6 @@ function engineRecycleIfNeeded(){
   if(!engineExports)return;
   if(engineExports.memory.buffer.byteLength>ENGINE_RECYCLE_BYTES&&engineBytes){
     engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
-    engWriteOff=engineExports.memory.buffer.byteLength+65536;
-    engLastMem=engineExports.memory.buffer.byteLength;
   }
 }
 function loadEngine(){
@@ -992,8 +986,6 @@ function loadEngine(){
       if(!r.ok)throw new Error('wasm fetch HTTP '+r.status);
       engineBytes=await r.arrayBuffer();   // 缓存字节供回收重建
       engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
-      engWriteOff=engineExports.memory.buffer.byteLength+65536;
-      engLastMem=engineExports.memory.buffer.byteLength;
     }catch(err){engineFailed=String(err&&err.message||err);}
   })();
   return engineReady;
@@ -1005,7 +997,8 @@ async function engApply(gate,mbt,op){
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
   engineRecycleIfNeeded();
   const t0=performance.now();
-  const out=JSON.parse(engReadStr(engineExports[gate==='agent'?'apply_agent_op':'apply_human_op'](engWriteStr(mbt),engWriteStr(op))));
+  engSlotLoad('in_reset','in_push',mbt);engSlotLoad('arg_reset','arg_push',op);
+  const out=JSON.parse(engReadStr(engineExports[gate==='agent'?'apply_agent_op_in':'apply_human_op_in']()));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
   return out;
 }
@@ -1016,14 +1009,16 @@ async function engRender(mbt){
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
   engineRecycleIfNeeded();
   const t0=performance.now();
-  const out=JSON.parse(engReadStr(engineExports.render_mbt(engWriteStr(mbt))));
+  engSlotLoad('in_reset','in_push',mbt);
+  const out=JSON.parse(engReadStr(engineExports.render_mbt_in()));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
   return out;
 }
 async function engValidate(mbt){
   await loadEngine();
   if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
-  return JSON.parse(engReadStr(engineExports.validate_mbt(engWriteStr(mbt))));
+  engSlotLoad('in_reset','in_push',mbt);
+  return JSON.parse(engReadStr(engineExports.validate_mbt_in()));
 }
 /* 引擎要求文档至少一个视觉块才能承载 op——空项目起步用最小种子画板引导，
  * 首条 op 落地后随即删掉种子（create 直接以种子为画板，一次 render 即成）。 */

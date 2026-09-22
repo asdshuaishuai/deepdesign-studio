@@ -225,6 +225,21 @@ async function contractProbe(exports, wasmBytes) {
   // classic wasm：字符串经内存编解码（与 engine-host.mjs 同构）
   const { readStr, writeStr } = makeStrCodec(exports);
 
+  // `_in` 字节契约面实跑（engine-v0.1.2 起，issue #8）：validate_mbt_in 一发——
+  // wasmtime_host 与前端的写方向都走它，坏契约在这里红而不是下游炸
+  {
+    exports.in_reset();
+    const bytes = new TextEncoder().encode(seedDoc('__seed', 390, 844));
+    for (let i = 0; i < bytes.length; i += 4) {
+      const n = Math.min(4, bytes.length - i);
+      let le = 0;
+      for (let j = 0; j < n; j++) le |= bytes[i + j] << (8 * j);
+      exports.in_push(le, n);
+    }
+    const rIn = JSON.parse(readStr(exports.validate_mbt_in()));
+    if (rIn.ok !== true) fail(`_in 契约面实跑失败：validate_mbt_in → ${JSON.stringify(rIn).slice(0, 120)}`);
+  }
+
   // session 生命周期实跑（不只是存在性）：种子文档 open → lint → save 回灌 → close
   const probeDoc = seedDoc('__seed', 390, 844);
   const count0 = exports.session_count();

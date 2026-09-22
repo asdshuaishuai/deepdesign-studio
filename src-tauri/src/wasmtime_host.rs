@@ -9,9 +9,12 @@
 //! 有意决策，例外逐处登记**（见各分叉注释）；字符串 codec 与
 //! frontend/index.html 的 engReadStr/engWriteStr、sync-engine.mjs 三处同构，
 //! 改任一处必须同步其余（引擎 ABI 升级时最先坏的就是这里）。
-//! - 字符串是 linear memory 对象（[refcnt@ptr-8][len@ptr-4][UTF-16LE@ptr+0]），
-//!   写入区锚在「当前内存大小 + 64KB」之上（引擎 bump 堆顶不超过当前内存大小，
-//!   故永不与引擎堆碰撞）；引擎增长过内存后重新锚定。
+//! - **输入走 `_in` 字节契约面（engine-v0.1.2，上游 issue #8）**：文档/op/artboard
+//!   文本经 in/arg/arg2 三槽压入（UTF-8 分块，每块小端 4 字节 + 有效长度），
+//!   `*_in()` 变体从槽解码调用经典入口——**写方向不再依赖逆向的字符串内存布局**。
+//!   返回方向仍是引擎分配的字符串指针（[refcnt@ptr-8][len@ptr-4][UTF-16LE@ptr+0]），
+//!   read_str 保留布局知识；无文本入参的导出（flows/benchmark/list_artboards/save/
+//!   close/count）继续经典直调。sync-engine.mjs 的探针锁定 `_in` 面契约。
 //! - 经典导出（无状态）与检视直调（list_* 直调）；
 //! - session API（26 个）：第一参为句柄，**mbt 键控会话缓存**（命中复用/失配
 //!   关旧开新）、变更信封 canonical 键前移 + 同句柄补画板索引（data 为数组才补）、
@@ -44,19 +47,11 @@ const WASM_BYTES: &[u8] =
 const COMPONENTS_JSON: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../frontend/vendor/components.json"));
 
-// —— classic wasm 字符串 ABI 常量（与 sync/engine-host/前端三处同构）——
-/// 字符串对象头尺寸（refcnt@ptr-8 + len@ptr-4，即 ptr 前预留 8 字节）
-const STR_HEADER: usize = 16;
-/// 写入区锚定余量：write_off 始终 ≥ 当前内存大小 + 此值（防引擎 bump 堆覆盖）
-const ANCHOR_MARGIN: usize = 65536;
-/// 每次字符串写入后的步进间隙（防相邻写入被引擎侧边界检查误伤）
-const STRIDE_GAP: usize = 4096;
-/// refcnt 哨兵（引擎侧不回收宿主写入的字符串）
-const REFCNT_SENTINEL: u32 = 0xFFFF_FFE0;
+// —— classic wasm 字符串读 ABI（返回方向；写方向已由 `_in` 槽契约取代）——
 /// 长度字段掩码（高 4 位是引擎内部标志位，读取时剔除）
 const LEN_MASK: u32 = 0x0FFF_FFFF;
-/// wasm 页尺寸（memory.grow 的单位）
-const WASM_PAGE: u64 = 65536;
+/// `_in` 槽协议的分块尺寸（引擎约定：每块 ≤4 字节，小端压入 u32）
+const SLOT_CHUNK: usize = 4;
 /// 线性内存回收阈值：超过即整体重建实例（对齐前端 engineRecycleIfNeeded）
 const MEMORY_RECYCLE_BYTES: usize = 192 * 1024 * 1024;
 /// 单次引擎调用超时（epoch 到点真中断；外层 tokio timeout 只兜锁排队）
@@ -90,12 +85,22 @@ struct Session {
     mbt: String,
 }
 
+/// `_in` 调用的槽装载计划（issue #8 分块字符串槽协议）
+enum SlotPlan {
+    /// 无文本入参——经典直调
+    None,
+    /// arg 槽：op / artboard / b64 等单文本
+    Arg(String),
+    /// arg + arg2 槽：constrain 的 artboard + intent
+    Arg2(String, String),
+    /// arg 槽 artboard + x/y 直参（tap）
+    Tap(f64, f64, String),
+}
+
 struct Engine {
     store: Store<()>,
     instance: Instance,
     memory: Memory,
-    write_off: usize,
-    last_mem_size: usize,
     sess_cache: Option<Session>,
     hits: u64,
     misses: u64,
@@ -155,13 +160,10 @@ fn init() -> Result<Engine, String> {
     let memory = instance
         .get_memory(&mut store, "memory")
         .ok_or("wasm_no_memory_export")?;
-    let last_mem_size = memory.data(&store).len();
     Ok(Engine {
         store,
         instance,
         memory,
-        write_off: last_mem_size + ANCHOR_MARGIN,
-        last_mem_size,
         sess_cache: None,
         hits: 0,
         misses: 0,
@@ -272,10 +274,10 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
         }
         "session_count_probe" => {
             let before = e.call_raw("session_count", &[])?;
-            let mbt_val = e.write_str(mbt)?;
-            let h1 = e.call_raw("session_open", &[Val::I32(mbt_val)])?;
-            let mbt_val2 = e.write_str(mbt)?;
-            let h2 = e.call_raw("session_open", &[Val::I32(mbt_val2)])?;
+            load_slot(e, "in_reset", "in_push", mbt)?;
+            let h1 = e.call_raw("session_open_in", &[])?;
+            load_slot(e, "in_reset", "in_push", mbt)?;
+            let h2 = e.call_raw("session_open_in", &[])?;
             if h1 < 0 || h2 < 0 {
                 return Err(format!("session_open_failed:{h1}/{h2}"));
             }
@@ -296,7 +298,7 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
         if inst.get_func(&mut e.store, fn_name).is_none() {
             return Err(format!("unknown_fn:{fn_name}"));
         }
-        // 缓存：命中复用句柄；失配关旧开新
+        // 缓存：命中复用句柄；失配关旧开新（open 走 _in：mbt 经主槽）
         let cached = e.sess_cache.as_ref().map(|s| s.mbt == mbt);
         let handle = if cached == Some(true) {
             e.hits += 1;
@@ -304,8 +306,8 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
         } else {
             e.misses += 1;
             evict_session(&mut e);
-            let ptr = e.write_str(mbt)?;
-            let h = e.call_raw("session_open", &[Val::I32(ptr)])?;
+            load_slot(e, "in_reset", "in_push", mbt)?;
+            let h = e.call_raw("session_open_in", &[])?;
             if h < 0 {
                 return Err(format!("session_open_failed:{h}"));
             }
@@ -325,85 +327,63 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
             raw.parse()
                 .map_err(|_| format!("op_invalid_number:{fn_name} 的坐标参数 «{raw}» 不是数字"))
         };
-        let arg_vals: Vec<Val> = if fn_name == "session_tap" {
-            // Val::F64 在 wasmtime 49 是位模式构造（f64::to_bits）
-            // 坐标解析失败显式报错（node 的 NaN 是显性垃圾；静默 0.0 会在 (0,0) 假装成功）
-            vec![
-                Val::I32(e.write_str(parts.first().copied().unwrap_or(""))?),
-                Val::F64(f64::to_bits(parse_xy(parts.get(1))?)),
-                Val::F64(f64::to_bits(parse_xy(parts.get(2))?)),
-            ]
-        } else if SESSION_WHOLE_ARG.contains(&fn_name) {
-            vec![Val::I32(e.write_str(op)?)]
-        } else {
-            parts.iter().map(|p| e.write_str(p).map(Val::I32)).collect::<Result<Vec<_>, _>>()?
+        // `_in` 槽计划：参数文本进 arg/arg2 槽，handle/坐标走直参。
+        // in_name = None 的 session 导出（flows/benchmark/list_artboards/save 等）
+        // 无文本入参，继续经典直调。
+        let (in_name, plan): (String, SlotPlan) = match fn_name {
+            "session_apply_agent" | "session_apply_human" | "session_component_compile_b64" => {
+                (fn_name.to_owned() + "_in", SlotPlan::Arg(op.to_string()))
+            }
+            "session_tap" => (
+                "session_tap_in".to_string(),
+                SlotPlan::Tap(parse_xy(parts.get(0))?, parse_xy(parts.get(1))?, parts.first().copied().unwrap_or("").to_string()),
+            ),
+            "session_constrain" => (
+                "session_constrain_in".to_string(),
+                SlotPlan::Arg2(
+                    parts.first().copied().unwrap_or("").to_string(),
+                    parts.iter().skip(1).copied().collect::<Vec<_>>().join(" "),
+                ),
+            ),
+            "session_lint" | "session_critique" | "session_spec" | "session_query_nodes"
+            | "session_states" | "session_interactions" | "session_infer_page_type"
+            | "session_infer_missing" | "session_extract_design_system"
+            | "session_generate_responsive" | "session_export_svg" | "session_auto_fix" => {
+                (fn_name.to_owned() + "_in", SlotPlan::Arg(parts.join(" ")))
+            }
+            _ => (fn_name.to_string(), SlotPlan::None),
         };
-
-        let mut vals = vec![Val::I32(handle)];
-        vals.extend(arg_vals);
-        let out = match e.call_raw(fn_name, &vals) {
-            Ok(ptr) => e.read_str(ptr),
-            Err(trap) => {
-                // trap 后会话状态不可信 → 弃缓存，下次按权威 mbt 重开
-                evict_session(&mut e);
-                return Err(trap);
+        match &plan {
+            SlotPlan::None => {}
+            SlotPlan::Arg(text) => load_slot(e, "arg_reset", "arg_push", text)?,
+            SlotPlan::Arg2(a, b) => {
+                load_slot(e, "arg_reset", "arg_push", a)?;
+                load_slot(e, "arg2_reset", "arg2_push", b)?;
             }
-        };
-        // 腐坏读（空串=腐坏指针的 read_str 结果）：引擎状态不可信 → 弃缓存
-        if out.is_empty() {
-            evict_session(&mut e);
-            return Err("engine_corrupt_read:empty result".to_string());
+            SlotPlan::Tap(x, y, ab) => {
+                load_slot(e, "arg_reset", "arg_push", ab)?;
+                let mut vals = vec![Val::I32(handle), Val::F64(f64::to_bits(*x)), Val::F64(f64::to_bits(*y))];
+                return finish_session_call(e, fn_name, &in_name, handle, &mut vals);
+            }
         }
-
-        if SESSION_MUTATING.contains(&fn_name) {
-            let mut r: Value = match serde_json::from_str(&out) {
-                Ok(v) => v,
-                Err(_) => {
-                    // 信封非 JSON：引擎状态不可信 → 弃缓存，原样透传原始串错误
-                    evict_session(&mut e);
-                    return Err(format!("engine_result_parse:{out}"));
-                }
-            };
-            let committed_ok = r.get("ok").and_then(|x| x.as_bool()) == Some(true);
-            if committed_ok {
-                if let Some(m) = r.get("mbt").and_then(|x| x.as_str()) {
-                    if let Some(s) = e.sess_cache.as_mut() {
-                        s.mbt = m.to_string();
-                    }
-                }
-            }
-            // 同句柄补画板索引（内存查询，无重解析）。对齐 node：ok 且 data 是
-            // 数组才补（不伪造空数组掩盖引擎回归）；la 解析失败/读失败 → 弃缓存。
-            match e.call_raw("session_list_artboards", &[Val::I32(handle)]).map(|p| e.read_str(p)) {
-                Ok(la) => match serde_json::from_str::<Value>(&la) {
-                    Ok(la)
-                        if la.get("ok").and_then(|x| x.as_bool()) == Some(true)
-                            && committed_ok
-                            && !r.is_null()
-                            && la.get("data").is_some_and(|d| d.is_array()) =>
-                    {
-                        r["artboards"] = la["data"].clone();
-                        return Ok(r);
-                    }
-                    Ok(_) => {} // la 形状不符：不补（对齐 node），信封原样返回
-                    Err(_) => evict_session(&mut e),
-                },
-                Err(_) => evict_session(&mut e),
-            }
-        } else if SESSION_EVICT.contains(&fn_name) {
-            evict_session(&mut e);
-        }
-        return envelope(&out);
+        return finish_session_call(e, fn_name, &in_name, handle, &mut vec![Val::I32(handle)]);
     }
 
-    // —— 经典导出 / 检视直调 ——
+    // —— 经典导出（文本入参走 in 槽 + _in 变体）/ 检视直调（无文本入参）——
     let n = arity(fn_name).ok_or_else(|| format!("unknown_fn:{fn_name}"))?;
-    let vals: Vec<Val> = match n {
-        0 => vec![],
-        1 => vec![Val::I32(e.write_str(mbt)?)],
-        _ => vec![Val::I32(e.write_str(mbt)?), Val::I32(e.write_str(op)?)],
+    let (call_name, vals): (String, Vec<Val>) = match n {
+        0 => (fn_name.to_string(), vec![]),
+        1 => {
+            load_slot(&mut e, "in_reset", "in_push", mbt)?;
+            (fn_name.to_owned() + "_in", vec![])
+        }
+        _ => {
+            load_slot(&mut e, "in_reset", "in_push", mbt)?;
+            load_slot(&mut e, "arg_reset", "arg_push", op)?;
+            (fn_name.to_owned() + "_in", vec![])
+        }
     };
-    let out = match e.call_raw(fn_name, &vals).map(|ptr| e.read_str(ptr)) {
+    let out = match e.call_raw(&call_name, &vals).map(|ptr| e.read_str(ptr)) {
         Ok(s) => s,
         Err(trap) => {
             // 对齐 node 的 blanket catch：无状态导出虽不触碰会话表，
@@ -419,6 +399,83 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
     envelope(&out)
 }
 
+/// session 调用的公共尾部：调 `_in`/经典导出 → 读串 → trap/腐坏读弃缓存。
+/// `vals` 的首元素必须是 handle（Tap 计划里已带坐标直参）。
+fn finish_session_call(
+    e: &mut Engine,
+    fn_name: &str,
+    in_name: &str,
+    handle: i32,
+    vals: &mut Vec<Val>,
+) -> Result<Value, String> {
+    let out = match e.call_raw(in_name, vals) {
+        Ok(ptr) => e.read_str(ptr),
+        Err(trap) => {
+            // trap 后会话状态不可信 → 弃缓存，下次按权威 mbt 重开
+            evict_session(e);
+            return Err(trap);
+        }
+    };
+    // 腐坏读（空串=腐坏指针的 read_str 结果）：引擎状态不可信 → 弃缓存
+    if out.is_empty() {
+        evict_session(e);
+        return Err("engine_corrupt_read:empty result".to_string());
+    }
+
+    if SESSION_MUTATING.contains(&fn_name) {
+        let mut r: Value = match serde_json::from_str(&out) {
+            Ok(v) => v,
+            Err(_) => {
+                // 信封非 JSON：引擎状态不可信 → 弃缓存，原样透传原始串错误
+                evict_session(e);
+                return Err(format!("engine_result_parse:{out}"));
+            }
+        };
+        let committed_ok = r.get("ok").and_then(|x| x.as_bool()) == Some(true);
+        if committed_ok {
+            if let Some(m) = r.get("mbt").and_then(|x| x.as_str()) {
+                if let Some(s) = e.sess_cache.as_mut() {
+                    s.mbt = m.to_string();
+                }
+            }
+        }
+        // 同句柄补画板索引（内存查询，无重解析）。对齐 node：ok 且 data 是
+        // 数组才补（不伪造空数组掩盖引擎回归）；la 解析失败/读失败 → 弃缓存。
+        match e.call_raw("session_list_artboards", &[Val::I32(handle)]).map(|p| e.read_str(p)) {
+            Ok(la) => match serde_json::from_str::<Value>(&la) {
+                Ok(la)
+                    if la.get("ok").and_then(|x| x.as_bool()) == Some(true)
+                        && committed_ok
+                        && !r.is_null()
+                        && la.get("data").is_some_and(|d| d.is_array()) =>
+                {
+                    r["artboards"] = la["data"].clone();
+                    return Ok(r);
+                }
+                Ok(_) => {} // la 形状不符：不补（对齐 node），信封原样返回
+                Err(_) => evict_session(e),
+            },
+            Err(_) => evict_session(e),
+        }
+    } else if SESSION_EVICT.contains(&fn_name) {
+        evict_session(e);
+    }
+    envelope(&out)
+}
+
+/// `_in` 槽装载：reset → UTF-8 分块（每块 ≤4 字节，小端压入 u32 + 有效长度）。
+/// 协议见引擎 wasm/main.mbt「写路径：分块字符串槽」。
+fn load_slot(e: &mut Engine, reset_fn: &str, push_fn: &str, text: &str) -> Result<(), String> {
+    e.call_raw(reset_fn, &[])?;
+    let bytes = text.as_bytes();
+    for chunk in bytes.chunks(SLOT_CHUNK) {
+        let mut le = [0u8; SLOT_CHUNK];
+        le[..chunk.len()].copy_from_slice(chunk);
+        e.call_raw(push_fn, &[Val::I32(u32::from_le_bytes(le) as i32), Val::I32(chunk.len() as i32)])?;
+    }
+    Ok(())
+}
+
 /// 关闭当前缓存会话并弃置缓存（任何「引擎状态不可信」路径的统一出口）。
 fn evict_session(e: &mut Engine) {
     if let Some(s) = e.sess_cache.take() {
@@ -432,18 +489,27 @@ impl Engine {
             .instance
             .get_func(&mut self.store, fn_name)
             .ok_or_else(|| format!("unknown_fn:{fn_name}"))?;
+        // 槽协议的 reset/push 返回 Unit（0 结果）；业务导出返回 Int 指针/句柄
+        if func.ty(&self.store).results().len() == 0 {
+            return func
+                .call(&mut self.store, args, &mut [])
+                .map(|_| 0)
+                .map_err(Self::trap_err);
+        }
         let mut results = [Val::I32(0)];
         match func.call(&mut self.store, args, &mut results) {
             Ok(()) => Ok(results[0].i32().unwrap_or(0)),
-            Err(err) => {
-                // epoch 到点：wasm 帧被安全展开，调用以明确错误返回（invoke_sync
-                // 据此重建实例）。与其余 trap 区分——后者是引擎腐坏，前者是超时语义。
-                if err.downcast_ref::<wasmtime::Trap>().is_some_and(|t| *t == wasmtime::Trap::Interrupt) {
-                    Err("engine_interrupted:epoch deadline exceeded".into())
-                } else {
-                    Err(format!("wasm_panic:{err}"))
-                }
-            }
+            Err(err) => Err(Self::trap_err(err)),
+        }
+    }
+
+    /// trap 分类：epoch 到点 → engine_interrupted（超时语义，invoke_sync 据此
+    /// 重建实例）；其余 → wasm_panic（引擎腐坏，同样触发弃缓存/重建）。
+    fn trap_err(err: wasmtime::Error) -> String {
+        if err.downcast_ref::<wasmtime::Trap>().is_some_and(|t| *t == wasmtime::Trap::Interrupt) {
+            "engine_interrupted:epoch deadline exceeded".into()
+        } else {
+            format!("wasm_panic:{err}")
         }
     }
 
@@ -462,35 +528,6 @@ impl Engine {
         String::from_utf16_lossy(&units)
     }
 
-    fn write_str(&mut self, s: &str) -> Result<i32, String> {
-        let cur = self.memory.data(&self.store).len();
-        if cur != self.last_mem_size {
-            self.write_off = self.write_off.max(cur + ANCHOR_MARGIN);
-            self.last_mem_size = cur;
-        }
-        let units_len = s.encode_utf16().count();
-        let need = STR_HEADER + units_len * 2;
-        let cur_len = self.memory.data(&self.store).len();
-        if cur_len < self.write_off + need {
-            let target = (self.write_off + need) as u64 + ANCHOR_MARGIN as u64;
-            let delta = target.saturating_sub(cur_len as u64).div_ceil(WASM_PAGE);
-            self.memory
-                .grow(&mut self.store, delta)
-                .map_err(|e| format!("memory_grow_failed:{e}"))?; // 失败返回 Err 而非 panic（持锁 panic = 引擎永久变砖）
-            self.last_mem_size = self.memory.data(&self.store).len();
-        }
-        let ptr = self.write_off;
-        {
-            let data = self.memory.data_mut(&mut self.store);
-            data[ptr - 8..ptr - 4].copy_from_slice(&REFCNT_SENTINEL.to_le_bytes());
-            data[ptr - 4..ptr].copy_from_slice(&(units_len as u32).to_le_bytes());
-            for (i, u) in s.encode_utf16().enumerate() {
-                data[ptr + i * 2..ptr + i * 2 + 2].copy_from_slice(&u.to_le_bytes());
-            }
-        }
-        self.write_off = ptr + need + STRIDE_GAP;
-        Ok(ptr as i32)
-    }
 }
 
 #[cfg(test)]

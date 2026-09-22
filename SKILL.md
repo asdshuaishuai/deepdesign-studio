@@ -8,8 +8,10 @@
 > 宿主中立、零 import；docs #wasm 的「标准 wasm」。**wasm-gc 变体**（npm
 > moonviz-engine-wasm，依赖 JS String Builtins 提案、仅 V8 类引擎）本仓库不用）。
 > 引擎 engine-v0.1.2：经典消费面 37 = 7 经典 + 4 检视直调 + 26 session API（session_count 可测
-> 泄漏、session_open_project_json 支撑 save→open 回灌）；另有 `_in` 字节边界契约面（issue #8：
-> `*_in` 变体 + arg/in_push 辅助导出，wasmtime 宿主消费）。字符串经宿主线性内存编解码。
+> 泄漏、session_open_project_json 支撑 save→open 回灌）；**另有 `_in` 字节契约面（issue #8）
+> 是本仓库全部宿主的写路径**——wasmtime_host / 前端 engSlotLoad / sync 探针三处消费，
+> in/arg/arg2 三槽 UTF-8 分块压入（小端 4 字节+长度），`*_in()` 变体解码调经典入口；
+> 写方向的逆向字符串布局依赖已退役，返回方向仍是引擎字符串指针（读布局保留）。
 > 0.1.2 起 session_apply_agent 免三重往返（#6），实测 7.1× 于无状态路径。
 > 只读检视命令经 session API 可达（list-tools/doc-json 无对应导出除外）。
 > 引擎更新后：`node scripts/sync-engine.mjs`（release 拉取 + sha512 + 全量导出探针）→ `cargo test`。

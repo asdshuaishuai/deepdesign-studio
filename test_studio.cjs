@@ -171,5 +171,11 @@ applyMbtResult({ok:true,mbt:'canonical',entry:'a',revision:1,artboards:[{id:'a',
      assert(comps.length>0,'components.json 为空——sync-engine 探针异常');
    }
  }
- console.log(`Studio checks passed: ${INTERACTIVE_SURFACE.length} 个交互层函数在场、${menuIds.length} 个原生菜单 id 全映射、内联处理器无悬空引用；状态机：队列、种子引导、选区、draft、opacity`);
+ // 检查 E：引擎写路径已迁 _in 槽契约（engine-v0.1.2）——承重符号必须在场，
+// 退役的写方向编码器不得残留引用（删函数漏引用是 9f48220 类事故的形态）
+assert(!/engWriteStr/.test(script), 'engWriteStr 已退役（写方向走 engSlotLoad/_in 槽），不得残留引用');
+assert(/function engSlotLoad\(/.test(script), 'engSlotLoad 未定义——_in 槽装载是 engApply/engRender/engValidate 的承重路径');
+assert(/apply_agent_op_in/.test(script) && /render_mbt_in/.test(script) && /validate_mbt_in/.test(script), 'engApply/engRender/engValidate 必须走 *_in 变体');
+
+console.log(`Studio checks passed: ${INTERACTIVE_SURFACE.length} 个交互层函数在场、${menuIds.length} 个原生菜单 id 全映射、内联处理器无悬空引用；状态机：队列、种子引导、选区、draft、opacity`);
 })().catch(e=>{console.error(e);process.exitCode=1});

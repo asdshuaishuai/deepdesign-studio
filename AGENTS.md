@@ -30,14 +30,13 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
   的 `moonviz-wasm-classic-<version>.wasm`——**纯 WASM MVP、宿主中立、零 import**；
   docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
   Builtins 提案、仅 V8 类引擎可跑，本仓库不用）。sync-engine.mjs 拉取 + sha512 校验 +
-  真机契约探针（7 经典/4 检视/26 session 导出 + 模板/组件/会话计数）。**engine-v0.1.2 起
-  另有 `_in` 字节边界契约面**（issue #8：`apply_*_op_in`/`session_*_in` + `arg_push`/`in_push`
-  等宿主辅助导出，wasmtime_host 消费的就是它；经典字符串面保留，本仓库 JS 宿主/探针仍用经典面）。
-  0.1.2 兑现 #6 修复：session_apply_agent 免三重往返，实测 0.37ms/op（无状态 2.62ms/op，7.1×）。
-  字符串是 linear memory
-  对象（[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]），宿主侧编解码（sync/wasmtime_host/
-  前端三处同构）；写入区锚在「当前内存大小+余量」之上，引擎 bump 堆顶不超过当前内存
-  大小，故永不碰撞。
+  真机契约探针（7 经典/4 检视/26 session 导出 + `_in` 面实跑 + 模板/组件/会话计数）。
+  **engine-v0.1.2 的 `_in` 字节契约面（issue #8）是全部宿主的写路径**：wasmtime_host、
+  前端（engSlotLoad）、sync 探针三处消费——文档/op/artboard 经 in/arg/arg2 三槽 UTF-8
+  分块压入（每块小端 4 字节+有效长度），`*_in()` 变体解码调经典入口。**写方向的逆向
+  字符串布局依赖已退役**（engWriteStr 删除）；返回方向仍是引擎字符串指针（读布局保留，
+  read_str/engReadStr）。0.1.2 兑现 #6 修复：session_apply_agent 免三重往返，实测
+  0.37ms/op（无状态 2.62ms/op，7.1×）。
 - **两个引擎实例（WebView 画布 + Rust wasmtime 宿主）只交换 canonical `.mbt.md` 文本**，
   无共享状态；前端调 `engApply/engRender`（wasm 直调），agent 循环调 `EngineHost::call`
   （wasmtime 进程内直调——**纯 Rust 运行时：无 node、无子进程、无 WebView 往返**；
