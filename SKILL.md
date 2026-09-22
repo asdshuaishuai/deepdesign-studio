@@ -7,8 +7,10 @@
 > Releases 的**标准 classic wasm**（`moonviz-wasm-classic-<version>.wasm`，纯 WASM MVP、
 > 宿主中立、零 import；docs #wasm 的「标准 wasm」。**wasm-gc 变体**（npm
 > moonviz-engine-wasm，依赖 JS String Builtins 提案、仅 V8 类引擎）本仓库不用）。
-> 37 导出 = 7 经典 + 4 检视直调 + 26 session API（session_count 可测泄漏、
-> session_open_project_json 支撑 save→open 回灌，engine-v0.1.1-session 起）；字符串经宿主线性内存编解码。
+> 引擎 engine-v0.1.2：经典消费面 37 = 7 经典 + 4 检视直调 + 26 session API（session_count 可测
+> 泄漏、session_open_project_json 支撑 save→open 回灌）；另有 `_in` 字节边界契约面（issue #8：
+> `*_in` 变体 + arg/in_push 辅助导出，wasmtime 宿主消费）。字符串经宿主线性内存编解码。
+> 0.1.2 起 session_apply_agent 免三重往返（#6），实测 7.1× 于无状态路径。
 > 只读检视命令经 session API 可达（list-tools/doc-json 无对应导出除外）。
 > 引擎更新后：`node scripts/sync-engine.mjs`（release 拉取 + sha512 + 全量导出探针）→ `cargo test`。
 
@@ -25,7 +27,7 @@ MoonViz is a prototype design engine built entirely in MoonBit. It treats one Mo
 测试经 node 宿主驱动同一份产物）。op 以字符串形式传入 wasm 导出：
 
 ```bash
-# 同步工件（release 直链 wasm + 契约探针：7 经典/4 检视/26 session/模板/组件）
+# 同步工件（release 直链 wasm + 契约探针：7 经典/4 检视/26 session/模板/组件）——engine-v0.1.2
 node scripts/sync-engine.mjs
 
 # 变更 op（两门，wasm 导出名）：
