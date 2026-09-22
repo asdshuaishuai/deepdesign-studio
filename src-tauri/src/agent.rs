@@ -1807,32 +1807,36 @@ pub(crate) mod tests {
         assert_eq!(r["after"], json!(0), "close 后计数未归零——会话泄漏回归：{r}");
     }
 
-    /// session_tap 只读链（_in 面唯一 f64 直参计划）：place 一个按钮后 tap 其
-    /// 坐标。锁三件事——tap 的 op 形如 `tap <ab> <x> <y>`（artboard 第 1 参、
-    /// 坐标第 2/3 参——8d206b5 曾把 artboard 当 x 解析致 tap 全灭）、tap_in 直参
-    /// 序 [handle,F64,F64]、命中交互流时 changes 非空。坐标不落在任何流源上，
-    /// 断言 ok:true 且 current 不变（tap 语义性成功）。
+    /// session_tap 只读链（_in 面唯一 f64 直参计划）：双画板 + flow + **非对称
+    /// 坐标**断言导航。锁四件事——artboard 是第 1 参、坐标第 2/3 参（8d206b5 曾
+    /// 把 artboard 当 x 解析致 tap 全灭）、x/y 不互换（非对称点 (120,30) 命中而
+    /// 转置 (30,120) miss，转置 mutation 必红）、tap_in 直参序 [handle,F64,F64]。
     #[tokio::test]
     async fn session_tap_readonly_via_in_face() {
         engine_ready().await;
         let _engine_gate = engine_test_gate();
-        let r_place = ENGINE
-            .call(
-                "session_apply_agent",
-                &seed_doc(SEED_BOARD, 390, 844),
-                "place __seed button tp_b - 10 10",
-            )
-            .await
-            .unwrap();
-        assert_eq!(r_place["ok"], json!(true), "铺按钮失败：{r_place}");
-        let mbt = r_place["mbt"].as_str().unwrap();
-        // 坐标解析源错位回归（曾把 «__seed» 当 x 解析）会在这里红
-        let r = ENGINE.call("session_tap", mbt, "__seed 15 15").await.unwrap();
+        // 建目标画板 + 源画板按钮 + 流：tap (120,30)（按钮 [10,130]×[10,54] 内、
+        // 转置点 (30,120) 在外）应导航到 __target
+        let mut mbt = seed_doc(SEED_BOARD, 390, 844);
+        for op in [
+            "create __target 390 844",
+            "place __seed button tp_b - 10 10",
+            "flow __seed __target tp_b",
+        ] {
+            let r = ENGINE.call("session_apply_agent", &mbt, op).await.unwrap();
+            assert_eq!(r["ok"], json!(true), "准备 op «{op}» 失败：{r}");
+            mbt = r["mbt"].as_str().unwrap().to_string();
+        }
+        // 坐标/参数序回归（artboard 当 x、x/y 转置）都会让导航失败 → 这里红
+        let r = ENGINE.call("session_tap", &mbt, "__seed 120 30").await.unwrap();
         assert_eq!(r["ok"], json!(true), "tap 应语义性成功：{r}");
-        assert!(r["changes"].is_array(), "tap 应返回 changes 数组：{r}");
-        assert_eq!(r["current"], json!("__seed"), "无交互流时画板不变：{r}");
+        assert!(
+            r["changes"].as_array().is_some_and(|c| !c.is_empty()),
+            "命中交互流应有变更记录：{r}"
+        );
+        assert_eq!(r["current"], json!("__target"), "tap 应导航到目标画板：{r}");
         // 参数个数不足的诚实报错（宿主层 Err,不是 ok:false 信封）
-        let bad = ENGINE.call("session_tap", mbt, "__seed").await;
+        let bad = ENGINE.call("session_tap", &mbt, "__seed").await;
         assert!(bad.is_err(), "缺坐标参数应报错：{bad:?}");
         assert!(bad.unwrap_err().contains("op_missing_args"));
     }

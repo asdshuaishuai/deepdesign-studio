@@ -165,7 +165,7 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   thinking 在 Anthropic 协议上表达为 `thinking{type:enabled,budget_tokens}`（仅 MiniMax 家族；
   off/auto 省略即关闭；budget 必须小于 max_tokens，按预算预留余量）。
   前端 13 个预设含 4 个 MiniMax（2 条 OpenAI 兼容 + 2 条 Anthropic 兼容，官方推荐路径）。
-- **`READONLY_OPS` 是只读路由表**（20 项：清点类 `list`/`list-templates`/`list-components`/
+- **`READONLY_OPS` 是只读路由表**（21 项：清点类 `list`/`list-templates`/`list-components`/`list-ops`/
   `list-tools`/`list-tokens`/`list-themes`/`flows`/`benchmark`；检视类 `lint`/`critique`/`query`/`infer`/
   `spec`/`missing`/`doc-json`/`states`/`interactions`/`export-svg`/`export-html`；模拟类 `tap`）：
   engine-v0.1.1-fix 的 **session API 已导出检视面**——命中即走只读路由（session API 或直调导出），
@@ -218,7 +218,7 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 
 - `test_studio.cjs` 有**两道防线**，改测试前先分清：
   - **静态防线（4 道断言）**：内联 HTML 处理器引用的函数必须有定义；`INTERACTIVE_SURFACE`
-    清单（36 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
+    清单（35 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
     `lib.rs` 的原生菜单 id 必须全部被 `nativeMenuAction` 映射。这几道是**为历史事故专门加的**（见下）。
   - **动态防线**：靠字符串切片取真实状态机——`indexOf("const APP_VER")` 到
     `indexOf('function mbtResult(')` 划区段，再 `indexOf('function NAME(')` 逐函数抽。
@@ -231,7 +231,7 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`、
   `session_count_zero_after_close`（会话泄漏契约）、`agent_session_cache_reuse`（会话缓存命中，
   经行协议宿主的 session_cache_stats 断言，变异验证过必红）。
-  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数仍是 24。
+  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数仍是 28。
 
 ## 删前端代码前必读（真实事故，勿重演）
 

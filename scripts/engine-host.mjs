@@ -136,8 +136,18 @@ function handle(req) {
   if (fn === 'session_count_probe') {
     const before = ex.session_count();
     const h1 = ex.session_open(writeStr(req.mbt ?? ''));
-    const h2 = ex.session_open(writeStr(req.mbt ?? ''));
+    // 对齐 wasmtime_host:h1 已开后,第二次 open 失败先回收 h1(探针自身不做泄漏源);
+    // 负句柄分支同样互不泄漏
+    let h2;
+    try {
+      h2 = ex.session_open(writeStr(req.mbt ?? ''));
+    } catch (err) {
+      try { ex.session_close(h1); } catch (_) { /* 实例已不可用 */ }
+      return { id, ok: false, error: `session_open_failed:${err && err.message || err}` };
+    }
     if (!Number.isInteger(h1) || h1 < 0 || !Number.isInteger(h2) || h2 < 0) {
+      if (Number.isInteger(h1) && h1 >= 0) { try { ex.session_close(h1); } catch (_) {} }
+      if (Number.isInteger(h2) && h2 >= 0) { try { ex.session_close(h2); } catch (_) {} }
       return { id, ok: false, error: `session_open_failed:${h1}/${h2}` };
     }
     const during = ex.session_count();

@@ -18,8 +18,9 @@
 //! - 经典导出（无状态）与检视直调（list_* 直调）；
 //! - session API（26 个）：第一参为句柄，**mbt 键控会话缓存**（命中复用/失配
 //!   关旧开新）、变更信封 canonical 键前移 + 同句柄补画板索引（data 为数组才补）、
-//!   auto_fix/constrain 后弃缓存；**任何解析失败/腐坏读/trap 都弃缓存**（与 node
-//!   的 blanket catch 对齐——脏缓存会让重试落在幽灵提交上）；
+//!   auto_fix/constrain 后弃缓存；**任何解析失败/腐坏读/trap 都弃缓存**——脏
+//!   缓存会让重试落在幽灵提交上（node 调试宿主仅在 trap 分支弃缓存，腐坏读/
+//!   非 JSON 信封的弃缓存差异是有意保留的调试对照）；
 //! - 宿主编排导出：session_count_probe（泄漏契约）、session_cache_stats（缓存
 //!   契约）、session_open/close/open_project_json/session_count 拒绝直调。
 //!
@@ -287,6 +288,17 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                     return Err(err);
                 }
             };
+            // 负句柄（引擎对非法输入的返回形态）同样不泄漏另一合法句柄
+            match (h1 < 0, h2 < 0) {
+                (false, false) => {}
+                (true, false) => {
+                    let _ = e.call_raw("session_close", &[Val::I32(h2)]);
+                }
+                (false, true) => {
+                    let _ = e.call_raw("session_close", &[Val::I32(h1)]);
+                }
+                _ => {}
+            }
             if h1 < 0 || h2 < 0 {
                 return Err(format!("session_open_failed:{h1}/{h2}"));
             }
@@ -321,6 +333,10 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                 return Err(format!("session_open_failed:{h}"));
             }
             e.sess_cache = Some(Session { handle: h, mbt: mbt.to_string() });
+            // 装载+open（全量解析）已消耗共享预算——后续业务 op 调用重置计时
+            e.store.set_epoch_deadline(
+                (CALL_TIMEOUT.as_millis() / EPOCH_TICK_MS as u128 + 1) as u64,
+            );
             h
         };
 
@@ -404,6 +420,10 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
             (fn_name.to_owned() + "_in", vec![])
         }
     };
+    // 与 session 路径对称：装载（大文档可达百万次 push）不蚕食业务调用的预算
+    e.store.set_epoch_deadline(
+        (CALL_TIMEOUT.as_millis() / EPOCH_TICK_MS as u128 + 1) as u64,
+    );
     let out = match e.call_raw(&call_name, &vals).map(|ptr| e.read_str(ptr)) {
         Ok(s) => s,
         Err(trap) => {

@@ -263,6 +263,11 @@ async function contractProbe(exports, wasmBytes) {
     exports.in_reset();
     const rEmpty = JSON.parse(readStr(exports.validate_mbt_in()));
     if (rEmpty.ok !== false) fail(`_in 空输入应诚实报错：${JSON.stringify(rEmpty).slice(0, 120)}`);
+    // c0) arg 槽 + apply 实跑(生产生命线):in=mbt, arg=op → apply_human_op_in
+    slotLoad('in_reset', 'in_push', seedDoc('__seed', 390, 844));
+    slotLoad('arg_reset', 'arg_push', 'place __seed button probe_b - 10 10');
+    const rApply = JSON.parse(readStr(exports.apply_human_op_in()));
+    if (rApply.ok !== true) fail(`_in 契约面实跑失败：apply_human_op_in → ${JSON.stringify(rApply).slice(0, 120)}`);
     // c) arg 槽 + tap 参数序：open_in → arg_push(artboard) → tap_in(h, x, y)
     slotLoad('in_reset', 'in_push', seedDoc('__seed', 390, 844));
     const hTap = exports.session_open_in();
