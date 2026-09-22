@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// engine-host.mjs —— MoonViz **标准** wasm 引擎（classic，宿主中立）的 Node 宿主。
+// engine-host.mjs —— MoonViz **标准** wasm 引擎（classic，宿主中立）的 Node 直查工具。
 //
-// 生产环境引擎跑在 WebView（frontend 内嵌 wasm）；Rust 侧（agent.rs）通过
-// Tauri 事件桥调用。本脚本是同一份 wasm 的命令行宿主，供 cargo test 在无
-// WebView 的环境里驱动「真引擎」跑端到端与契约测试。
+// **调试工具，非运行时依赖**：Rust 侧引擎宿主已迁移到 wasmtime 进程内
+// （src-tauri/src/wasmtime_host.rs），cargo test 不再经过本脚本。保留它是为了
+// 手动直查引擎产物（行协议模式）。**本脚本的调用语义是 wasmtime_host.rs 的
+// 规范参考——改任一侧必须同步另一侧**（字符串编解码/session 缓存编排/evict
+// 语义，改漏会让「调试工具」给出与生产宿主不同的答案）。
 //
 // classic wasm 无 import、`(i32)->i32` 签名，字符串是 linear memory 对象
 // （[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]）——字符串进出全部经 makeStrCodec
@@ -12,9 +14,7 @@
 // 两种模式：
 //   1. 行协议（长驻）：stdin 每行一个请求 {"id":n,"fn":...,"mbt":...,"op":...}，
 //      stdout 回一行 {"id":n,"ok":true,"json":"<结果 JSON 字符串>"}。
-//   2. 单发（--once-file <路径>）：请求 JSON 存于文件（Rust 侧写入临时文件，
-//      argv 只传我们生成的路径，不携带文档内容），stdout 回一行响应后退出。
-//      cargo test 用这种模式。
+//   2. 单发（--once-file <路径>）：请求 JSON 存于文件，stdout 回一行响应后退出。
 // fn 取值分三类：
 //   1. 经典导出（无状态，每调用传完整 mbt）：apply_agent_op | apply_human_op |
 //      render_mbt | validate_mbt | list_templates | export_html | version_info

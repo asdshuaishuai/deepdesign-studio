@@ -147,6 +147,11 @@ pub fn run() {
 /// 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text} / models 列表。
 #[tauri::command]
 async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
+    // 传输门（对齐 save_ddp 的 12MB）：payload 含 mbt_b64（宿主按 UTF-16 写入
+    // wasm 内存约 2 倍放大），无门会让异常输入直通引擎内存增长
+    if payload.len() > 12 * 1024 * 1024 {
+        return Err("fxsdk_payload_too_large".into());
+    }
     let p: serde_json::Value =
         serde_json::from_str(&payload).map_err(|e| format!("fxsdk_payload_invalid:{e}"))?;
     let key = if !api_key.trim().is_empty() {

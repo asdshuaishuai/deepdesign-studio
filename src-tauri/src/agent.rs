@@ -1,7 +1,7 @@
 //! 进程内 Agent 基座：OpenAI/Anthropic 工具调用循环 × MoonViz wasm 引擎。
 //!
 //! 引擎是标准 classic wasm 产物（frontend/vendor/moonviz.wasm，宿主中立），本模块经
-//! `EngineHost`（生产 = WebView 事件桥，测试 = node 子进程宿主；与前端画布各自
+//! `EngineHost`（wasmtime 进程内纯 Rust 宿主，见 wasmtime_host.rs；与前端画布各自
 //! 持有实例、只交换 canonical 文本）调用：变更 op → session_apply_agent
 //! （engine-v0.1.1-session 起与无状态 apply_agent_op 同门同分发器，AgentGate；
 //! 宿主按 mbt 键控复用会话），空项目起步 → 种子文档 + apply_human_op 引导。
@@ -1261,24 +1261,15 @@ mod tests {
         assert!(!is_readonly_op(""));
     }
 
-    /// 共享宿主实例：测试无 WebView，走 node 子进程宿主驱动同一份 wasm 产物
-    /// （node ≥24）。产物缺失/宿主不可用时调用返回 Err（各测试据此跳过）。
     /// 共享宿主实例：wasmtime 进程内承载 classic wasm（与生产 agent 同路）。
     /// wasm 产物编译期嵌入（缺失=编译失败），调用失败即回归必红。
     const ENGINE: EngineHost = EngineHost;
 
-    /// 引擎 wasm 面契约：经 node 宿主驱动**真产物**——种子文档可承载 op、
-    /// AgentGate 拒绝带债提交、canonical mbt 回传、组件快照非空。
+    /// 引擎 wasm 面契约：经 wasmtime 宿主驱动**真产物**——种子文档可承载 op、
+    /// AgentGate 拒绝越界提交、canonical mbt 回传、组件快照非空。
     #[tokio::test]
     async fn wasm_engine_surface_contract() {
-        let Ok(v) = ENGINE.call("version_info", "", "").await else {
-            eprintln!("跳过：wasm 产物缺失");
-            return;
-        };
-        if v.get("ok") != Some(&json!(true)) {
-            eprintln!("跳过：wasm 产物不可用（先跑 node scripts/sync-engine.mjs）");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
 
         // 种子文档可承载变更 op（空文档会 mbt_no_visual_blocks——种子引导的前提）
@@ -1289,7 +1280,8 @@ mod tests {
         assert_eq!(r["ok"], json!(true), "种子文档上的 template op 失败：{r}");
         assert!(r["mbt"].as_str().is_some_and(|m| m.contains("wl")), "apply 结果应含 canonical mbt");
 
-        // AgentGate：明显越界的放置必须整体拒绝（双门语义仍在 wasm 面生效）
+        // AgentGate：明显越界的放置必须整体拒绝（双门语义仍在 wasm 面生效；
+        // 业务拒绝信封原样透传为 Ok，ok:false 由本测试断言）
         let r = ENGINE
             .call("apply_agent_op", &seed_doc("ov", 390, 844), "place ov button huge - 380 806")
             .await
@@ -1308,13 +1300,10 @@ mod tests {
     /// 提示词漏一个模板 → Agent 永远不会选它；多一个 → Agent 会猜不存在的 id。
     #[tokio::test]
     async fn template_ids_match_engine() {
-        let Ok(out) = ENGINE.call("list_templates", "", "").await else {
-            eprintln!("跳过：wasm 产物缺失");
-            return;
-        };
+        engine_ready().await;
+        let out = ENGINE.call("list_templates", "", "").await.unwrap();
         let Some(arr) = out.as_array() else {
-            eprintln!("跳过：wasm 产物不可用");
-            return;
+            panic!("list_templates 未返回数组（引擎契约回归）：{out}");
         };
         let _engine_gate = engine_test_gate();
         let mut engine_ids: Vec<String> = arr
@@ -1386,20 +1375,22 @@ mod tests {
         assert!(safe_base_url("ftp://x").is_none());
     }
 
-    /// 引擎门测试串行化：并行 spawn node 宿主会争抢（传输层瞬态失败，全 session
-    /// 约 1/5 概率闪红；已有传输层重试但只治标）。锁只包引擎门测试体，非引擎
-    /// 测试（方言表/协议/模型快照等纯单测）不受影响、照常并行。
+    /// 引擎门测试串行化：wasmtime 宿主是**进程级常驻单例**，session 缓存计数
+    /// （hits/misses）与 session_count_probe 的绝对值断言要求各测试从已知状态
+    /// 开始（hard_reset 后串行执行）。锁只包引擎门测试体，非引擎测试
+    /// （方言表/协议/模型快照等纯单测）不受影响、照常并行。
     static ENGINE_TEST_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     fn engine_test_gate() -> std::sync::MutexGuard<'static, ()> {
         ENGINE_TEST_GATE.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// 引擎（wasmtime 宿主 × 编译期嵌入的真 wasm 产物）可用性门。
-    /// **失败即 panic**——产物随二进制嵌入不存在"缺失"路径，宿主/编解码损坏
-    /// 是回归不是环境缺失，静默跳过会把真回归伪装成绿灯（变异实验实证过）。
-    async fn engine_ready() -> bool {
+    /// **失败即 panic，无跳过路径**——产物随二进制嵌入不存在"缺失"，
+    /// 宿主/编解码损坏是回归不是环境缺失，静默跳过会把真回归伪装成绿灯
+    /// （变异实验实证过这一掩蔽路径）。
+    async fn engine_ready() {
         match ENGINE.call("version_info", "", "").await {
-            Ok(v) if v.get("ok") == Some(&json!(true)) => true,
+            Ok(v) if v.get("ok") == Some(&json!(true)) => {}
             bad => panic!("wasm 引擎不可用（嵌入产物损坏或宿主编解码回归，这是回归不是环境缺失）：{bad:?}"),
         }
     }
@@ -1408,10 +1399,7 @@ mod tests {
     /// 覆盖：空项目种子引导 → apply-op → 终态总结 → canonical mbt 契约。
     #[tokio::test]
     async fn agent_loop_with_mock_llm_and_real_engine() {
-        if !engine_ready().await {
-            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         // mock /chat/completions：第 1 轮返回 bootstrap 工具调用，第 2 轮返回总结
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1556,10 +1544,7 @@ mod tests {
     /// system 提取、连续 tool 消息批处理为单条 user 消息、tool_call id 往返。
     #[tokio::test]
     async fn agent_loop_anthropic_protocol_with_mock_llm_and_real_engine() {
-        if !engine_ready().await {
-            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         // 第一轮：同消息两个 tool_use（触发两 tool 结果的批处理路径）
         // 第二轮：单个 tool_use；第三轮：文本总结
@@ -1675,10 +1660,7 @@ mod tests {
     /// 断言第二轮请求的消息历史里带着 lint 的 tool 结果（session 面真被打通）。
     #[tokio::test]
     async fn agent_loop_readonly_op_via_session_api() {
-        if !engine_ready().await {
-            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         let (port, mock, bodies) = spawn_mock_llm(vec![
             // 第一轮：bootstrap 建板 + 一个只读 lint（同一消息两个 tool_use）
@@ -1738,10 +1720,7 @@ mod tests {
     /// 这是只读路由的宿主层证据（agent.rs 路由 + 宿主包装 + wasm 导出三层）。
     #[tokio::test]
     async fn session_api_host_contract() {
-        if !engine_ready().await {
-            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         let seed = seed_doc("sd", 390, 844);
         // engine-v0.1.1-session 起只读 session 导出统一 {ok,data} 信封（上游 #4C）
@@ -1766,10 +1745,7 @@ mod tests {
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。
     #[tokio::test]
     async fn mid_run_llm_failure_preserves_committed_work() {
-        if !engine_ready().await {
-            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         // mock 只服务第一轮（bootstrap tool_call），之后 listener 关闭 → 第二轮连接被拒
         let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
@@ -1792,10 +1768,7 @@ mod tests {
     /// 只读会话（仅 read_mbt）：终态 render 不得为 null（render_mbt 兜底）。
     #[tokio::test]
     async fn readonly_session_gets_render_fallback() {
-        if !engine_ready().await {
-            eprintln!("跳过：V8 宿主或 wasm 产物不可用");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         // 输入用静态种子文档（合法 canonical，无需引擎生成）
         let mbt = seed_doc("rt", 390, 844);
@@ -1824,10 +1797,7 @@ mod tests {
     /// 引擎没有该导出时此项不可测（变异保持绿），现在锁定防回归。
     #[tokio::test]
     async fn session_count_zero_after_close() {
-        if !engine_ready().await {
-            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         // 常驻实例：前序测试可能留下缓存会话——重置后「初始计数 0」断言才成立
         crate::wasmtime_host::hard_reset();
@@ -1844,10 +1814,7 @@ mod tests {
     /// 故宿主提供 session_cache_stats。
     #[tokio::test]
     async fn agent_session_cache_reuse() {
-        if !engine_ready().await {
-            eprintln!("跳过：wasm 产物缺失（先跑 node scripts/sync-engine.mjs）");
-            return;
-        }
+        engine_ready().await;
         let _engine_gate = engine_test_gate();
         // 常驻实例：hits/misses 是绝对值断言，重置后从零计数
         crate::wasmtime_host::hard_reset();
