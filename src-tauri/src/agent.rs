@@ -1035,7 +1035,7 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -1379,8 +1379,8 @@ mod tests {
     /// （hits/misses）与 session_count_probe 的绝对值断言要求各测试从已知状态
     /// 开始（hard_reset 后串行执行）。锁只包引擎门测试体，非引擎测试
     /// （方言表/协议/模型快照等纯单测）不受影响、照常并行。
-    static ENGINE_TEST_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    fn engine_test_gate() -> std::sync::MutexGuard<'static, ()> {
+    pub(crate) static ENGINE_TEST_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(crate) fn engine_test_gate() -> std::sync::MutexGuard<'static, ()> {
         ENGINE_TEST_GATE.lock().unwrap_or_else(|e| e.into_inner())
     }
 

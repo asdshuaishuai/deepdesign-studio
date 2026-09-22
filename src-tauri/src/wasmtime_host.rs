@@ -21,15 +21,19 @@
 //!   契约）、session_open/close/open_project_json/session_count 拒绝直调。
 //!
 //! 线程与生命周期：单实例 + Mutex 串行（agent 循环天然串行，锁内 serde 亚毫秒）。
-//! **超时语义（诚实声明）**：tokio timeout 放弃的是 await 不是 wasm 执行——
-//! 挂死的 op 会继续持锁运行，后续调用逐个排队超时；恢复手段是重启应用。
-//! 未配 epoch interruption（留待需要时引入）。**内存棘轮**：引擎 bump 堆只增
-//! 不减（实测 ~200 变更 op ≈ +37MB），长寿命进程在内存超过回收阈值时整体
-//! 重建实例（对齐前端 engineRecycleIfNeeded 的 192MB 阈值）——缓存按权威
-//! mbt 键控，重建零语义影响。grow 失败/中毒锁都会触发重建而非永久变砖。
+//! **超时语义（epoch interruption，issue #1-A）**：每次调用前设 store 级 epoch
+//! deadline（CALL_TIMEOUT 换算成 tick 数），共享 wasmtime::Engine 上的看门狗线程
+//! 每 EPOCH_TICK_MS 推进时钟；到点后 `func.call` 返回 `Trap::Interrupt`——wasm
+//! 帧被 wasmtime 安全展开，**挂死的 op 会被真正打断**而不是占着锁到天荒地老。
+//! 中断后实例整体重建（毫秒级），下一个调用立即恢复正常服务；外层 tokio timeout
+//! 仅作锁排队的兜底（宽限 5s）。**初始化槽**（issue #1-B）：RwLock<Option<Arc>>——
+//! init 失败**不缓存**（下一次调用自动重试），reset 置 None 即可清除，OnceLock 的
+//! 「首次失败终身粘滞」不复存在。**内存棘轮**：引擎 bump 堆只增不减（实测 ~200
+//! 变更 op ≈ +37MB），超过回收阈值时整体重建实例——缓存按权威 mbt 键控，重建
+//! 零语义影响。grow 失败/中毒锁/epoch 中断都会触发重建而非永久变砖。
 
 use serde_json::{json, Value};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::sync::PoisonError;
 use wasmtime::{Instance, Memory, Module, Store, Val};
 
@@ -55,8 +59,12 @@ const LEN_MASK: u32 = 0x0FFF_FFFF;
 const WASM_PAGE: u64 = 65536;
 /// 线性内存回收阈值：超过即整体重建实例（对齐前端 engineRecycleIfNeeded）
 const MEMORY_RECYCLE_BYTES: usize = 192 * 1024 * 1024;
-/// 单次引擎调用超时（注意：放弃的是 await 不是 wasm 执行，见模块头）
+/// 单次引擎调用超时（epoch 到点真中断；外层 tokio timeout 只兜锁排队）
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// epoch tick 周期（看门狗线程推进时钟的粒度；deadline 换算成 tick 数）
+const EPOCH_TICK_MS: u64 = 100;
+/// 外层 tokio timeout：epoch 中断应先到，这里只兜「锁被占住排队」的场景
+const AWAIT_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// 经典导出 arity（字符串全部经编解码；返回值为字符串指针）
 fn arity(fn_name: &str) -> Option<usize> {
@@ -93,28 +101,55 @@ struct Engine {
     misses: u64,
 }
 
-static ENGINE: OnceLock<Result<Mutex<Engine>, String>> = OnceLock::new();
+/// 共享 wasmtime::Engine（epoch 时钟与编译缓存的宿主；实例可重建，engine 不换——
+/// 看门狗线程持有的引用因此始终有效）。
+static WT_ENGINE: OnceLock<wasmtime::Engine> = OnceLock::new();
+/// 引擎实例槽（issue #1-B）：Option 可清除——init 失败不缓存（下次调用自动重试），
+/// reset 置 None 即清除。OnceLock 的「首次失败终身粘滞」由此根除。
+static ENGINE: RwLock<Option<Arc<Mutex<Engine>>>> = RwLock::new(None);
 
-fn engine() -> Result<&'static Mutex<Engine>, String> {
-    match ENGINE.get() {
-        Some(Ok(m)) => Ok(m),
-        Some(Err(e)) => Err(e.clone()),
-        None => {
-            let built = init().map(Mutex::new);
-            let _ = ENGINE.set(built);
-            match ENGINE.get().expect("just set") {
-                Ok(m) => Ok(m),
-                Err(e) => Err(e.clone()),
-            }
-        }
+/// 共享 engine（含看门狗线程的一次性启动：每 tick 推进 epoch，deadline 由
+/// 每次调用前按 delta 设置——时钟恒走、闹钟各设各的）。
+fn wt_engine() -> &'static wasmtime::Engine {
+    WT_ENGINE.get_or_init(|| {
+        let mut cfg = wasmtime::Config::new();
+        cfg.epoch_interruption(true);
+        let engine = wasmtime::Engine::new(&cfg).expect("wasmtime engine build");
+        let ticker = engine.clone();
+        std::thread::Builder::new()
+            .name("moonviz-epoch-tick".into())
+            .spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(EPOCH_TICK_MS));
+                ticker.increment_epoch();
+            })
+            .expect("spawn epoch ticker");
+        engine
+    })
+}
+
+fn engine() -> Result<Arc<Mutex<Engine>>, String> {
+    if let Some(m) = ENGINE.read().expect("engine rwlock").as_ref() {
+        return Ok(m.clone());
     }
+    // 双检写：并发首呼只 init 一次；**失败不写槽**——下一次调用自动重试
+    let mut w = ENGINE.write().expect("engine rwlock");
+    if let Some(m) = w.as_ref() {
+        return Ok(m.clone());
+    }
+    let built = Arc::new(Mutex::new(init()?));
+    *w = Some(built.clone());
+    Ok(built)
 }
 
 fn init() -> Result<Engine, String> {
-    let engine = wasmtime::Engine::default();
+    let engine = wt_engine().clone();
     let module = Module::new(&engine, WASM_BYTES)
         .map_err(|e| format!("wasm_compile:{e}（产物损坏？重跑 node scripts/sync-engine.mjs）"))?;
     let mut store = Store::new(&engine, ());
+    // epoch_interruption 的 store 默认 deadline 为 0——看门狗已在推进时钟，
+    // 新 store 一创建即「已到点」，连 Instance::new 的 start 段都会被打断。
+    // 实例化前先给足 deadline（之后 dispatch 每次调用前会重设）。
+    store.set_epoch_deadline((CALL_TIMEOUT.as_millis() / EPOCH_TICK_MS as u128 + 1) as u64);
     let instance = Instance::new(&mut store, &module, &[])
         .map_err(|e| format!("wasm_instantiate:{e}"))?;
     let memory = instance
@@ -133,20 +168,22 @@ fn init() -> Result<Engine, String> {
     })
 }
 
-/// 测试辅助：丢弃整个实例（下次调用重新实例化）——常驻实例下
+/// 测试辅助：清空实例槽（下次调用重新实例化）——常驻实例下
 /// session_count_probe 的「初始计数 0」、缓存统计从零断言都需要它。
 #[cfg(test)]
 pub(crate) fn hard_reset() {
-    reset_instance();
+    *ENGINE.write().expect("engine rwlock") = None;
 }
 
-/// 生命周期管理：丢弃整个实例（生产内存棘轮与中毒恢复共用）。
-/// 缓存按权威 mbt 键控，重建零语义影响（下次调用自然重开）。
+/// 生命周期管理：整体重建实例（生产内存棘轮、中毒恢复、epoch 中断共用）。
+/// 重建失败则清槽（下次调用重试，而非终身变砖）。缓存按权威 mbt 键控，
+/// 重建零语义影响（下次调用自然重开）。
 fn reset_instance() {
-    if let Some(Ok(m)) = ENGINE.get() {
-        // 中毒锁照常恢复：panic 的正是旧实例本身，替换它就是修复
-        let mut guard = m.lock().unwrap_or_else(PoisonError::into_inner);
-        *guard = init().expect("reset_instance: 重新实例化失败");
+    let mut w = ENGINE.write().expect("engine rwlock");
+    match init() {
+        Ok(e) => *w = Some(Arc::new(Mutex::new(e))),
+        // 重建失败：清槽留待下次重试（旧实例若有中毒锁，随槽丢弃一并解决）
+        Err(_) => *w = None,
     }
 }
 
@@ -170,8 +207,9 @@ pub(super) async fn invoke(fn_name: &str, mbt: &str, op: &str) -> Result<Value, 
     let fn_name = fn_name.to_string();
     let mbt = mbt.to_string();
     let op = op.to_string();
+    // 外层宽限只兜「锁排队」；epoch 中断应在 CALL_TIMEOUT 处先打断真执行
     tokio::time::timeout(
-        CALL_TIMEOUT,
+        CALL_TIMEOUT + AWAIT_GRACE,
         tokio::task::spawn_blocking(move || invoke_sync(&fn_name, &mbt, &op)),
     )
     .await
@@ -190,17 +228,34 @@ fn invoke_sync(fn_name: &str, mbt: &str, op: &str) -> Result<Value, String> {
     let engine = engine()?;
     // 中毒锁恢复：panic 源头是被毒化的实例状态，拿回锁并重建实例即为修复
     let mut poisoned = false;
-    let mut e = match engine.lock() {
+    let mut guard = match engine.lock() {
         Ok(g) => g,
         Err(p) => {
             poisoned = true;
             p.into_inner()
         }
     };
-    if poisoned || e.memory.data(&e.store).len() > MEMORY_RECYCLE_BYTES {
+    if poisoned || guard.memory.data(&guard.store).len() > MEMORY_RECYCLE_BYTES {
         // 生命周期阀：毒化实例 / 内存棘轮超阈值 → 整体重建（缓存按权威 mbt 键控，零语义影响）
-        *e = init().map_err(|e| format!("engine_rebuild_failed:{e}"))?;
+        *guard = init().map_err(|e| format!("engine_rebuild_failed:{e}"))?;
     }
+    // epoch deadline（issue #1-A）：本次调用的中断闹钟——看门狗每 tick 推进时钟，
+    // 到点后 func.call 返回 Trap::Interrupt，wasm 帧被安全展开
+    guard.store.set_epoch_deadline(
+        (CALL_TIMEOUT.as_millis() / EPOCH_TICK_MS as u128 + 1) as u64,
+    );
+    let result = dispatch(&mut guard, fn_name, mbt, op);
+    if let Err(msg) = &result {
+        if msg.starts_with("engine_interrupted") {
+            // 被中断的实例不再复用（毫秒级重建）：下一个调用立即恢复正常服务，
+            // 不会像旧 tokio-timeout 语义那样级联 30s
+            *guard = init().map_err(|e| format!("engine_rebuild_failed:{e}"))?;
+        }
+    }
+    result
+}
+
+fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Value, String> {
 
     match fn_name {
         // —— 宿主编排导出 ——
@@ -378,9 +433,18 @@ impl Engine {
             .get_func(&mut self.store, fn_name)
             .ok_or_else(|| format!("unknown_fn:{fn_name}"))?;
         let mut results = [Val::I32(0)];
-        func.call(&mut self.store, args, &mut results)
-            .map_err(|e| format!("wasm_panic:{e}"))?;
-        Ok(results[0].i32().unwrap_or(0))
+        match func.call(&mut self.store, args, &mut results) {
+            Ok(()) => Ok(results[0].i32().unwrap_or(0)),
+            Err(err) => {
+                // epoch 到点：wasm 帧被安全展开，调用以明确错误返回（invoke_sync
+                // 据此重建实例）。与其余 trap 区分——后者是引擎腐坏，前者是超时语义。
+                if err.downcast_ref::<wasmtime::Trap>().is_some_and(|t| *t == wasmtime::Trap::Interrupt) {
+                    Err("engine_interrupted:epoch deadline exceeded".into())
+                } else {
+                    Err(format!("wasm_panic:{err}"))
+                }
+            }
+        }
     }
 
     fn read_str(&self, ptr: i32) -> String {
@@ -426,5 +490,52 @@ impl Engine {
         }
         self.write_off = ptr + need + STRIDE_GAP;
         Ok(ptr as i32)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // 与 agent::tests 的引擎门测试共用同一把串行化门闩——epoch 测试会短暂
+    // 持锁睡眠并对全局实例设 deadline，不与 hard_reset/缓存断言并发互踩
+    use crate::agent::tests::engine_test_gate;
+
+    /// issue #1-A 验收（中断路径）：手工把 epoch deadline 设到最近一个 tick，
+    /// 看门狗推进时钟后 version_info 必须以 engine_interrupted 返回（真中断，
+    /// 而非旧语义的「继续占锁跑到底」）；随后正常调用立即恢复服务。
+    /// 注：deadline 由 dispatch 每次调用前重设，手工干扰不影响后续调用。
+    #[test]
+    fn epoch_deadline_interrupts_and_recovers() {
+        let _gate = engine_test_gate();
+        let eng = engine().expect("engine init");
+        let mut e = eng.lock().unwrap_or_else(PoisonError::into_inner);
+        e.store.set_epoch_deadline(1); // 下一个 tick（≤100ms）即到点
+        std::thread::sleep(std::time::Duration::from_millis(400)); // 跨 ≥3 个 tick
+        let r = e.call_raw("version_info", &[]);
+        let err = r.expect_err("到点的调用必须被中断");
+        assert!(
+            err.starts_with("engine_interrupted"),
+            "应为 epoch 中断，实际：{err}"
+        );
+        drop(e);
+        // 正常调用（dispatch 会重设 30s deadline）：立即恢复，不级联
+        let v = invoke_sync("version_info", "", "").expect("中断后下一次调用必须正常");
+        assert_eq!(v["ok"], serde_json::json!(true), "{v}");
+    }
+
+    /// issue #1-B 验收（粘滞消除）：旧 OnceLock 下 Some(Err) 终身粘滞；
+    /// 现在槽可清除——清空后下一次调用自动重建成功（构造失败注入不可行，
+    /// 字节是编译期嵌入的固定产物，故验证「清除→重建」这条恢复通路本身）。
+    #[test]
+    fn engine_slot_recovery() {
+        let _gate = engine_test_gate();
+        *ENGINE.write().expect("engine rwlock") = None; // 模拟槽被清（reset 失败分支同形态）
+        let v = invoke_sync("version_info", "", "").expect("清槽后必须自动重建");
+        assert_eq!(v["ok"], serde_json::json!(true), "{v}");
+        // reset_instance 的失败分支也不留毒：注入一个必失败的槽再走 reset
+        // （无需构造——reset_instance 对 Err(_) 的处理就是置 None，下一次重试）
+        reset_instance();
+        let v = invoke_sync("version_info", "", "").expect("reset 后必须可用");
+        assert_eq!(v["ok"], serde_json::json!(true), "{v}");
     }
 }
