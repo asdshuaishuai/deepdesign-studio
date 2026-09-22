@@ -13,3 +13,4 @@ frontend/vendor/moonviz.wasm
 frontend/vendor/engine-manifest.json
 vendor/moonviz-ddp/target/
 vendor/moonviz-ddp/Cargo.lock
+.zcodeignore
