@@ -5,10 +5,10 @@
 //! 约 530KB）——`cargo build` 前必须先跑 `node scripts/sync-engine.mjs`
 //! 产出 frontend/vendor/moonviz.wasm，缺失即编译错误（显性失败优于静默）。
 //!
-//! 调用语义以 scripts/engine-host.mjs（node 参考宿主）为准——**对齐它是
-//! 有意决策，例外逐处登记**（见各分叉注释）；字符串 codec 与
-//! frontend/index.html 的 engReadStr/engWriteStr、sync-engine.mjs 三处同构，
-//! 改任一处必须同步其余（引擎 ABI 升级时最先坏的就是这里）。
+//! **读方向**（返回字符串指针的解码）与会话缓存编排语义以 scripts/engine-host.mjs
+//! （node 调试宿主）为历史参考；**写方向已整体分叉**——生产宿主（本文件）与前端
+//! engSlotLoad、sync 探针走 `_in` 槽契约三处同构，engine-host.mjs 有意保留经典写
+//! 面作调试对照，两侧勿互相同步。引擎 ABI 升级时最先坏的就是这几处 codec。
 //! - **输入走 `_in` 字节契约面（engine-v0.1.2，上游 issue #8）**：文档/op/artboard
 //!   文本经 in/arg/arg2 三槽压入（UTF-8 分块，每块小端 4 字节 + 有效长度），
 //!   `*_in()` 变体从槽解码调用经典入口——**写方向不再依赖逆向的字符串内存布局**。
@@ -70,9 +70,6 @@ fn arity(fn_name: &str) -> Option<usize> {
         _ => return None,
     })
 }
-/// session op 的 op 参数是完整串（含空格），不做切分
-const SESSION_WHOLE_ARG: [&str; 3] =
-    ["session_apply_agent", "session_apply_human", "session_component_compile_b64"];
 /// 变更类导出（信封回传 canonical：缓存键前移 + 补画板索引）
 const SESSION_MUTATING: [&str; 2] = ["session_apply_agent", "session_apply_human"];
 /// 改会话文档但信封不回传 canonical 的导出（调用后弃缓存防脏键）
@@ -177,9 +174,11 @@ pub(crate) fn hard_reset() {
     *ENGINE.write().expect("engine rwlock") = None;
 }
 
-/// 生命周期管理：整体重建实例（生产内存棘轮、中毒恢复、epoch 中断共用）。
+/// 生命周期管理：整体重建实例（测试用；生产路径的重建在 invoke_sync 内联——
+/// 棘轮/中毒/epoch 中断都在持锁现场重建，无需经此）。
 /// 重建失败则清槽（下次调用重试，而非终身变砖）。缓存按权威 mbt 键控，
 /// 重建零语义影响（下次调用自然重开）。
+#[cfg(test)]
 fn reset_instance() {
     let mut w = ENGINE.write().expect("engine rwlock");
     match init() {
@@ -276,8 +275,18 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
             let before = e.call_raw("session_count", &[])?;
             load_slot(e, "in_reset", "in_push", mbt)?;
             let h1 = e.call_raw("session_open_in", &[])?;
-            load_slot(e, "in_reset", "in_push", mbt)?;
-            let h2 = e.call_raw("session_open_in", &[])?;
+            // h1 已开：第二次装载/open 失败时必须先回收 h1（探针自身不做泄漏源）
+            if let Err(err) = load_slot(e, "in_reset", "in_push", mbt) {
+                let _ = e.call_raw("session_close", &[Val::I32(h1)]);
+                return Err(err);
+            }
+            let h2 = match e.call_raw("session_open_in", &[]) {
+                Ok(h) => h,
+                Err(err) => {
+                    let _ = e.call_raw("session_close", &[Val::I32(h1)]);
+                    return Err(err);
+                }
+            };
             if h1 < 0 || h2 < 0 {
                 return Err(format!("session_open_failed:{h1}/{h2}"));
             }
@@ -328,15 +337,16 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                 .map_err(|_| format!("op_invalid_number:{fn_name} 的坐标参数 «{raw}» 不是数字"))
         };
         // `_in` 槽计划：参数文本进 arg/arg2 槽，handle/坐标走直参。
-        // in_name = None 的 session 导出（flows/benchmark/list_artboards/save 等）
-        // 无文本入参，继续经典直调。
+        // SlotPlan::None 的 session 导出（flows/benchmark/list_artboards/save/
+        // library_snapshot）无文本入参，in_name 即经典名，直调。
         let (in_name, plan): (String, SlotPlan) = match fn_name {
             "session_apply_agent" | "session_apply_human" | "session_component_compile_b64" => {
                 (fn_name.to_owned() + "_in", SlotPlan::Arg(op.to_string()))
             }
             "session_tap" => (
                 "session_tap_in".to_string(),
-                SlotPlan::Tap(parse_xy(parts.get(0))?, parse_xy(parts.get(1))?, parts.first().copied().unwrap_or("").to_string()),
+                // op 形如 `tap <ab> <x> <y>`：artboard 走 arg 槽，x/y 是第 2/3 个 token
+                SlotPlan::Tap(parse_xy(parts.get(1))?, parse_xy(parts.get(2))?, parts.first().copied().unwrap_or("").to_string()),
             ),
             "session_constrain" => (
                 "session_constrain_in".to_string(),
@@ -351,17 +361,24 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
             | "session_generate_responsive" | "session_export_svg" | "session_auto_fix" => {
                 (fn_name.to_owned() + "_in", SlotPlan::Arg(parts.join(" ")))
             }
-            _ => (fn_name.to_string(), SlotPlan::None),
+            // 无文本入参（无 _in 变体）：经典直调。**显式枚举**——未来引擎新增
+            // 带文本的 session 导出时，落到这里会得到明确错误而不是被当无文本
+            // 误调出不透明 trap
+            "session_flows" | "session_benchmark" | "session_list_artboards"
+            | "session_save" | "session_library_snapshot" => (fn_name.to_string(), SlotPlan::None),
+            other => return Err(format!("unknown_session_fn:{other}")),
         };
         match &plan {
             SlotPlan::None => {}
-            SlotPlan::Arg(text) => load_slot(e, "arg_reset", "arg_push", text)?,
+            // 槽装载失败 = 引擎表现出异常 → 与业务调用 trap 同策略弃缓存
+            SlotPlan::Arg(text) => load_slot(e, "arg_reset", "arg_push", text)
+                .inspect_err(|_| evict_session(e))?,
             SlotPlan::Arg2(a, b) => {
-                load_slot(e, "arg_reset", "arg_push", a)?;
-                load_slot(e, "arg2_reset", "arg2_push", b)?;
+                load_slot(e, "arg_reset", "arg_push", a).inspect_err(|_| evict_session(e))?;
+                load_slot(e, "arg2_reset", "arg2_push", b).inspect_err(|_| evict_session(e))?;
             }
             SlotPlan::Tap(x, y, ab) => {
-                load_slot(e, "arg_reset", "arg_push", ab)?;
+                load_slot(e, "arg_reset", "arg_push", ab).inspect_err(|_| evict_session(e))?;
                 let mut vals = vec![Val::I32(handle), Val::F64(f64::to_bits(*x)), Val::F64(f64::to_bits(*y))];
                 return finish_session_call(e, fn_name, &in_name, handle, &mut vals);
             }
@@ -374,12 +391,16 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
     let (call_name, vals): (String, Vec<Val>) = match n {
         0 => (fn_name.to_string(), vec![]),
         1 => {
-            load_slot(&mut e, "in_reset", "in_push", mbt)?;
+            load_slot(&mut e, "in_reset", "in_push", mbt)
+                .inspect_err(|_| evict_session(&mut e))?;
             (fn_name.to_owned() + "_in", vec![])
         }
         _ => {
-            load_slot(&mut e, "in_reset", "in_push", mbt)?;
-            load_slot(&mut e, "arg_reset", "arg_push", op)?;
+            // 无状态导出不触碰会话表，但装载/调用失败同样按保守姿态弃缓存
+            load_slot(&mut e, "in_reset", "in_push", mbt)
+                .inspect_err(|_| evict_session(&mut e))?;
+            load_slot(&mut e, "arg_reset", "arg_push", op)
+                .inspect_err(|_| evict_session(&mut e))?;
             (fn_name.to_owned() + "_in", vec![])
         }
     };
@@ -408,6 +429,11 @@ fn finish_session_call(
     handle: i32,
     vals: &mut Vec<Val>,
 ) -> Result<Value, String> {
+    // 槽装载（大文档可达百万次 push）已消耗共享 deadline——业务调用前重设，
+    // 恢复「30s 归业务调用」语义
+    e.store.set_epoch_deadline(
+        (CALL_TIMEOUT.as_millis() / EPOCH_TICK_MS as u128 + 1) as u64,
+    );
     let out = match e.call_raw(in_name, vals) {
         Ok(ptr) => e.read_str(ptr),
         Err(trap) => {

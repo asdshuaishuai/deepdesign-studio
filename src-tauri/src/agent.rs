@@ -1807,6 +1807,36 @@ pub(crate) mod tests {
         assert_eq!(r["after"], json!(0), "close 后计数未归零——会话泄漏回归：{r}");
     }
 
+    /// session_tap 只读链（_in 面唯一 f64 直参计划）：place 一个按钮后 tap 其
+    /// 坐标。锁三件事——tap 的 op 形如 `tap <ab> <x> <y>`（artboard 第 1 参、
+    /// 坐标第 2/3 参——8d206b5 曾把 artboard 当 x 解析致 tap 全灭）、tap_in 直参
+    /// 序 [handle,F64,F64]、命中交互流时 changes 非空。坐标不落在任何流源上，
+    /// 断言 ok:true 且 current 不变（tap 语义性成功）。
+    #[tokio::test]
+    async fn session_tap_readonly_via_in_face() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let r_place = ENGINE
+            .call(
+                "session_apply_agent",
+                &seed_doc(SEED_BOARD, 390, 844),
+                "place __seed button tp_b - 10 10",
+            )
+            .await
+            .unwrap();
+        assert_eq!(r_place["ok"], json!(true), "铺按钮失败：{r_place}");
+        let mbt = r_place["mbt"].as_str().unwrap();
+        // 坐标解析源错位回归（曾把 «__seed» 当 x 解析）会在这里红
+        let r = ENGINE.call("session_tap", mbt, "__seed 15 15").await.unwrap();
+        assert_eq!(r["ok"], json!(true), "tap 应语义性成功：{r}");
+        assert!(r["changes"].is_array(), "tap 应返回 changes 数组：{r}");
+        assert_eq!(r["current"], json!("__seed"), "无交互流时画板不变：{r}");
+        // 参数个数不足的诚实报错（宿主层 Err,不是 ok:false 信封）
+        let bad = ENGINE.call("session_tap", mbt, "__seed").await;
+        assert!(bad.is_err(), "缺坐标参数应报错：{bad:?}");
+        assert!(bad.unwrap_err().contains("op_missing_args"));
+    }
+
     /// 会话缓存契约（agent 变更路径迁到 session_apply_agent 的核心机制）：
     /// 常驻 wasmtime 实例下，链式变更 op 的第二 op 必须命中缓存（宿主 hits/misses
     /// 计数断言 hits=1/misses=1；若退回逐次 open→close 会 misses=2、hits=0 → 红）。

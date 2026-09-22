@@ -50,6 +50,20 @@ const REQUIRED_EXPORTS = [
 ];
 // 非 session 的检视导出（session API 之外的直调面）
 const INSPECTION_EXPORTS = ['list_components', 'list_ops', 'list_tokens', 'list_themes'];
+// `_in` 字节契约面（engine-v0.1.2，issue #8）：三槽 reset/push 辅助 + 全部带
+// 文本入参导出的 `*_in` 变体。wasmtime_host 与前端 engSlotLoad 的写路径。
+const IN_FACE_EXPORTS = [
+  'in_reset', 'in_push', 'arg_reset', 'arg_push', 'arg2_reset', 'arg2_push',
+  'render_mbt_in', 'validate_mbt_in', 'export_html_in',
+  'apply_agent_op_in', 'apply_human_op_in',
+  'session_open_in', 'session_apply_agent_in', 'session_apply_human_in',
+  'session_auto_fix_in', 'session_component_compile_b64_in', 'session_constrain_in',
+  'session_critique_in', 'session_export_svg_in', 'session_extract_design_system_in',
+  'session_generate_responsive_in', 'session_infer_missing_in', 'session_infer_page_type_in',
+  'session_interactions_in', 'session_lint_in', 'session_open_project_json_in',
+  'session_query_nodes_in', 'session_spec_in', 'session_states_in', 'session_tap_in',
+];
+
 // session API（26 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
 // 导出 SVG/交互运行时等）。agent.rs 的只读 op 路由依赖这组导出。
 // session_count（泄漏可测）与 session_open_project_json（save→open 回灌）
@@ -221,23 +235,42 @@ async function contractProbe(exports, wasmBytes) {
   if (missInsp.length) fail(`wasm 缺少检视导出：${missInsp.join(', ')}`);
   const missSess = SESSION_EXPORTS.filter((n) => typeof exports[n] !== 'function');
   if (missSess.length) fail(`wasm 缺少 session API 导出：${missSess.join(', ')}`);
+  const missIn = IN_FACE_EXPORTS.filter((n) => typeof exports[n] !== 'function');
+  if (missIn.length) fail(`wasm 缺少 _in 契约面导出：${missIn.join(', ')}`);
 
-  // classic wasm：字符串经内存编解码（与 engine-host.mjs 同构）
+  // classic wasm：字符串经内存编解码（读方向；写方向生产路径已迁 `_in` 槽——
+// 本脚本的 writeStr 仅服务经典面探针与组件 place 验证）
   const { readStr, writeStr } = makeStrCodec(exports);
 
-  // `_in` 字节契约面实跑（engine-v0.1.2 起，issue #8）：validate_mbt_in 一发——
-  // wasmtime_host 与前端的写方向都走它，坏契约在这里红而不是下游炸
+  // `_in` 字节契约面实跑（engine-v0.1.2 起，issue #8）：写路径是 wasmtime_host
+  // 与前端 engSlotLoad 的生命线，坏契约在这里红而不是下游炸
   {
-    exports.in_reset();
-    const bytes = new TextEncoder().encode(seedDoc('__seed', 390, 844));
-    for (let i = 0; i < bytes.length; i += 4) {
-      const n = Math.min(4, bytes.length - i);
-      let le = 0;
-      for (let j = 0; j < n; j++) le |= bytes[i + j] << (8 * j);
-      exports.in_push(le, n);
-    }
+    const slotLoad = (reset, push, text) => {
+      exports[reset]();
+      const bytes = new TextEncoder().encode(text);
+      for (let i = 0; i < bytes.length; i += 4) {
+        const n = Math.min(4, bytes.length - i);
+        let le = 0;
+        for (let j = 0; j < n; j++) le |= bytes[i + j] << (8 * j);
+        exports[push](le, n);
+      }
+    };
+    // a) in 槽：validate_mbt_in
+    slotLoad('in_reset', 'in_push', seedDoc('__seed', 390, 844));
     const rIn = JSON.parse(readStr(exports.validate_mbt_in()));
     if (rIn.ok !== true) fail(`_in 契约面实跑失败：validate_mbt_in → ${JSON.stringify(rIn).slice(0, 120)}`);
+    // b) 空输入：空槽直接调（引擎 catch→空串→诚实 ok:false,不得腐坏）
+    exports.in_reset();
+    const rEmpty = JSON.parse(readStr(exports.validate_mbt_in()));
+    if (rEmpty.ok !== false) fail(`_in 空输入应诚实报错：${JSON.stringify(rEmpty).slice(0, 120)}`);
+    // c) arg 槽 + tap 参数序：open_in → arg_push(artboard) → tap_in(h, x, y)
+    slotLoad('in_reset', 'in_push', seedDoc('__seed', 390, 844));
+    const hTap = exports.session_open_in();
+    if (!Number.isInteger(hTap) || hTap < 0) fail(`session_open_in 失败：${hTap}`);
+    slotLoad('arg_reset', 'arg_push', '__seed');
+    const rTap = JSON.parse(readStr(exports.session_tap_in(hTap, 10.5, 20.5)));
+    if (rTap.ok !== true) fail(`_in tap 实跑失败（参数序回归？）：${JSON.stringify(rTap).slice(0, 120)}`);
+    exports.session_close(hTap);
   }
 
   // session 生命周期实跑（不只是存在性）：种子文档 open → lint → save 回灌 → close

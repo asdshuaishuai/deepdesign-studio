@@ -4,8 +4,9 @@
 // **调试工具，非运行时依赖**：Rust 侧引擎宿主已迁移到 wasmtime 进程内
 // （src-tauri/src/wasmtime_host.rs），cargo test 不再经过本脚本。保留它是为了
 // 手动直查引擎产物（行协议模式）。**本脚本的调用语义是 wasmtime_host.rs 的
-// 规范参考——改任一侧必须同步另一侧**（字符串编解码/session 缓存编排/evict
-// 语义，改漏会让「调试工具」给出与生产宿主不同的答案）。
+// 历史参考——仅限读方向与会话缓存编排；写方向两侧有意不同**：生产宿主走
+// `_in` 槽契约（engine-v0.1.2），本脚本保留经典内存写作调试对照，勿互相同步
+// （改漏会让「调试工具」给出与生产宿主不同的答案）。
 //
 // classic wasm 无 import、`(i32)->i32` 签名，字符串是 linear memory 对象
 // （[refcnt@ptr-8][长度@ptr-4][UTF-16LE@ptr+0]）——字符串进出全部经 makeStrCodec

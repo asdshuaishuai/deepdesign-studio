@@ -10,12 +10,12 @@ AI 原生原型设计工具的桌面客户端（Tauri 2）。基于 [MoonViz](ht
   ├─ 内嵌标准 wasm 引擎（WebView 内进程执行）
   └─ 全部经 Tauri invoke（无应用后端 HTTP 层）
 Rust 后端 (src-tauri)
-  ├─ engine 事件桥 — agent 循环经结构化事件驱动前端 wasm
+  ├─ wasmtime_host — 引擎进程内宿主（_in 字节契约写路径；agent 循环与测试共用）
   ├─ agent   — 进程内 Agent 循环（OpenAI / Anthropic 双协议工具调用）
   └─ save_ddp/open_ddp — DDP 加密容器读写（vendored codec）
 引擎 (frontend/vendor/moonviz.wasm, 标准产物)
   └─ GitHub Releases 的 classic wasm（纯 WASM MVP、宿主中立、零 import）
-     字符串经宿主线性内存编解码；session API 覆盖检视命令
+     返回值经线性内存读解码，输入走 _in 字节契约面；session API 覆盖检视命令
 ```
 
 Agent 基座为 Rust 进程内实现（`src-tauri/src/agent.rs`）——无 JS 运行时、无子进程桥。
@@ -35,7 +35,7 @@ wasm 产物、DDP codec 已 vendored，clone 后两步即可构建，无需 Moon
 ## 测试
 
 ```bash
-cd src-tauri && cargo test    # 24 个测试（含 4 个 mock-LLM × 真 wasm 端到端）
+cd src-tauri && cargo test    # 28 个测试（含 4 个 mock-LLM × 真 wasm 端到端）
 node test_studio.cjs          # 前端状态机冒烟 + wasm 产物契约
 ```
 
