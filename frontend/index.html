@@ -287,7 +287,7 @@ body[data-mode="dark"] .seg2 button.on{background:var(--acc);color:#fff}
 .segshadow button[data-v="e3"] .demo{box-shadow:0 7px 16px rgba(0,0,0,.45)}
 .segshadow button.on{border-color:var(--acc-tx);color:var(--acc-tx);background:rgba(0,122,255,.06)}
 .insp-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:9px}
-.ibtn{display:flex;align-items:center;justify-content:center;gap:5px;height:29px;border:1px solid rgba(0,0,0,.1);background:#fff;border-radius:8px;font-size:11px;font-weight:500;color:var(--tx2);cursor:pointer}
+.ibtn{display:flex;align-items:center;justify-content:center;gap:5px;height:29px;border:1px solid rgba(0,0,0,.1);background:var(--panel-input,#fff);border-radius:8px;font-size:11px;font-weight:500;color:var(--tx2);cursor:pointer}
 .ibtn:hover{border-color:var(--acc-tx);color:var(--acc-tx)}
 .ibtn.danger:hover{border-color:#e05252;color:#e05252}
 .apply{width:100%;height:31px;margin-top:8px;border:none;background:var(--acc);color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
@@ -609,6 +609,15 @@ body[data-mode="dark"] .frame-wrap.active .frame-body{border:2px solid var(--acc
 body[data-mode="dark"] .frame-wrap:not(.active):hover .frame-body{box-shadow:0 12px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08)}
 /* 提示条 pill 化 + 内辉光 */
 body[data-mode="dark"] .canvas-tail,body[data-mode="dark"] .toast{border-radius:999px}
+/* 强调色文字/卡片的 dark 可读性（紫 #7c3aed 在深底仅 ~3.2:1） */
+body[data-mode="dark"] .audit{background:rgba(157,78,221,.14);border-color:rgba(157,78,221,.4)}
+body[data-mode="dark"] .audit h5,body[data-mode="dark"] .ctool.magic,body[data-mode="dark"] .trk-h .who{color:#A78BFA}
+body[data-mode="dark"] #agent-model-hint .warn{color:#FBBF24}
+/* 输入类/按钮的 dark 底色（浅色硬编码 #fff 的收口） */
+body[data-mode="dark"] .ap-input,body[data-mode="dark"] .ap-input:focus{background:var(--panel-input,#1f1f1f);border-color:var(--panel-line,rgba(255,255,255,.12));color:var(--tx)}
+body[data-mode="dark"] .ibtn{background:var(--panel-input,#1f1f1f);border-color:var(--panel-line,rgba(255,255,255,.12));color:var(--tx2)}
+body[data-mode="dark"] .ibtn:hover{color:var(--acc-tx)}
+body[data-mode="dark"] .empty-insp svg{color:rgba(255,255,255,.22)}
 body[data-mode="dark"] .frow input,body[data-mode="dark"] .compsearch,body[data-mode="dark"] .pmain{box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
 body[data-mode="dark"] .tpl-card{border-radius:14px}
 body[data-mode="dark"] .compcell{border-radius:10px}
