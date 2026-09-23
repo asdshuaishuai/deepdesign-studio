@@ -8,7 +8,7 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 
 ```
 frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）+ 画布侧 wasm 引擎实例
-src-tauri/src/lib.rs       Tauri 命令层：invoke_fx_sdk / save_ddp / open_ddp / model_registry + EngineHost
+src-tauri/src/lib.rs       Tauri 命令层：invoke_fx_sdk / save_ddp（支持原地保存）/ open_ddp / save_text_file / confirm_discard / set_project_dirty / app_exit / model_registry + EngineHost
 src-tauri/src/wasmtime_host.rs  wasmtime 进程内引擎宿主（纯 Rust 运行时，agent 循环与 cargo test 共用）
 src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI/Anthropic 工具调用 × wasmtime 引擎宿主）
 scripts/sync-engine.mjs    引擎产物同步：GitHub Releases 拉标准 classic wasm → sha512 校验 → 真机契约探针 → frontend/vendor/
@@ -18,7 +18,7 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
 
 必须守住的边界：
 
-- **前端只能经 `window.__TAURI__.core.invoke` 调上面 4 个命令**，没有 HTTP 层，不要引入 fetch/axios。
+- **前端只能经 `window.__TAURI__.core.invoke` 调上面 8 个命令**，没有 HTTP 层，不要引入 fetch/axios。
 - **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、wasmtime 宿主、DDP 加解密。
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
 - **人类操作与 Agent 操作走不同引擎入口**：画布走 `apply_human_op`，Agent 变更走
@@ -84,7 +84,8 @@ node test_studio.cjs            # 前端侧 wasm 契约（模板清单 vs agent.
 ## 同步模型快照（models.dev，与引擎无关的另一条对账线）
 
 `src-tauri/models.json` 是 models.dev api.json 的**裁剪快照**（13 个预设映射到 11 个唯一提供商 /
-86 模型，~48KB，随版本库提交）。MIT 许可，vendored 而非运行时拉取（离线桌面 + 依赖极简）。
+80 模型，~44KB，随版本库提交；以快照实际计数为准，别在文档里写死后被 `snapshot_structure_is_healthy`
+的宽松下限掩盖）。MIT 许可，vendored 而非运行时拉取（离线桌面 + 依赖极简）。
 
 ```bash
 node scripts/sync-models.mjs    # 重新生成快照（更新 fetched_at）
@@ -140,8 +141,9 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   是前端实例化引擎 wasm 的硬前提，别删。Tauri codegen 在构建期为非空内联 `<script>` 自动注入
   sha256 hash，所以 `frontend/index.html` 里那一大坨内联脚本没问题；新增内联脚本同样会被自动
   hash，但**不要**改成外部 module script。
-- **无 capabilities 目录是常态**：前端不用任何 ACL 管辖的 core 面（事件桥已随 wasmtime
-  宿主删除）；自定义命令不经 ACL。别为"以防万一"加 capability。
+- **capabilities 最小集**（`src-tauri/capabilities/default.json`，Windows 标题栏合并后新增）：
+  只放行自绘标题栏的窗口面（dragging/minimize/maximize/close）+ `core:event:allow-listen`
+  （agent 实时轨迹的 agent-event 监听）。自定义命令不经 ACL。别为"以防万一"加 capability。
 - 依赖刻意保持精简。引入类型化 chat 客户端（如 async-openai）已被评估否决：thinking 家族等非标字段
   必须在序列化后注入，类型层反而被绕过。Rusty V8（进程内 JS 引擎宿主）已被评估并**否决**：
   +30~80MB 安装包税 + 依赖链脆弱（temporal_rs/icu_calendar 编译断裂实证）；**wasmtime 为最终
@@ -201,7 +203,27 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 这是设计意图（Agent 门更严），不是 bug。`validate-mbt-b64`（只校验不提交）与
 `canonical-mbt-b64`（只规范化）是本次更新新增的非提交变体，目前前端未用。
 
-## 前端约定（`frontend/index.html`，单文件 ~2500 行）
+## 引擎问题上报（元规则）
+
+**引擎（MoonViz wasm/CLI/MCP）的 bug 或能力缺口，直接到上游仓库提 issue**：
+`gh issue create --repo asdshuaishuai/moonviz`。不要在 deepDesign 侧绕过或硬扛，不要只
+登记在文档里——两个仓库都是我们的内部项目，**issue 提交后那边会直接跟进修复**。
+提 issue 的纪律：
+
+- 必须附**真机证据**：用 `frontend/vendor/moonviz.wasm` 跑最小复现探针（人类门/代理门
+  对照、引擎返回 JSON 原文，参照 `scripts/engine-host.mjs` 行协议），不得凭推测报障；
+- 同时在本仓库做**登记性缓解**（提示词禁令/可用配方、登记性测试、诚实降级文案），
+  并在代码注释或本文件引用 issue 编号——上游修复会让登记性测试变红，驱动本侧回收
+  （例：`AGENT_GATE_DEBT` 清单对应 #14）；
+- 已提交的引擎 issue 台账（**0.1.5-fix-2 已修 #12/#13/#14/#15**）：#11（history——
+  **会话内全链路可用**：arg 槽 `<sub> [artboard]`、须先 `init`、place 不自动入史须显式
+  `commit`；但**历史不跨会话存活**→ moonviz#16 待上游定持久化方向，产品级撤销接线挂起）、
+  #12（缺 flow 删除 op→`unflow` 已落地，前端流程面板已接删除）、#13（节点父子层级不可达→
+  `session_query_nodes` 已带 `parent` 字段，图层树层级可重建）、#14（4 模板自带债过
+  AgentGate→已修，`AGENT_GATE_DEBT` 清空为哨兵、种子引导已换回 AgentGate）、#15（代理门
+  背景层死锁→已修，提示词禁令已撤）。
+
+## 前端约定（`frontend/index.html`，单文件 ~3000 行）
 
 - 只有**一个**内联 `<script>`，全局可变状态集中在文件顶部（`nodes/selected/mbtText/sessions/active/...`）。
 - **所有会改项目的操作必须经 `serializeProject(task)` 串行化**（`projectQueue` 链）。绕过它会产生竞态。
@@ -231,7 +253,7 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`、
   `session_count_zero_after_close`（会话泄漏契约）、`agent_session_cache_reuse`（会话缓存命中，
   经行协议宿主的 session_cache_stats 断言，变异验证过必红）。
-  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数仍是 28。
+  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数（当前 30）。
 
 ## 删前端代码前必读（真实事故，勿重演）
 
@@ -270,14 +292,14 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - **Agent 长任务与人类编辑的丢失更新**：agent run 以请求起点的 `mbtText` 快照驱动
   （Rust 侧 EngineState 每请求重建），秒级窗口内人类提交的 op 会被 agent 终态整体
   覆盖。修法需要 rebase/合并机制（把 agent 的 op 流重放到最新 canonical），属设计决策；
-  交互缓解：agent 执行期间避免并发编辑。
+  交互缓解：在飞门（agentBusy）已拦截并发 run 与 run 中的新建/打开（新建/打开还会经原生确认框）；画布编辑仍建议等 run 结束。
 - **工具结果无截断**：`read_mbt`/export 类结果全量入 LLM 历史（引擎 canonical 的
   `mbt check` 块把节点声明重复第二遍，有效载荷约 2 倍），多屏任务 token 成本随轮次
   线性膨胀。截断会伤模型对文档 id 的可见性——分层裁剪方案未决。
 - **vendored DDP 长度门潜在不一致**：`vendor/moonviz-ddp` 全局门 `16MiB+16` 与 DDP1 专属门
   `16MiB+45` 不一致（当前不可达——8MiB 明文压缩后到不了 16MiB；上调明文上限时会先撞全局门）。
   **不改**：vendored 副本与上游 `../moonviz` 按 md5 对账（README 记录基线 commit），改它破坏同步保真——应上游修。
-- **apiKey 明文存 localStorage**（`deepdesign-fx-config`）：桌面单用户场景的常见做法，但与 Rust 侧
+- **apiKey 明文存 localStorage**（按服务商分槽：`deepdesign-fx-providers` map + `deepdesign-fx-active` 当前启用项；旧单槽 `deepdesign-fx-config` 首次自动迁移）：桌面单用户场景的常见做法，但与 Rust 侧
   Zeroizing 的谨慎不一致；改为 OS keychain 属增强项，未排期。
 - **用户组件库三入口（画板沉淀 `saveAsComponent` / MCF 导入导出）仍是诚实降级 stub**
   （`USERCOMP_UNAVAILABLE` 提示）：引擎 session 面已导出 `session_component_compile_b64` /

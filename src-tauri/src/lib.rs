@@ -23,7 +23,7 @@ use moonviz_ddp::{decrypt_ddp, encrypt_ddp};
 use std::io::Read;
 use std::path::PathBuf;
 use tauri::Manager;
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use zeroize::Zeroizing;
 
 /// 保存唯一事实源：引擎交付 canonical MBT，Rust codec 输出不透明 `.ddp`。
@@ -34,6 +34,7 @@ async fn save_ddp(
     app: tauri::AppHandle,
     mbt_b64: String,
     password: String,
+    path: Option<String>, // 原地保存路径（前端已有 filePath 时传入，跳过对话框）；空/缺省回落对话框
 ) -> Result<serde_json::Value, String> {
     let password = Zeroizing::new(password);
     let mbt_b64 = Zeroizing::new(mbt_b64);
@@ -48,19 +49,22 @@ async fn save_ddp(
     let mbt = std::str::from_utf8(&mbt_bytes).map_err(|_| "ddp_mbt_not_utf8".to_string())?;
     let ddp = encrypt_ddp(mbt, &password)?;
 
-    let Some(path) = app
-        .dialog()
-        .file()
-        .add_filter("deepDesign 视觉文档", &["ddp"])
-        .blocking_save_file()
-        .map(|p| {
-            let mut s = p.to_string();
-            if !s.to_lowercase().ends_with(".ddp") {
-                s.push_str(".ddp");
-            }
-            PathBuf::from(s)
-        })
-    else {
+    let picked: Option<PathBuf> = match path {
+        Some(p) if !p.trim().is_empty() => Some(PathBuf::from(p.trim().to_string())),
+        _ => app
+            .dialog()
+            .file()
+            .add_filter("deepDesign 视觉文档", &["ddp"])
+            .blocking_save_file()
+            .map(|p| {
+                let mut s = p.to_string();
+                if !s.to_lowercase().ends_with(".ddp") {
+                    s.push_str(".ddp");
+                }
+                PathBuf::from(s)
+            }),
+    };
+    let Some(path) = picked else {
         // 用户取消：Ok(Null) 而非 Err——Err 会 reject 前端 promise 落进 catch 弹「失败」toast
         return Ok(serde_json::Value::Null);
     };
@@ -105,6 +109,85 @@ async fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json:
     }))
 }
 
+/// 保存引擎交付的工件（消费者：export_html 的自包含 HTML 原型 / 当前画板 SVG）。
+/// Rust 只做字节搬运与对话框，不解释内容；扩展名以 default_name 为准（补缺省 .html）。
+/// 用户取消返回 Null（对齐 save_ddp）。
+#[tauri::command]
+async fn save_text_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    contents_b64: String,
+) -> Result<serde_json::Value, String> {
+    let contents = BASE64
+        .decode(contents_b64.as_bytes())
+        .map_err(|_| "export_invalid_base64".to_string())?;
+    let name_has_ext = PathBuf::from(&default_name)
+        .extension()
+        .is_some_and(|e| !e.is_empty());
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("HTML 原型", &["html"])
+        .add_filter("SVG 图形", &["svg"])
+        .set_file_name(&default_name)
+        .blocking_save_file()
+        .map(|p| {
+            let mut s = p.to_string();
+            if !name_has_ext && !s.to_lowercase().ends_with(".html") {
+                s.push_str(".html");
+            }
+            PathBuf::from(s)
+        })
+    else {
+        return Ok(serde_json::Value::Null);
+    };
+    std::fs::write(&path, &contents).map_err(|e| format!("export_write_failed:{e}"))?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "path": path.display().to_string(),
+        "bytes": contents.len(),
+    }))
+}
+
+/// 破坏性操作前的原生确认对话框（新建/打开/关窗前的未保存丢弃确认）。
+/// 返回 true = 用户选择**继续编辑**（留在当前文档），false = 放弃更改继续操作。
+/// 破坏项「放弃更改」故意放 Cancel 位——回车/默认键落在安全侧；前端据此把
+/// true 视为"留下"。
+#[tauri::command]
+async fn confirm_discard(
+    app: tauri::AppHandle,
+    title: String,
+    message: String,
+) -> Result<bool, String> {
+    Ok(app
+        .dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "继续编辑".into(),
+            "放弃更改".into(),
+        ))
+        .blocking_show())
+}
+
+/// 前端脏态同步（applyMbtResult 置脏 / 保存·打开·新建清除）：关窗拦截据此决定
+/// 是否拦下 CloseRequested。Rust 不解释视觉语义，只存一个布尔。
+static PROJECT_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 前端脏态同步（见 PROJECT_DIRTY）。
+#[tauri::command]
+fn set_project_dirty(dirty: bool) {
+    PROJECT_DIRTY.store(dirty, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 退出应用（⌘Q 自定义菜单项的终点）。直接 exit 是有意的：调用前置条件是脏拦截
+/// 已确认放弃（脏已清）——绕过 CloseRequested 不构成绕过保护。
+#[tauri::command]
+fn app_exit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -113,8 +196,23 @@ pub fn run() {
             invoke_fx_sdk,
             save_ddp,
             open_ddp,
+            save_text_file,
+            confirm_discard,
+            set_project_dirty,
+            app_exit,
             model_registry
         ])
+        .on_window_event(|window, event| {
+            // 脏文档关窗拦截：有未保存更改时拦下系统关闭，交前端确认（Rust 不解释
+            // 语义）；确认放弃后前端清脏再触发关闭，第二次 CloseRequested 直接放行。
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if PROJECT_DIRTY.load(std::sync::atomic::Ordering::Relaxed) {
+                    api.prevent_close();
+                    use tauri::Emitter as _;
+                    let _ = window.emit("app-close-request", ());
+                }
+            }
+        })
         .setup(|app| {
             build_native_menus(app)?;
             // Windows：按主显示器分辨率比例定启动尺寸（82%×86%，clamp 到可见
@@ -257,7 +355,15 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .hide_others()
         .show_all()
         .separator()
-        .quit()
+        // 自定义退出（不用预置 .quit()）：terminate: 不走 windowShouldClose，
+        // CloseRequested 拦截对 ⌘Q/dock-Quit 完全失效——改为经前端确认流后再 app_exit
+        .item(&MenuItem::with_id(
+            app,
+            "quit-app",
+            "退出 deepDesign",
+            true,
+            Some("CmdOrCtrl+Q"),
+        )?)
         .build()?;
 
     let file = SubmenuBuilder::new(app, "文件")
@@ -278,7 +384,7 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "save",
-            "保存（导出 DDP）…",
+            "保存",
             true,
             Some("CmdOrCtrl+S"),
         )?)
@@ -289,6 +395,20 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
             "导出 DDP…",
             true,
             Some("CmdOrCtrl+Shift+E"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "export-html",
+            "导出 HTML 原型…",
+            true,
+            Some("CmdOrCtrl+Shift+H"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "export-svg",
+            "导出 SVG（当前画板）…",
+            true,
+            None::<&str>,
         )?)
         .build()?;
 
@@ -368,7 +488,7 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "validate",
-            "校验并渲染（AgentGate）",
+            "校验并渲染",
             true,
             None::<&str>,
         )?)

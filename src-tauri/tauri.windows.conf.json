@@ -13,7 +13,8 @@
         "center": true,
         "visible": false,
         "decorations": false,
-        "transparent": false
+        "transparent": false,
+        "devtools": false
       }
     ]
   }

@@ -12,15 +12,17 @@
 | 关于 deepDesign Studio | 系统关于面板（版本 0.3.0） |
 | 服务 | macOS 系统服务 |
 | 隐藏 / 隐藏其它 / 显示全部 | 系统窗口管理 |
-| 退出 | 退出应用 |
+| 退出 deepDesign | `quit-app`（⌘Q）→ `quitApp()`：有未保存更改先弹原生确认，放弃后 `app_exit` 退出（预置 quit 走 terminate: 不触发关窗拦截，故自定义） |
 
 ### 文件
 | 菜单项 | 快捷键 | 动作 id → 前端函数 |
 |--------|--------|--------------------|
-| 新建项目… | ⌘N | `new-project` → `newProject()` |
-| 打开 DDP… | ⌘O | `open-ddp` → `openProject()`（解密 → MBT 重载） |
-| 保存（导出 DDP）… | ⌘S | `save` → `saveProject()` |
-| 导出 DDP… | ⇧⌘E | `export-ddp` → `exportDdp()`（密码仅本次会话） |
+| 新建项目… | ⌘N | `new-project` → `newProject()`（有未保存更改时先弹原生确认） |
+| 打开 DDP… | ⌘O | `open-ddp` → `openProject()`（先输密码（免密留空）再选文件 → 解密 → MBT 重载） |
+| 保存 | ⌘S | `save` → `saveProject()`（已有路径原地回写并复用会话口令；否则回落导出对话框） |
+| 导出 DDP… | ⇧⌘E | `export-ddp` → `exportDdp()`（加密/免密选择，总弹保存对话框） |
+| 导出 HTML 原型… | ⇧⌘H | `export-html` → `exportHtmlProto()`（引擎 `export_html`：自包含可交互 HTML） |
+| 导出 SVG（当前画板）… | — | `export-svg` → `exportSvg()`（当前活动画板的 SVG） |
 
 ### 编辑（系统预置项，作用于焦点控件）
 撤销 ⌘Z / 重做 ⇧⌘Z / 剪切 ⌘X / 复制 ⌘C / 粘贴 ⌘V / 全选 ⌘A
@@ -40,7 +42,7 @@
 | 新建画板 | ⇧⌘N | `board-new` → `createBlank()` |
 | 复制当前画板 | ⇧⌘D | `board-dup` → `duplicateActiveBoard()`（引擎 `duplicate` 操作） |
 | 自动修复（引擎还债） | ⇧⌘F | `autofix` → `runAutoFix()`（违规严格减少即提交） |
-| 校验并渲染（AgentGate） | — | `validate` → `setMode('decl') + validateMbt()` |
+| 校验并渲染 | — | `validate` → `setMode('decl') + validateMbt()` |
 
 ### 帮助
 | 菜单项 | 动作 id |
@@ -67,7 +69,7 @@
 | ⧉ 复制当前画板（⇧⌘D） | 引擎 `duplicate` |
 | ◻ 切换到线框图 / 🎨 切换到高保真 | 按当前模式互切 |
 | ‹/› 查看 MBT 源码（⌘3） | 切到源码视图 |
-| ✓ 校验并渲染（AgentGate） | `validateMbt()` |
+| ✓ 校验并渲染 | `validateMbt()` |
 | ▶ 演示模式（⌘4） | 进入播放 |
 | ⛶ 适配窗口（⌘0） | `zoomReset()` |
 
@@ -84,7 +86,7 @@
 |--------|------|
 | ⌿ 全选（⌘A） | 选中文本域全部源码 |
 | ⧉ 复制源码 | 复制完整 `.mbt.md` 到剪贴板 |
-| ✓ 校验并渲染（AgentGate） | `validateMbt()` |
+| ✓ 校验并渲染 | `validateMbt()` |
 | 🗑 清空编辑器 | 清空草稿（危险项，红色） |
 
 ### 2.5 交互逻辑标注（编辑视图常显）
@@ -102,7 +104,7 @@
 | 进入 | 工具栏「演示」按钮 / ⌘4 / 画板右键「从此画板演示」 |
 | 隐藏 | 左侧栏 · 右侧检查器 · 画布工具条 · 缩放控件 · 底部 Prompt 条 · 流连线 · 非当前画板 |
 | 保留 | 当前画板居中放大 · 顶部路径面包屑 chip（含「退出演示」）· 状态栏 |
-| 交互 | 绿色虚线热区 = 可点击（HTML div 命中可靠），点击沿 `tap:` 流跳转 |
+| 交互 | 绿色虚线热区 = 可点击（HTML div 命中可靠）。点击按引擎 tap 解析顺序回退：先 flow 边跳转，未命中再查 interact 标记（`navigate_to:` 跳转 / `back` 返回 / `show_toast:` 弹示 / `set_text:`·`set_state:` 真执行）；非 tap 触发器不响应（进入演示时计数提示） |
 | Esc | 返回上一页；回到起点后再按退出，恢复编辑模式 |
 | 禁用 | 选择/拖拽/双击改字/右键菜单/方向键移动/删除（编辑能力全部冻结） |
 
@@ -111,8 +113,11 @@
 | 按键 | 行为 |
 |------|------|
 | ⌘K | 聚焦 Agent 指令输入 |
-| ⌘S | 保存（导出 DDP） |
+| ⌘S | 保存（已有路径原地回写；否则另存） |
+| ⇧⌘E | 导出 DDP（加密/免密选择） |
+| ⇧⌘H | 导出 HTML 原型（自包含可交互） |
 | 方向键 / ⇧+方向键 | 移动选中元素 1px / 10px |
+| V / T | 选择工具 / 文本工具（单击等价） |
 | ⌫ | 删除选中元素 |
 | 双击 | 编辑元素文字 |
 | Esc（演示模式） | 返回上一层 / 退出演示 |
