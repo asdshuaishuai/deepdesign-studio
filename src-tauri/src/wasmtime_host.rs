@@ -38,7 +38,6 @@
 
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::sync::PoisonError;
 use wasmtime::{Instance, Memory, Module, Store, Val};
 
 /// 引擎产物（编译期嵌入；由 scripts/sync-engine.mjs 拉取并做 sha512+契约探针）

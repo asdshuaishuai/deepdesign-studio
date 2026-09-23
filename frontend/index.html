@@ -91,8 +91,10 @@ html.win .fmenu-wrap{display:block}
 .fmenu-item .kbd{font-size:10px;color:var(--tx3);font-family:ui-monospace}
 .fmenu-sep{height:1px;background:rgba(0,0,0,.08);margin:4px 8px}
 /* 设置弹窗内的下拉（服务商预设/深色模式） */
-.settings-select{width:100%;max-width:420px;background:rgba(0,0,0,.035);border:1px solid rgba(0,0,0,.09);border-radius:var(--r-md);padding:7px 10px;font-size:12.5px;outline:none;cursor:pointer}
-.settings-select:focus{border-color:var(--acc-tx);background:#fff}
+.settings-select{width:100%;max-width:420px;background:var(--panel-input,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.14));border-radius:var(--r-md);padding:7px 10px;font-size:12.5px;outline:none;cursor:pointer;color:var(--tx)}
+.settings-select:focus{border-color:var(--acc-tx);outline:2px solid rgba(0,122,255,.25)}
+body[data-mode="dark"] .fmenu-sep{background:rgba(255,255,255,.1)}
+body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 
 /* ---------- 主体 ---------- */
 .main{flex:1;display:flex;min-height:0}
@@ -391,7 +393,7 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .settings-box{width:min(560px,calc(100vw - 32px));padding:20px;background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.1));border-radius:14px;box-shadow:var(--sh-pop);color:var(--tx)}
 .settings-head{display:flex;align-items:center;justify-content:space-between}.settings-head h3{font-size:15px}.icon-close{border:0;background:transparent;color:var(--tx3);font-size:22px;cursor:pointer}.settings-note{margin:10px 0 16px;font-size:11px;color:var(--tx3);line-height:1.6}
 #decl-text-wrap{position:relative;flex:1;min-height:0;display:flex}
-#decl-stage #decl-text{flex:1;caret-color:var(--code-caret);position:relative;z-index:2;background:var(--code-bg);color:transparent;border-color:var(--code-line);border-radius:0 0 var(--r-lg) var(--r-lg)}
+#decl-stage #decl-text{flex:1;caret-color:var(--code-caret);position:relative;z-index:2;background:transparent;color:transparent;border-color:var(--code-line);border-radius:0 0 var(--r-lg) var(--r-lg)}
 #decl-stage #decl-text::selection{background:var(--code-sel);color:transparent}
 #decl-stage #decl-text::placeholder{color:var(--code-ph)}
 #decl-stage #decl-hl{background:var(--code-bg);border:1px solid var(--code-line);border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;margin-bottom:-1px}
@@ -1027,10 +1029,13 @@ if(IS_WIN)document.documentElement.classList.add('win');
  * 覆盖静态（弹窗/title/欢迎卡）与动态渲染（流程提示/右键菜单）：启动扫一遍 +
  * MutationObserver 持续替换（幂等：无 ⌘ 的文本零成本跳过）。 */
 if(IS_WIN){
-  const fixKbdText=t=>t.replace(/⇧⌘/g,'Ctrl+Shift').replace(/⌘⌫/g,'Ctrl+Del').replace(/⌘/g,'Ctrl');
+  const fixKbdText=t=>t.replace(/⇧⌘⌫/g,'Ctrl+Shift+Del').replace(/⇧⌘/g,'Ctrl+Shift').replace(/⌘⌫/g,'Ctrl+Del').replace(/⌘/g,'Ctrl');
+  /* 画布 SVG 内的用户/Agent 标签不本地化（显示文本应与 mbt.md 源一致；数据面
+   * 本就不经 DOM 读回，排除是为避免「画布显示 ≠ 源文档」的走样） */
+  const inStage=n=>{let p=n.parentElement;while(p){if(p.id==='stage')return true;p=p.parentElement;}return false;};
   const fixKbdNode=n=>{
     if(!n)return;
-    if(n.nodeType===3){if(n.nodeValue.includes('⌘'))n.nodeValue=fixKbdText(n.nodeValue);return;}
+    if(n.nodeType===3){if(!inStage(n)&&n.nodeValue.includes('⌘'))n.nodeValue=fixKbdText(n.nodeValue);return;}
     if(n.nodeType!==1)return;
     const w=document.createTreeWalker(n,NodeFilter.SHOW_TEXT);
     for(let t=w.nextNode();t;t=w.nextNode())if(t.nodeValue.includes('⌘'))t.nodeValue=fixKbdText(t.nodeValue);
@@ -1769,6 +1774,25 @@ document.addEventListener('keydown',async e=>{
   if(mode==='play'){if(e.key==='Escape')playBack();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();$('gp-input').focus();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveProject();return;}
+  /* Windows 快捷键分发：原为 macOS 原生菜单加速键（CmdOrCtrl+*），标题栏合并后
+   * Windows 无原生菜单，改由前端分发（与「文件 ▾」菜单和快捷键说明的承诺一致） */
+  if(IS_WIN&&(e.ctrlKey||e.metaKey)&&!e.altKey){
+    const k=e.key.toLowerCase(),sh=e.shiftKey;
+    const bind={
+      'n':()=>sh?createBlank():newProject(),
+      'o':()=>openProject(),
+      'd':()=>sh?duplicateActiveBoard():null,
+      'f':()=>sh?runAutoFix():null,
+      '1':()=>setMode('wireframe'),
+      '2':()=>setMode('hifi'),
+      '3':()=>setMode('decl'),
+      '4':()=>setMode('play'),
+      '0':()=>zoomReset(),
+      '/':()=>openShortcuts(),
+      ',':()=>openSettings(),
+    }[k];
+    if(bind){e.preventDefault();const r=bind();if(r&&r.then)r.catch(()=>{});return;}
+  }
   if(document.activeElement&&(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA'))return;
   if(e.key==='Escape'&&(placeMode||linkSource)){placeMode=null;linkSource=null;$('canvas-scroll').classList.remove('placing','linking');$('canvas-hint').textContent='选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流';return;}
   if(e.key.startsWith('Arrow')&&selected){
@@ -2014,6 +2038,8 @@ async function renderDeclHighlight(){
   if(!hl||!ta)return;
   hl.innerHTML=mbtHighlightHTML(ta.value);
   hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;
+  /* 高亮层承载可见文字（textarea 文字透明防重影）——空/占位态隐藏让 placeholder 透出 */
+  hl.style.display=ta.value?'block':'none';
 }
 function loadDeclMain(){
   if(!mbtText){$('decl-text').value='（先创建画板或打开 DDP）';renderDeclHighlight();return;}
@@ -2462,6 +2488,7 @@ function newProject(){
 
 /* ---------- 主题 ---------- */
 function pickTheme(t){
+  try{localStorage.setItem('dd-theme-chosen','1');}catch(_){} // 用户主动选择：initTheme 的系统迁移不再触碰
   setTheme(t);
   refreshAppearanceControls();
 }

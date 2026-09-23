@@ -118,7 +118,9 @@ pub fn run() {
         .setup(|app| {
             build_native_menus(app)?;
             // Windows：按主显示器分辨率比例定启动尺寸（82%×86%，clamp 到可见
-            // 范围）并居中——任何分辨率下 UI 完全可见、与屏幕保持比例
+            // 范围）并居中——任何分辨率下 UI 完全可见、与屏幕保持比例。
+            // 窗口 visible:false（见 tauri.windows.conf.json）：尺寸就绪后再显示，
+            // 避免慢机上闪现一帧默认尺寸
             #[cfg(target_os = "windows")]
             {
                 if let Some(win) = app.get_webview_window("main") {
@@ -131,6 +133,7 @@ pub fn run() {
                         let _ = win.set_size(tauri::LogicalSize::new(w, h));
                         let _ = win.center();
                     }
+                    let _ = win.show();
                 }
             }
             Ok(())
