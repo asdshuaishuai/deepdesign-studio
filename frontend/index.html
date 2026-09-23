@@ -2035,13 +2035,12 @@ async function runGlobalPrompt(){
   const inp=$('gp-input');
   const t=inp.value.trim();if(!t)return;
   // Keep the prompt draft until the user replaces it.
-  // 新建页面意图 → 新会话
-  if(/修复|fix|优化/.test(t)&&baseCmd){await runOp(`fix ${active}`,'agent');trackAgent(t,[`fix ${active}`]);return;}
-  if(/深色|dark/i.test(t)){await runOp('theme dark','agent');trackAgent(t,['theme dark']);return;}
-  if(/浅色|light|白/.test(t)){await runOp('theme light','agent');trackAgent(t,['theme light']);return;}
-  // 组件名直接匹配（点击放置）
-  const comps=($('comp-tree').textContent||'');
-  if(baseCmd&&comps.includes(t)){placing++;await runOp(`place ${active} ${t} ${t}_${placing} - 60 120`,'agent');trackAgent(t,[`place ${active} ${t}`]);return;}
+  // 快捷放置：仅当输入「精确等于」某个组件 id 时才本地放置，其余一律交给 LLM
+  // （旧版用 修复|优化|深色|浅色|白 等子串劫持，"把登录页优化成深色并加按钮"这类
+  //  复合意图被吞成单个 fix/theme——审查 A1，已移除）
+  if(baseCmd&&allComps.some(c=>c.id===t)){
+    placing++;await runOp(`place ${active} ${t} ${t}_${placing} - 60 120`,'agent');trackAgent(t,[`place ${active} ${t}`]);return;
+  }
   // ===== 兜底：完整自然语言 → AI Agent（不再有"未识别意图"） =====
   // 无画板时先自动建一个 390×844 画板承接（AI 在其上继续操作）
   if(!baseCmd||!mbtText){
@@ -2050,6 +2049,8 @@ async function runGlobalPrompt(){
     if(!okBoard){toast('自动创建画板失败，请检查引擎连接');return;}
     trackAgent(t,['create 390 844（自动承接）']);
   }
+  if(gpBusy){toast('上一条还在生成中…');return;}
+  gpBusy=true;$('gp-send')&&($('gp-send').disabled=true);
   try{
     loadAgentConfig();
     setStatus('agent',t,true,'AI 处理中…');
@@ -2066,14 +2067,14 @@ async function runGlobalPrompt(){
       $('gp-thread-body').textContent=r.text.trim();
       $('gp-thread').classList.add('open');
       toast('Agent 有问题需要确认 — 回答后再次点击「一键生成」');
-      return;
+      return true;
     }
     agentThread.pending=null;
     $('gp-thread').classList.remove('open');
     if(!r.ops||!r.ops.length){
       toast(r.error==='api_key_missing'?'请先在设置中配置 AI 端点与 Token':'AI 未生成操作 — 试试更具体的描述，如「做一个微信风格的聊天列表页」');
       trackAgent(t,[],false);
-      return;
+      return true;
     }
     if(r.mbt_b64){
       const src=b64ToUtf8(r.mbt_b64);
@@ -2090,10 +2091,13 @@ async function runGlobalPrompt(){
     }
     trackAgent(t,r.ops);
     const cut=r.stopReason==='max_turns'?'（已达步数上限，结果可能不完整）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
-    toast(`AI 已提交 ${r.ops.length} 条操作（AgentGate 校验）${cut}`);
+    toast(`AI 已提交 ${r.ops.length} 条操作${cut}`);
   }catch(err){
-    toast('AI 调用失败：'+String(err).slice(0,90));
+    const msg=String(err);
+    toast(msg.includes('api_key_missing')?'请先在设置中配置 AI 端点与 Token（设置 ▸ AI 端点）':'AI 调用失败：'+msg.slice(0,90));
     trackAgent(t,[],false);
+  }finally{
+    gpBusy=false;if($('gp-send'))$('gp-send').disabled=false;
   }
 }
 function usePrompt(t){$('gp-input').value=t;runGlobalPrompt();}
