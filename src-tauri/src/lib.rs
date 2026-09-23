@@ -200,10 +200,13 @@ async fn invoke_fx_sdk(
     // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线
     let run_id = p.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
     let emitter = app.clone();
-    let progress = move |v: serde_json::Value| {
+    let progress = move |mut v: serde_json::Value| {
         use tauri::Emitter as _;
+        // run id 必须注入每个事件（前端按它过滤归属自己那次 run）
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("run".into(), serde_json::json!(run_id));
+        }
         let _ = emitter.emit("agent-event", &v);
-        let _ = run_id; // 前端按监听会话过滤；run 字段由前端事件挂载点区分
     };
     Ok(agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress)).await)
 }

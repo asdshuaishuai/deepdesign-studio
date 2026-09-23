@@ -1953,8 +1953,7 @@ function appendTraceLine(box,text,cls,id){
   if(id)d.id=id;
   d.innerHTML=escHtml(text);
   if(id)d.dataset.op=text.replace(/^⏳ /,'');
-  box.appendChild(d);
-  body.scrollTop=0; // 面板在新消息时置顶（prepend 布局）
+  box.appendChild(d); // 面板在新消息时置顶（prepend 布局）
 }
 /* ---------- MoonBit 源码高亮（scope 名对齐官方 moonbit-tmLanguage） ---------- */
 function mbtHighlight(text){
