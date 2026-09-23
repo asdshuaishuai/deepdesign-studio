@@ -44,7 +44,7 @@ body{
   --tok-keyword:#8250DF;--tok-type:#0550AE;--tok-yaml-key:#8250DF;--tok-yaml-val:#0A7D33;
   --stage-veil:rgba(255,255,255,.6);
 }
-body[data-mode="dark"],body[data-theme="deep"],body[data-theme="glass"]{
+body[data-mode="dark"],body[data-theme="deep"],body[data-theme="glass"],body[data-mode="dark"][data-theme="win11"]{
   --code-bg:#0F1420;--code-tx:#D6DEEC;--code-line:#232A38;--code-caret:#fff;
   --code-sel:rgba(90,140,255,.35);--code-ph:#5A6270;
   --tok-comment:#6B7A93;--tok-string:#9ECE6A;--tok-number:#FF9E64;
@@ -503,6 +503,22 @@ body[data-theme="glass"] .pmain,body[data-theme="glass"] .compsearch,body[data-t
 body[data-theme="glass"] .pmain input{color:#f4f2ff}
 body[data-theme="glass"] .canvas-scroll{background-image:radial-gradient(circle,rgba(255,255,255,.08) 1px,transparent 1px)}
 
+/* Win11 Fluent — Windows 11 Mica 风（系统默认主题之一，Windows 上自动选中） */
+body[data-theme="win11"]{
+  --panel:#FBFBFB;--panel-line:rgba(0,0,0,.08);--panel-input:#FFFFFF;
+  --base:#F3F3F3;--cvs:#F6F7F9;--ink:#1B1B1B;
+  --tx:#1B1B1B;--tx2:#5C5C5C;--tx3:#8A8A8A;--acc-tx:#0067C0;
+  --acc:#0067C0;--acc-h:#005BA1;--ok:#0F7B0F;--purple:#8B5CF6;
+  --bd:1px solid rgba(0,0,0,.07);
+}
+body[data-theme="win11"] .topbar,body[data-theme="win11"] .left,body[data-theme="win11"] .right,body[data-theme="win11"] .statusbar{background:rgba(243,243,243,.96)}
+body[data-theme="win11"] .mode-seg{background:rgba(255,255,255,.72);border:1px solid rgba(0,0,0,.06)}
+body[data-theme="win11"] .mode-btn.on{background:#FFFFFF;color:#1B1B1B;box-shadow:0 1px 3px rgba(0,0,0,.14)}
+body[data-theme="win11"] .compcell,body[data-theme="win11"] .trk,body[data-theme="win11"] .flowrow,body[data-theme="win11"] .tpl-card{background:#FFFFFF;border-color:rgba(0,0,0,.07)}
+body[data-theme="win11"] .frame-chrome{background:#FBFBFB;border-color:rgba(0,0,0,.07)}
+body[data-theme="win11"] .mac-glass,body[data-theme="win11"] .ctools,body[data-theme="win11"] .czoom,body[data-theme="win11"] .promptbar,body[data-theme="win11"] #agent-pop{background:rgba(251,251,251,.92)}
+body[data-theme="win11"] .tbtn:hover,body[data-theme="win11"] .ctool:hover{background:rgba(0,0,0,.05)}
+
 /* 模式隔离：聊天只存在于设计画布；Map/Prototype 是纯阅读/播放空间 */
 body:not(.design-active) .promptbar,body:not(.design-active) #agent-pop{display:none!important}
 body.mode-decl .ctools,body.mode-decl .czoom,body.mode-decl .canvas-hint,body.mode-decl .empty-stage,body.mode-decl .promptbar{display:none!important}
@@ -521,8 +537,22 @@ body:not(.design-active) .flow-wires{display:none}
 #stage .frame-wrap.active g.sel-hint rect{vector-effect:non-scaling-stroke}
 #toast{display:none;position:fixed;bottom:56px;left:50%;transform:translateX(-50%);z-index:590;max-width:80vw;padding:9px 18px;border-radius:99px;background:#20252d;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:12px;pointer-events:none;animation:popIn .18s cubic-bezier(.2,.9,.3,1.2)}
 
-/* ===== Dark Mode（与主题正交：四主题各自的深色变体） ===== */
+/* ===== Dark Mode（与主题正交：各主题各自的深色变体） ===== */
 body[data-mode="dark"]{--panel:var(--base);--line:var(--bd)}
+/* Win11 Dark — Mica Dark */
+body[data-mode="dark"][data-theme="win11"]{
+  --panel:#2B2B2B;--panel-line:rgba(255,255,255,.08);--panel-input:#1F1F1F;
+  --base:#202020;--cvs:#1C1C1C;--ink:#FFFFFF;
+  --tx:#FFFFFF;--tx2:#C8C8C8;--tx3:#9A9A9A;--acc-tx:#4CC2FF;
+  --acc:#4CC2FF;--acc-h:#47B1E8;--ok:#6CCB5F;
+  --bd:1px solid rgba(255,255,255,.07);
+}
+body[data-mode="dark"][data-theme="win11"] .topbar,body[data-mode="dark"][data-theme="win11"] .left,body[data-mode="dark"][data-theme="win11"] .right,body[data-mode="dark"][data-theme="win11"] .statusbar{background:rgba(32,32,32,.96)}
+body[data-mode="dark"][data-theme="win11"] .mode-seg{background:rgba(255,255,255,.06);border-color:transparent}
+body[data-mode="dark"][data-theme="win11"] .mode-btn.on{background:#3D3D3D;color:#FFFFFF;box-shadow:none}
+body[data-mode="dark"][data-theme="win11"] .compcell,body[data-mode="dark"][data-theme="win11"] .trk,body[data-mode="dark"][data-theme="win11"] .flowrow,body[data-mode="dark"][data-theme="win11"] .tpl-card{background:#2B2B2B;border-color:rgba(255,255,255,.08)}
+body[data-mode="dark"][data-theme="win11"] .mac-glass,body[data-mode="dark"][data-theme="win11"] .ctools,body[data-mode="dark"][data-theme="win11"] .czoom,body[data-mode="dark"][data-theme="win11"] .promptbar,body[data-mode="dark"][data-theme="win11"] #agent-pop{background:rgba(43,43,43,.94)}
+body[data-mode="dark"][data-theme="win11"] .frame-chrome{background:#2B2B2B;border-color:rgba(255,255,255,.08)}
 /* Mac Dark — macOS 暗色 */
 body[data-mode="dark"][data-theme="mac"]{
   --base:#212125;--cvs:#26262b;--ink:#e8e8ec;
@@ -919,6 +949,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div class="settings-grid">
       <label class="wide">主题
         <span style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="prov-chip" data-theme-chip="win11" onclick="pickTheme('win11')">Win11 · Fluent</button>
           <button type="button" class="prov-chip" data-theme-chip="mac" onclick="pickTheme('mac')">Mac · macOS Light</button>
           <button type="button" class="prov-chip" data-theme-chip="deep" onclick="pickTheme('deep')">Deep · 深色专业</button>
           <button type="button" class="prov-chip" data-theme-chip="neu" onclick="pickTheme('neu')">Neu · 软拟物</button>
@@ -2445,15 +2476,24 @@ function setAppMode(m){
   try{localStorage.setItem('dd-mode',m);}catch(_){}
 }
 (function initTheme(){
-  let t='mac';
-  try{t=localStorage.getItem('dd-theme')||'mac';}catch(_){}
-  if(!['mac','deep','neu','glass'].includes(t))t='mac'; // 限定四主题
+  const THEMES=['win11','mac','deep','neu','glass'];
+  // 系统判定默认：Windows → Win11 Fluent，macOS（及其他）→ Mac
+  const SYS_DEFAULT=IS_WIN?'win11':'mac';
+  let t,migrated=false;
+  try{t=localStorage.getItem('dd-theme');}catch(_){}
+  if(!THEMES.includes(t)){t=SYS_DEFAULT;}
+  else if(t==='mac'&&IS_WIN){
+    // 一次性迁移：旧版无差别默认 mac（并非用户主动选择），Windows 上升级到 Win11；
+    // 迁移后用户手动选任何主题照常尊重
+    try{migrated=!localStorage.getItem('dd-theme-migrated');if(migrated)localStorage.setItem('dd-theme-migrated','1');}catch(_){}
+    if(migrated)t='win11';
+  }
   setTheme(t);
   let m='light';
   try{m=localStorage.getItem('dd-mode')||'light';}catch(_){}
   setAppMode(m);
   refreshAppearanceControls();
-  const names={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'};
+  const names={win11:'Win11',mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'};
   const c=$('theme-cur');if(c)c.textContent=names[t]||t;
 })();
 
@@ -2594,7 +2634,7 @@ function applyProvider(p){
 function refreshAppearanceControls(){
   document.querySelectorAll('[data-theme-chip]').forEach(b=>b.classList.toggle('on',document.body.dataset.theme===b.dataset.themeChip));
   const m=$('app-mode');if(m)m.value=document.body.dataset.mode==='dark'?'dark':'light';
-  const c=$('theme-cur');if(c)c.textContent={mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[document.body.dataset.theme]||'';
+  const c=$('theme-cur');if(c)c.textContent={win11:'Win11',mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[document.body.dataset.theme]||'';
 }
 function openSettings(){
   loadAgentConfig();if(!modelRegistry)loadModelRegistry();
