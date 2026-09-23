@@ -36,6 +36,22 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .mac-glass{background:rgba(255,255,255,.86);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
 
+/* ---------- 源码编辑器配色（跟随主题：浅色 GitHub-Light 风 / 深色 Tokyo-Night 风） ---------- */
+body{
+  --code-bg:#FCFDFF;--code-tx:#2B3442;--code-line:rgba(15,23,42,.14);--code-caret:#1F6FEB;
+  --code-sel:rgba(0,122,255,.18);--code-ph:#9AA6B8;
+  --tok-comment:#8A94A6;--tok-string:#0A7D33;--tok-number:#B3541E;
+  --tok-keyword:#8250DF;--tok-type:#0550AE;--tok-yaml-key:#8250DF;--tok-yaml-val:#0A7D33;
+  --stage-veil:rgba(255,255,255,.6);
+}
+body[data-mode="dark"],body[data-theme="deep"],body[data-theme="glass"]{
+  --code-bg:#0F1420;--code-tx:#D6DEEC;--code-line:#232A38;--code-caret:#fff;
+  --code-sel:rgba(90,140,255,.35);--code-ph:#5A6270;
+  --tok-comment:#6B7A93;--tok-string:#9ECE6A;--tok-number:#FF9E64;
+  --tok-keyword:#BB9AF7;--tok-type:#7DCFFF;--tok-yaml-key:#BB9AF7;--tok-yaml-val:#9ECE6A;
+  --stage-veil:rgba(13,15,22,.55);
+}
+
 /* ---------- 顶栏 ---------- */
 .topbar{height:46px;display:flex;align-items:center;gap:6px;padding:0 14px 0 12px;background:rgba(255,255,255,.85);border-bottom:var(--bd);backdrop-filter:blur(20px);z-index:30;flex-shrink:0}
 .native .topbar{padding-left:84px}
@@ -56,6 +72,27 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 .mode-btn.on{background:#fff;color:var(--tx);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .mode-btn .ic{width:13px;height:13px;transform:translateY(.5px)}
 .filechip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:99px;background:rgba(0,0,0,.05);color:var(--tx2);font-size:10.5px;font-family:ui-monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Windows：decorations=false 后 topbar 即标题栏（拖拽区+窗控），去 macOS 红绿灯缩进 */
+html.win .topbar{padding-left:10px}
+html.win .brand .logo{display:flex;align-items:center;justify-content:center}
+.winctl{display:none;gap:1px;margin-left:2px}
+html.win .winctl{display:flex}
+.wbtn{width:40px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--tx2);cursor:pointer;border-radius:var(--r-sm)}
+.wbtn:hover{background:rgba(0,0,0,.07);color:var(--tx)}
+.wbtn.close:hover{background:#e5484d;color:#fff}
+.wbtn svg{width:13px;height:13px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round}
+/* Windows 文件菜单（自绘下拉，替代原生菜单栏） */
+.fmenu-wrap{display:none;position:relative}
+html.win .fmenu-wrap{display:block}
+.fmenu-pop{display:none;position:absolute;top:36px;left:0;min-width:220px;background:var(--panel,#fff);border:var(--bd);border-radius:var(--r-lg);box-shadow:var(--sh-pop);padding:5px;z-index:200}
+.fmenu-pop.open{display:block}
+.fmenu-item{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;padding:7px 12px;border:none;background:transparent;border-radius:7px;font-size:12.5px;color:var(--tx);cursor:pointer;text-align:left}
+.fmenu-item:hover{background:rgba(0,122,255,.09);color:var(--acc-tx)}
+.fmenu-item .kbd{font-size:10px;color:var(--tx3);font-family:ui-monospace}
+.fmenu-sep{height:1px;background:rgba(0,0,0,.08);margin:4px 8px}
+/* 设置弹窗内的下拉（服务商预设/深色模式） */
+.settings-select{width:100%;max-width:420px;background:rgba(0,0,0,.035);border:1px solid rgba(0,0,0,.09);border-radius:var(--r-md);padding:7px 10px;font-size:12.5px;outline:none;cursor:pointer}
+.settings-select:focus{border-color:var(--acc-tx);background:#fff}
 
 /* ---------- 主体 ---------- */
 .main{flex:1;display:flex;min-height:0}
@@ -269,7 +306,7 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 .decl-actions{display:flex;gap:6px;margin-top:8px}
 .decl-note{font-size:10.5px;color:var(--tx3);line-height:1.55;padding:8px 2px}
 /* 大中间产物模式（画布区切换） */
-#decl-stage{position:absolute;inset:0;display:none;flex-direction:column;padding:18px;gap:12px;background:rgba(255,255,255,.6);backdrop-filter:blur(4px);z-index:30;animation:fadeUp .18s ease}
+#decl-stage{position:absolute;inset:0;display:none;flex-direction:column;padding:18px;gap:12px;background:var(--stage-veil);backdrop-filter:blur(4px);z-index:30;animation:fadeUp .18s ease}
 #decl-stage .dhead{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content max-content;align-items:center;gap:10px;flex-shrink:0}
 #decl-stage .dhead h3{font-size:14px;white-space:nowrap}
 #decl-stage .dhead .sub{font-size:11px;color:var(--tx3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -354,11 +391,10 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .settings-box{width:min(560px,calc(100vw - 32px));padding:20px;background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.1));border-radius:14px;box-shadow:var(--sh-pop);color:var(--tx)}
 .settings-head{display:flex;align-items:center;justify-content:space-between}.settings-head h3{font-size:15px}.icon-close{border:0;background:transparent;color:var(--tx3);font-size:22px;cursor:pointer}.settings-note{margin:10px 0 16px;font-size:11px;color:var(--tx3);line-height:1.6}
 #decl-text-wrap{position:relative;flex:1;min-height:0;display:flex}
-#decl-stage #decl-text{flex:1;caret-color:#fff;position:relative;z-index:2;background:#0F1420;color:transparent;border-color:#232A38;border-radius:0 0 var(--r-lg) var(--r-lg)}
-#decl-stage #decl-text::selection{background:rgba(90,140,255,.35);color:transparent}
-#decl-stage #decl-text::placeholder{color:#5A6270}
-body[data-theme="deep"] #decl-stage #decl-text{background:#0F1420;border-color:#232A38}
-#decl-stage #decl-hl{background:#0F1420;border:1px solid #232A38;border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;margin-bottom:-1px}
+#decl-stage #decl-text{flex:1;caret-color:var(--code-caret);position:relative;z-index:2;background:var(--code-bg);color:transparent;border-color:var(--code-line);border-radius:0 0 var(--r-lg) var(--r-lg)}
+#decl-stage #decl-text::selection{background:var(--code-sel);color:transparent}
+#decl-stage #decl-text::placeholder{color:var(--code-ph)}
+#decl-stage #decl-hl{background:var(--code-bg);border:1px solid var(--code-line);border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;margin-bottom:-1px}
 .prov-chip{display:inline-flex;align-items:center;border:1px solid color-mix(in srgb,var(--acc) 35%,transparent);background:color-mix(in srgb,var(--acc) 7%,var(--panel,#fff));color:var(--acc-tx);font-size:11px;font-weight:500;padding:4px 12px;border-radius:99px;cursor:pointer;margin-right:6px}
 .prov-chip:hover{background:color-mix(in srgb,var(--acc) 14%,var(--panel,#fff))}
 .prov-chip:active{transform:scale(.97)}
@@ -368,14 +404,14 @@ body[data-theme="deep"] #decl-stage #decl-text{background:#0F1420;border-color:#
 .settings-sec:first-of-type{margin-top:2px}
 .prov-chip[data-theme-chip].on{background:var(--acc);color:#fff;border-color:var(--acc-tx)}
 .settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
-#decl-hl{position:absolute;inset:0;overflow:auto;white-space:pre-wrap;word-break:break-word;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;pointer-events:none;background:#0F1420;color:#D6DEEC;border-radius:0 0 12px 12px;display:none;z-index:1}
-.tok-comment{color:#6B7A93;font-style:italic}
-.tok-string{color:#9ECE6A}
-.tok-number{color:#FF9E64}
-.tok-keyword{color:#BB9AF7;font-weight:600}
-.tok-type{color:#7DCFFF}
-.tok-yaml-key{color:#BB9AF7;font-weight:600}
-.tok-yaml-val{color:#9ECE6A}
+#decl-hl{position:absolute;inset:0;overflow:auto;white-space:pre-wrap;word-break:break-word;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;pointer-events:none;background:var(--code-bg);color:var(--code-tx);border-radius:0 0 12px 12px;display:none;z-index:1}
+.tok-comment{color:var(--tok-comment);font-style:italic}
+.tok-string{color:var(--tok-string)}
+.tok-number{color:var(--tok-number)}
+.tok-keyword{color:var(--tok-keyword);font-weight:600}
+.tok-type{color:var(--tok-type)}
+.tok-yaml-key{color:var(--tok-yaml-key);font-weight:600}
+.tok-yaml-val{color:var(--tok-yaml-val)}
 /* 演示模式 = 工作区内禁编辑、只保留演示：不再是独立全屏页 */
 .frame-body{position:relative}
 .play-chip{display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:90;align-items:center;gap:12px;background:rgba(17,20,28,.88);color:#E5E9F2;padding:8px 10px 8px 18px;border-radius:99px;font-size:12px;box-shadow:var(--sh-pop);backdrop-filter:blur(10px)}
@@ -431,8 +467,7 @@ body[data-theme="deep"] .pmain input{color:#e4e7ec}
 body[data-theme="deep"] .tpl-card{background:#1f2228;border-color:#2c313a}
 body[data-theme="deep"] .tpl-card .th{background:#17191e;border-color:#2c313a}
 body[data-theme="deep"] .nodecard,body[data-theme="deep"] .pchip{background:rgba(255,255,255,.06);border-color:#2c313a}
-body[data-theme="deep"] #decl-stage{background:rgba(18,19,23,.7)}
-body[data-theme="deep"] #decl-stage textarea{background:#1f2228;color:#dfe3ea;border-color:#2c313a}
+/* #decl-stage 配色已由 --code-*/--stage-veil 主题变量接管（见文件头），无需 per-theme 覆盖 */
 
 /* Neu */
 body[data-theme="neu"]{
@@ -559,8 +594,8 @@ body[data-mode="dark"][data-theme="neu"]{--panel:#262932;--panel-line:rgba(255,2
 body[data-mode="dark"][data-theme="glass"]{--panel:rgba(16,12,40,.88);--panel-line:rgba(255,255,255,.18);--panel-input:rgba(255,255,255,.08)}
 body[data-mode="dark"] .settings-box{box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05)}
 
-/* dark 浮层细节补漏 */
-body[data-mode="dark"] .compsearch,body[data-mode="dark"] #decl-stage textarea{background:var(--panel-input);border-color:var(--panel-line);color:var(--tx)}
+/* dark 浮层细节补漏（#decl-stage textarea 已由 --code-* 变量接管，见文件头） */
+body[data-mode="dark"] .compsearch{background:var(--panel-input);border-color:var(--panel-line);color:var(--tx)}
 body[data-mode="dark"] #shortcuts-modal .sc-card,body[data-mode="dark"] #ddp-password .box{border-color:var(--panel-line)}
 body[data-mode="dark"] .compcell{background:#22242b;border-color:var(--panel-line)}
 body[data-mode="dark"] .flowrow{background:#22242b;border-color:var(--panel-line)}
@@ -592,6 +627,21 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   <span class="brand" data-tauri-drag-region><img class="logo" src="data:image/png;base64,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" alt="deepDesign">deepDesign<span class="sub">STUDIO</span></span>
   <span class="tsep"></span>
   <div class="proj"><b id="proj-name">未命名项目</b><span class="filechip" id="file-label">v6.0</span></div>
+  <div class="fmenu-wrap">
+    <button class="tbtn" id="fmenu-btn" onclick="toggleFileMenu(event)" title="文件">文件 ▾</button>
+    <div class="fmenu-pop" id="fmenu-pop">
+      <button class="fmenu-item" onclick="fmAct('newProject')"><span>新建项目</span><span class="kbd">Ctrl+N</span></button>
+      <button class="fmenu-item" onclick="fmAct('openProject')"><span>打开 DDP…</span><span class="kbd">Ctrl+O</span></button>
+      <button class="fmenu-item" onclick="fmAct('saveProject')"><span>保存（导出 DDP）…</span><span class="kbd">Ctrl+S</span></button>
+      <button class="fmenu-item" onclick="fmAct('exportDdp')"><span>导出 DDP…</span></button>
+      <div class="fmenu-sep"></div>
+      <button class="fmenu-item" onclick="fmAct('validateMbt')"><span>校验并渲染（AgentGate）</span></button>
+      <button class="fmenu-item" onclick="fmAct('runAutoFix')"><span>自动修复（引擎还债）</span></button>
+      <div class="fmenu-sep"></div>
+      <button class="fmenu-item" onclick="fmAct('openShortcuts')"><span>快捷键说明</span><span class="kbd">Ctrl+/</span></button>
+      <button class="fmenu-item" onclick="fmAct('openSettings')"><span>设置…</span><span class="kbd">Ctrl+,</span></button>
+    </div>
+  </div>
   <span class="spacer" style="flex:1" data-tauri-drag-region></span>
   <div class="mode-seg">
     <button class="mode-btn on" id="mode-wireframe" onclick="setMode('wireframe')">
@@ -608,10 +658,15 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   <button class="tbtn" onclick="newProject()" title="新建项目"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></button>
   <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）— 选择文件后按需输入密码解密"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
   <button class="tbtn" onclick="saveProject()" title="保存 / 导出 DDP（⌘S）— 可选择加密或免密"><svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
-  <button class="tbtn" onclick="openSettings()" title="设置（外观 / AI 端点）" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg></button>
+  <button class="tbtn" onclick="openSettings()" title="设置（外观 / AI 端点）" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <span class="tsep"></span>
   <button class="tbtn" onclick="togglePlay()" title="演示模式（⌘4）· 工作区内禁编辑"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5z"/></svg>演示</button>
   <button class="tbtn pri" onclick="exportDdp()" title="导出加密 DDP 视觉文档"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>导出 DDP</button>
+  <div class="winctl">
+    <button class="wbtn" onclick="winCtl('minimize')" title="最小化" aria-label="最小化"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    <button class="wbtn" onclick="winCtl('toggleMaximize')" title="最大化 / 还原" aria-label="最大化"><svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="1.5"/></svg></button>
+    <button class="wbtn close" onclick="winCtl('close')" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
 </div>
 
 <div class="main">
@@ -880,7 +935,23 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div class="settings-sec">AI 端点（Agent）</div>
     <p class="settings-note">Agent 基于 @open-agent-loops/core，操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点：URL 含 <code>/anthropic</code> 走 Anthropic Messages 协议（x-api-key），其余按 OpenAI chat 兼容格式处理。</p>
     <div class="settings-grid">
-      <label class="wide">服务商预设<button type="button" class="prov-chip" data-prov="deepseek" onclick="applyProvider('deepseek')">DeepSeek</button><button type="button" class="prov-chip" data-prov="glm" onclick="applyProvider('glm')">GLM</button><button type="button" class="prov-chip" data-prov="glm-coding" onclick="applyProvider('glm-coding')">GLM Coding</button><button type="button" class="prov-chip" data-prov="zai" onclick="applyProvider('zai')">z.ai</button><button type="button" class="prov-chip" data-prov="zai-coding" onclick="applyProvider('zai-coding')">z.ai Coding</button><button type="button" class="prov-chip" data-prov="kimi" onclick="applyProvider('kimi')">Kimi API</button><button type="button" class="prov-chip" data-prov="kimi-plan" onclick="applyProvider('kimi-plan')">Kimi 订阅</button><button type="button" class="prov-chip" data-prov="minimax" onclick="applyProvider('minimax')">MiniMax</button><button type="button" class="prov-chip" data-prov="minimax-intl" onclick="applyProvider('minimax-intl')">MiniMax 国际</button><button type="button" class="prov-chip" data-prov="minimax-anthropic" onclick="applyProvider('minimax-anthropic')">MiniMax(Anthropic)</button><button type="button" class="prov-chip" data-prov="minimax-anthropic-intl" onclick="applyProvider('minimax-anthropic-intl')">MiniMax(Anthropic 国际)</button><button type="button" class="prov-chip" data-prov="stepfun" onclick="applyProvider('stepfun')">StepFun</button><button type="button" class="prov-chip" data-prov="stepfun-plan" onclick="applyProvider('stepfun-plan')">StepFun 订阅</button></label>
+      <label class="wide">服务商预设
+        <select id="provider-preset" class="settings-select" onchange="applyProvider(this.value)">
+          <option value="deepseek" selected>DeepSeek（默认）</option>
+          <option value="glm">GLM</option>
+          <option value="glm-coding">GLM Coding</option>
+          <option value="zai">z.ai</option>
+          <option value="zai-coding">z.ai Coding</option>
+          <option value="kimi">Kimi API</option>
+          <option value="kimi-plan">Kimi 订阅</option>
+          <option value="minimax">MiniMax</option>
+          <option value="minimax-intl">MiniMax 国际</option>
+          <option value="minimax-anthropic">MiniMax（Anthropic）</option>
+          <option value="minimax-anthropic-intl">MiniMax（Anthropic 国际）</option>
+          <option value="stepfun">StepFun</option>
+          <option value="stepfun-plan">StepFun 订阅</option>
+        </select>
+      </label>
       <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = https://api.deepseek.com（DeepSeek 默认）；支持任意 OpenAI 兼容端点，或 .../anthropic 端点（自动走 Messages 协议）；本地 http 仅限内网地址"></label>
       <label class="wide">API Token<input id="agent-api-key" type="password" autocomplete="off" placeholder="仅本机保存；留空则用环境变量 AI_GATEWAY_API_KEY；订阅计划填专属 Key（MiniMax 为 sk-cp- 前缀）"></label>
       <label class="wide">Model ID
@@ -917,7 +988,40 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 'use strict';
 const APP_VER='6.0';
 const IS_TAURI=!!(window.__TAURI__&&window.__TAURI__.core);
+const IS_WIN=/Win/i.test(navigator.platform||navigator.userAgent);
 if(IS_TAURI)document.documentElement.classList.add('native');
+if(IS_WIN)document.documentElement.classList.add('win');
+/* Windows：快捷键文案本地化（⌘→Ctrl、⇧⌘→Ctrl+Shift、⌘⌫→Ctrl+Del）。
+ * 键位行为本身两平台都可用（keydown 同时接受 metaKey/ctrlKey），这里只改显示。
+ * 覆盖静态（弹窗/title/欢迎卡）与动态渲染（流程提示/右键菜单）：启动扫一遍 +
+ * MutationObserver 持续替换（幂等：无 ⌘ 的文本零成本跳过）。 */
+if(IS_WIN){
+  const fixKbdText=t=>t.replace(/⇧⌘/g,'Ctrl+Shift').replace(/⌘⌫/g,'Ctrl+Del').replace(/⌘/g,'Ctrl');
+  const fixKbdNode=n=>{
+    if(!n)return;
+    if(n.nodeType===3){if(n.nodeValue.includes('⌘'))n.nodeValue=fixKbdText(n.nodeValue);return;}
+    if(n.nodeType!==1)return;
+    const w=document.createTreeWalker(n,NodeFilter.SHOW_TEXT);
+    for(let t=w.nextNode();t;t=w.nextNode())if(t.nodeValue.includes('⌘'))t.nodeValue=fixKbdText(t.nodeValue);
+    n.querySelectorAll&&n.querySelectorAll('[title]').forEach(el=>{if(el.title&&el.title.includes('⌘'))el.title=fixKbdText(el.title);});
+  };
+  const sweep=()=>fixKbdNode(document.body);
+  sweep();
+  document.querySelectorAll('[title]').forEach(el=>{if(el.title&&el.title.includes('⌘'))el.title=fixKbdText(el.title);});
+  let queued=false;
+  new MutationObserver(()=>{
+    if(queued)return;queued=true;
+    requestAnimationFrame(()=>{queued=false;sweep();});
+  }).observe(document.body,{childList:true,subtree:true,characterData:true});
+}
+/* Windows 自绘标题栏：窗控 + 文件菜单（decorations=false 后 topbar 即标题栏） */
+function winCtl(action){
+  if(!IS_TAURI||!window.__TAURI__.window)return;
+  try{window.__TAURI__.window.getCurrentWindow()[action]();}catch(e){console.warn('winCtl',e);}
+}
+function toggleFileMenu(ev){if(ev)ev.stopPropagation();$('fmenu-pop').classList.toggle('open');}
+function fmAct(fn){$('fmenu-pop').classList.remove('open');if(typeof window[fn]==='function')window[fn]();}
+document.addEventListener('click',ev=>{const pop=$('fmenu-pop');if(pop&&pop.classList.contains('open')&&!ev.target.closest('.fmenu-wrap'))pop.classList.remove('open');});
 let baseCmd='',opCmds=[];
 let nodes=[],selected=null;
 let zoom=1,scale=1;

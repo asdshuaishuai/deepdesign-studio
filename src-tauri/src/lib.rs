@@ -117,6 +117,22 @@ pub fn run() {
         ])
         .setup(|app| {
             build_native_menus(app)?;
+            // Windows：按主显示器分辨率比例定启动尺寸（82%×86%，clamp 到可见
+            // 范围）并居中——任何分辨率下 UI 完全可见、与屏幕保持比例
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(win) = app.get_webview_window("main") {
+                    if let Ok(Some(m)) = win.current_monitor() {
+                        let sf = m.scale_factor();
+                        let lw = m.size().width as f64 / sf;
+                        let lh = m.size().height as f64 / sf;
+                        let w = ((lw * 0.82).min(1600.0)).max(980.0).min((lw - 24.0).max(980.0));
+                        let h = ((lh * 0.86).min(1000.0)).max(640.0).min((lh - 24.0).max(640.0));
+                        let _ = win.set_size(tauri::LogicalSize::new(w, h));
+                        let _ = win.center();
+                    }
+                }
+            }
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -194,8 +210,11 @@ fn model_registry() -> serde_json::Value {
     })
 }
 
-/// 原生菜单栏（macOS 全局菜单）。菜单项只负责发事件，动作在前端执行，
-/// 保持「引擎唯一事实源 + 壳只做具现化」的边界。
+/// 原生菜单栏（**仅 macOS**：全局菜单 + 应用菜单是 macOS 惯例）。菜单项只负责
+/// 发事件，动作在前端 nativeMenuAction 执行。Windows 上不构建菜单栏——
+/// 标题栏与工具栏合并（tauri.windows.conf.json decorations=false，topbar 即
+/// 标题栏），原菜单功能由前端「文件 ▾」下拉承载（frontend fmAct）。
+#[cfg(target_os = "macos")]
 fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
 
@@ -351,6 +370,12 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .items(&[&app_menu, &file, &edit, &view, &board, &help])
         .build()?;
     app.set_menu(menu)?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn build_native_menus(_app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Windows：无原生菜单栏（标题栏合并，见函数文档）；原菜单功能由前端「文件 ▾」下拉承载
     Ok(())
 }
 

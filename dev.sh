@@ -6,6 +6,18 @@
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
+# Windows：tauri/webview2 与 wasmtime(ittapi) 的静态库只有 MSVC 形态，
+# 默认 GNU 工具链会在链接期失败——自动定向（仅本进程，不改全局默认）
+if command -v rustup >/dev/null 2>&1; then
+  ACTIVE="$(rustup show active-toolchain 2>/dev/null || true)"
+  case "$ACTIVE" in
+    *gnu*)
+      export RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc
+      echo "→ 检测到 GNU 工具链，本次使用 MSVC（$RUSTUP_TOOLCHAIN）"
+      ;;
+  esac
+fi
+
 # 引擎为预编译 wasm 产物（frontend/vendor/moonviz.wasm）：
 # 缺失时现场拉取（GitHub Releases 直链 classic wasm，sha512 锚定 + 真机契约探针；
 # 需 node——classic 产物无 WasmGC 门槛。注意 --fresh 的缓存清理路径仅 macOS，
