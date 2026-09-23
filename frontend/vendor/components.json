@@ -295,6 +295,184 @@
     "description": "滑杆轨道。"
   },
   {
+    "id": "multi_select",
+    "kind": "rect",
+    "category": "inputs",
+    "variants": [
+      "multi",
+      "single"
+    ],
+    "default_size": [
+      200,
+      44
+    ],
+    "description": "多选下拉框。"
+  },
+  {
+    "id": "toggle_group",
+    "kind": "rect",
+    "category": "selection",
+    "variants": [
+      "single",
+      "segmented"
+    ],
+    "default_size": [
+      180,
+      36
+    ],
+    "description": "分段切换组（互斥多选项）。"
+  },
+  {
+    "id": "steps",
+    "kind": "rect",
+    "category": "navigation",
+    "variants": [
+      "active",
+      "inactive"
+    ],
+    "default_size": [
+      240,
+      32
+    ],
+    "description": "步骤条（横向进度指示）。"
+  },
+  {
+    "id": "status_dot",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "online",
+      "away",
+      "offline"
+    ],
+    "default_size": [
+      16,
+      16
+    ],
+    "description": "状态圆点。"
+  },
+  {
+    "id": "scrim",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      390,
+      844
+    ],
+    "description": "全屏遮罩层（弹层底衬）。"
+  },
+  {
+    "id": "hover_card",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      240,
+      120
+    ],
+    "description": "悬停预览卡。"
+  },
+  {
+    "id": "lightbox",
+    "kind": "image",
+    "category": "overlay",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      390,
+      500
+    ],
+    "description": "灯箱大图查看器。"
+  },
+  {
+    "id": "command_palette",
+    "kind": "rect",
+    "category": "overlay",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      320,
+      240
+    ],
+    "description": "命令面板（⌘K 弹层）。"
+  },
+  {
+    "id": "chat_bubble",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "mine",
+      "theirs"
+    ],
+    "default_size": [
+      220,
+      48
+    ],
+    "description": "聊天气泡。"
+  },
+  {
+    "id": "marquee",
+    "kind": "rect",
+    "category": "display",
+    "variants": [
+      "default"
+    ],
+    "default_size": [
+      340,
+      40
+    ],
+    "description": "跑马灯滚动条幅。"
+  },
+  {
+    "id": "masonry",
+    "kind": "frame",
+    "category": "layout",
+    "variants": [
+      "default",
+      "dense"
+    ],
+    "default_size": [
+      340,
+      400
+    ],
+    "description": "瀑布流布局容器。"
+  },
+  {
+    "id": "bento_grid",
+    "kind": "frame",
+    "category": "layout",
+    "variants": [
+      "default",
+      "compact"
+    ],
+    "default_size": [
+      340,
+      320
+    ],
+    "description": "便当格布局容器。"
+  },
+  {
+    "id": "resize_handle",
+    "kind": "rect",
+    "category": "layout",
+    "variants": [
+      "vertical",
+      "horizontal"
+    ],
+    "default_size": [
+      8,
+      64
+    ],
+    "description": "缩放手柄。"
+  },
+  {
     "id": "alert",
     "kind": "rect",
     "category": "feedback",

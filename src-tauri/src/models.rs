@@ -220,6 +220,45 @@ mod tests {
         Some(&s[i..j])
     }
 
+    /// 协议族判定等价（审查四-③）：本文件的测试副本 `our_family` 与 agent.rs 的唯一
+    /// 运行时实现 `protocol_for` 必须对同一 URL 给出同一结论——两者现在逻辑同构，
+    /// 这条测试保证将来任何一边单改判定规则（尾部段/host 比对）都会红。
+    #[test]
+    fn our_family_matches_agent_protocol_for() {
+        use crate::agent::Protocol;
+        let mut urls: Vec<String> = frontend_presets()
+            .into_iter()
+            .map(|(_, base, _)| base)
+            .collect();
+        // 已知分歧登记的上游现值也是未来切协议的候选 URL，一并钉住
+        for (_, url, _) in KNOWN_DIVERGENCES {
+            urls.push(url.to_string());
+        }
+        urls.extend([
+            "https://api.anthropic.com".to_string(),
+            "https://api.anthropic.com/v1".to_string(),
+            "https://api.minimaxi.com/anthropic".to_string(),
+            "https://api.minimax.io/anthropic/v1".to_string(),
+            "https://api.minimaxi.com/anthropic/v1/".to_string(),
+            // 代理路径不得误判为 Anthropic
+            "https://x.example.com/anthropic-proxy/v1".to_string(),
+            // 前缀伪装不得误判
+            "https://api.anthropic.com.evil.net/v1".to_string(),
+            "http://localhost:8000/v1".to_string(),
+            "https://api.deepseek.com".to_string(),
+        ]);
+        for u in &urls {
+            let our = our_family(u) == "@ai-sdk/anthropic";
+            let theirs = crate::agent::protocol_for(u) == Protocol::Anthropic;
+            assert_eq!(
+                our, theirs,
+                "协议族判定分叉：{u} → our_family={} protocol_for={:?}",
+                our_family(u),
+                crate::agent::protocol_for(u)
+            );
+        }
+    }
+
     #[test]
     fn presets_match_snapshot() {
         let presets = frontend_presets();
