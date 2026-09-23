@@ -30,10 +30,11 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dst = join(root, 'frontend', 'vendor');
 
 // —— 引擎版本锚点（升级 = 改这里 + 重跑本脚本 + cd src-tauri && cargo test）——
-const ENGINE_VERSION = '0.1.2';
+// —— 引擎版本锚点（升级 = 改这里 + 重跑本脚本 + cd src-tauri && cargo test）——
+const ENGINE_VERSION = '0.1.5-fix-2';
 const RELEASE_TAG = `engine-v${ENGINE_VERSION}`;
 // 资产名里的 wasm 版本（0.1.2 起与 release tag 同步；此前 tag 带后缀、资产沿用短版号）
-const WASM_ARTIFACT_VERSION = '0.1.2';
+const WASM_ARTIFACT_VERSION = '0.1.5-fix-2';
 // 资产文件名（标准 classic wasm；变体叫 moonviz-wasm-gc-*，本仓库不用）
 const WASM_ASSET = `moonviz-wasm-classic-${WASM_ARTIFACT_VERSION}.wasm`;
 // 标准 wasm SDK：GitHub Releases 的 WasmGC 直链 .wasm（非 tarball）
@@ -42,7 +43,7 @@ const WASM_URL =
   `https://github.com/asdshuaishuai/moonviz/releases/download/${RELEASE_TAG}/${WASM_ASSET}`;
 // 下载的 .wasm 文件整体 sha512（npm 无此产物；校验值取自 release 资产）
 const WASM_SHA512 =
-  'sha512-PCmwvB8AzLcw+Cnr+UTJMQF0/1qKviqXCLtnLyHNDQfOQ0szIf1Rg2IgT8H92pYNMIa3uHUQVxEnA5aIat1/Gg==';
+  'sha512-Nd7xVadUEd6gvvvrJqVgiSZIzybqbp55143GynWrhip0DJMjP6hI0oysw9SDcRyfOUQB1Ub6Jg/FBEGyxAB1mw==';
 
 const REQUIRED_EXPORTS = [
   'apply_human_op', 'apply_agent_op', 'render_mbt', 'validate_mbt',
@@ -127,6 +128,20 @@ const COMPONENT_DESCRIPTIONS = {
   rating: '评分。',
   tag: '标签。',
   stat: '数据统计块。',
+  /* 0.1.3 新增（+13） */
+  multi_select: '多选下拉框。',
+  toggle_group: '分段切换组（互斥多选项）。',
+  steps: '步骤条（横向进度指示）。',
+  status_dot: '状态圆点。',
+  scrim: '全屏遮罩层（弹层底衬）。',
+  hover_card: '悬停预览卡。',
+  lightbox: '灯箱大图查看器。',
+  command_palette: '命令面板（⌘K 弹层）。',
+  chat_bubble: '聊天气泡。',
+  marquee: '跑马灯滚动条幅。',
+  masonry: '瀑布流布局容器。',
+  bento_grid: '便当格布局容器。',
+  resize_handle: '缩放手柄。',
   kbd: '键盘按键样式。',
   table: '表格。default/striped。',
   accordion: '折叠面板。',

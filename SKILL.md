@@ -7,7 +7,7 @@
 > Releases 的**标准 classic wasm**（`moonviz-wasm-classic-<version>.wasm`，纯 WASM MVP、
 > 宿主中立、零 import；docs #wasm 的「标准 wasm」。**wasm-gc 变体**（npm
 > moonviz-engine-wasm，依赖 JS String Builtins 提案、仅 V8 类引擎）本仓库不用）。
-> 引擎 engine-v0.1.2：经典消费面 37 = 7 经典 + 4 检视直调 + 26 session API（session_count 可测
+> 引擎 engine-v0.1.5-fix-2：经典消费面 37 = 7 经典 + 4 检视直调 + 26 session API（session_count 可测
 > 泄漏、session_open_project_json 支撑 save→open 回灌）；**另有 `_in` 字节契约面（issue #8）
 > 是本仓库全部宿主的写路径**——wasmtime_host / 前端 engSlotLoad / sync 探针三处消费，
 > in/arg/arg2 三槽 UTF-8 分块压入（小端 4 字节+长度），`*_in()` 变体解码调经典入口；
@@ -29,7 +29,7 @@ MoonViz is a prototype design engine built entirely in MoonBit. It treats one Mo
 测试经 node 宿主驱动同一份产物）。op 以字符串形式传入 wasm 导出：
 
 ```bash
-# 同步工件（release 直链 wasm + 契约探针：7 经典/4 检视/26 session/模板/组件）——engine-v0.1.2
+# 同步工件（release 直链 wasm + 契约探针：7 经典/4 检视/26 session/模板/组件）——engine-v0.1.5-fix-2
 node scripts/sync-engine.mjs
 
 # 变更 op（两门，wasm 导出名）：
@@ -79,12 +79,23 @@ placeholder glyph. The URL lives in the node's `text` field and round-trips thro
 
 Navigation / theme / tokens:
 `flow <from_ab> <to_ab> <node>`（写导航边）·
+`unflow <from_ab> <to_ab> <node>`（删除单条导航边；0.1.5-fix-2 起 apply 面可达，moonviz#12）·
 `theme <name>`（`light dark high_contrast sepia nord sunset` 共 6 个）·
 `token <name> <value>`（**仅颜色令牌**：`primary` `on_primary` `secondary` `surface`
 `background` `error` `text_primary` 等，全集见 `list-tokens` 的 colors 组。间距/圆角/字号
 令牌一律 `unknown_token`。覆盖即时重着色，随文档 frontmatter `tokens:` 段往返，
 改回默认值即撤销覆盖）·
 `fix <ab>`（违规**严格减少**才提交的还债语义；因此它属于变更类，绝不能走只读管道）
+
+CLI/MCP 会话级工具（0.1.5 skill 载明；**classic wasm 产物未导出**——实测导出面无
+`session_history*`/`session_undo*` 等，wasm 宿主（wasmtime/WebView）当前一律不可用，
+勿经 op 或工具尝试；deepDesign 已向上游提 issue 请求 wasm 对齐，落地后本节转正）：
+`history init|commit|log|undo|redo|checkout|diff`（设计版本控制——撤销/重做的事实源）·
+`collab-merge <base_rev> <agent>=<op>[+op...]`（多 agent OT 三方合并）·
+`anim-css <node> <preset>` / `anim-list`（press/fade_in/slide_in_right/modal_present/
+shake/pop 六预设 → CSS @keyframes）·
+`protest <ab> <script>`（断言式原型测试：`tap:x:y>board; back>board; swipe:left>board;
+set:node:val; noviol; render`）
 
 Node properties (`update <ab> <node> k=v ...`) — 29 个键全部实测接受：
 `w h text fill text_color stroke stroke_width radius opacity font_size weight
@@ -123,7 +134,7 @@ Interaction and state:
 list                    画板清单
 flows                   导航边清单
 list-templates          模板清单（14 个）
-list-components         组件清单（52 个内置 + 用户组件）
+list-components         组件清单（65 个内置 + 用户组件）
 list-tools              MCP 工具清单（见下方 MCP 段的告警）
 list-tokens             设计令牌（colors/spacing/radii/typography 四组）
 list-themes             主题清单（6 个）
@@ -185,7 +196,7 @@ Argument passing mirrors the CLI: list-ish arguments are comma-separated
 
 ## Components
 
-The component catalog is owned by `core/`, not by the Studio shell. `builtin_components()` provides **52 unique engine presets**（实测 `list-components` = 52）across actions, inputs, selection, display, layout, navigation, feedback, and overlay categories, with variants and default geometry. The shell discovers this catalog through the engine and only renders previews/materializes operations.
+The component catalog is owned by `core/`, not by the Studio shell. `builtin_components()` provides **65 unique engine presets**（实测 `list-components` = 65）across actions, inputs, selection, display, layout, navigation, feedback, and overlay categories, with variants and default geometry. The shell discovers this catalog through the engine and only renders previews/materializes operations.
 
 ## Rendering
 
@@ -212,7 +223,7 @@ The Tauri shell transports opaque DDP bytes through the authenticated codec. The
 
 ## Architecture
 
-- **Engine (`core/`, `decl/`)**: MBT scanning, visual declaration parsing, 52 component presets, project reconstruction, layout, predicates, Human/Agent gates, canonical MBT serialization, SVG and RenderPlan.
+- **Engine (`core/`, `decl/`)**: MBT scanning, visual declaration parsing, 65 component presets, project reconstruction, layout, predicates, Human/Agent gates, canonical MBT serialization, SVG and RenderPlan.
 - **CLI/MCP**: Source-based engine protocols over stdin/stdout.
 - **Tauri shell**: file dialogs, opaque DDP transport, and visual presentation only.
 - **DDP**: one encrypted `.mbt.md` source.
@@ -255,10 +266,11 @@ readonly: list flows list-templates list-components list-tools list-tokens
   list-themes lint critique query infer spec missing doc-json states
   interactions export-svg export-html tap benchmark
 cli_only: constrain name save load export-mbt-human export-mbt-agent export-decl export-artifact
-  export-decl export-artifact render-mbt-b64 validate-mbt-b64 canonical-mbt-b64
+  render-mbt-b64 validate-mbt-b64 canonical-mbt-b64
   apply-agent-mbt-b64 apply-human-mbt-op-b64 apply-agent-mbt-op-b64
   load-mbt-b64 library-snapshot library-restore-b64 component-compile-b64
   component-describe component-delete component-export component-import help exit
+  history collab-merge anim-css anim-list protest
 ```
 
 ## 附录：验证方法（引擎更新后重跑）
@@ -268,7 +280,7 @@ E=src-tauri/engine/moonviz-cli.exe
 node scripts/sync-engine.mjs                       # 全量导出契约探针（事实源）
 node scripts/sync-engine.mjs                       # 全量导出契约探针（含模板/组件）
 printf 'list-templates\nexit\n' | $E             # 模板全集
-printf 'list-components\nexit\n' | $E            # 组件全集（52）
+printf 'list-components\nexit\n' | $E            # 组件全集（65）
 printf 'list-themes\nexit\n' | $E                # 主题全集（6）
 # 变更类逐个探针：apply-agent-mbt-op-b64 <mbt> <op>  → 期望 ok 或 mbt_gate_block（语法接受）
 # 只读类逐个探针：load-mbt-b64 <mbt> + <op>        → 期望 ok；apply 路径应报 mbt_operation_unsupported

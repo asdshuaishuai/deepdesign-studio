@@ -18,7 +18,10 @@ use crate::EngineHost;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
 const MAX_STEPS: usize = 20;
-const ENGINE_OP_TIMEOUT: Duration = Duration::from_secs(30);
+/// 单次引擎调用超时。必须**晚于**宿主的 epoch 中断预算（wasmtime_host::CALL_TIMEOUT
+/// 30s + tick 粒度 + 外层 5s 宽限）：这里先到点会把「引擎已中断/未提交」误报成
+/// engine_timeout，还可能与宿主竞态。45s 保证总能收到宿主的真实结果。
+const ENGINE_OP_TIMEOUT: Duration = Duration::from_secs(45);
 const LLM_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// 空项目起步的种子画板 id（wasm 引擎要求文档至少一个视觉块才能承载 op；
@@ -55,6 +58,9 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   their answers arrive appended to their next instruction, and you then build directly.
 - Think in flows: a prototype is screens + navigation. An unconnected screen is unfinished.
 - Write real product copy (realistic labels, names, numbers), never lorem ipsum.
+- Full-bleed backgrounds are fine: place a background rect and grow it with
+  width_mode/height_mode=fill — content may sit on top of it. Other sibling overlaps are
+  still rejected (no_sibling_overlap): plan non-intersecting rects for everything else.
 - Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
   get read_mbt, one targeted op, done.
 
@@ -97,6 +103,7 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   | interact <artboard> <node> <trigger> <action>  | uninteract <artboard> <node>
   | state <artboard> <node> <state_name> k=v ...   | set-state <node> <state_name> [toggle]
   | flow <from_artboard> <to_artboard> <node>
+  | unflow <from_artboard> <to_artboard> <node>   (delete one navigation edge)
   | theme <name>  (light|dark|high_contrast|sepia|nord|sunset)
   | token <name> <value>   (override ONE COLOR token, e.g. token primary #FF5722)
   | fix <artboard>
@@ -117,11 +124,14 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   debt, missing finds unwired CTAs, query lists nodes, states/interactions show what's wired).
   Exceptions with no wasm export — never call: list-tools, doc-json (use read_mbt / list-ops
   introspection instead). Mutations still go through moonviz_op only.
+  read_mbt and list_components are separate TOOLS — call them directly; passing "read_mbt"
+  as a moonviz_op op string returns mbt_operation_unsupported.
 - update keys: w h text fill text_color stroke stroke_width radius opacity font_size weight
   shadow rotate blur blend line tracking constraint align italic dash visible layout gap
   justify padding width_mode height_mode x_mode y_mode name.
   (align left|center|right; dash solid|dashed|dotted; visible true|false;
-   layout vertical|horizontal|none; width_mode/height_mode hug|fill; x_mode/y_mode center|start)
+   layout vertical|horizontal|none; width_mode/height_mode hug|fill; x_mode/y_mode center|start;
+   w/h also accept fill|hug; x/y also accept @decl.center or @decl.end(24) — edge-anchored)
   Quote values with spaces: text="Sign in".
   Unquoted words after a space are silently dropped — always quote multi-word text.
 - duplicate is the cheapest way to spawn "a similar screen" before diverging with update.
@@ -152,7 +162,8 @@ pub enum Protocol {
 /// api.anthropic.com 时走 Anthropic Messages。尾部匹配而非 contains——`/anthropic-proxy`
 /// 这类代理路径不得误判；host 精确比对防 api.anthropic.com.evil.net 前缀伪装。
 /// 覆盖 MiniMax 官方文档配置方式（ANTHROPIC_BASE_URL=.../anthropic）与官方 Anthropic 端点。
-fn protocol_for(base_url: &str) -> Protocol {
+/// models.rs 的测试用 our_family 副本与本函数钉了等价测试（勿单边改判定规则）。
+pub(crate) fn protocol_for(base_url: &str) -> Protocol {
     let b = base_url.to_ascii_lowercase();
     let t = b.trim_end_matches('/');
     // 必须是路径尾部的 anthropic 段（含快照记录的 .../anthropic/v1 形态）：
@@ -485,13 +496,15 @@ impl<'a> EngineState<'a> {
             return json!({"ok": false, "error": "op_newline_forbidden"});
         }
 
-        // 空项目起步：template/create 经种子文档引导（人类门语义——画布首板同路），
+        // 空项目起步：template/create 经种子文档引导，与后续 op 同走 **AgentGate**——
+        // 系统提示词向模型承诺"每个 op 都经 AgentGate"，首板不是例外（0.1.5-fix-2
+        // 修复 moonviz#14 模板内容债后回收；此前因 4 模板自带债被迫走人类门）。
         // 首个 op 落地后立即删除种子画板，canonical 由引擎回传。
         if self.mbt.is_none()
             && matches!(op.split_whitespace().next(), Some("template") | Some("create"))
         {
             let seed = seed_doc(SEED_BOARD, 24, 24);
-            let mut r = self.call("apply_human_op", &seed, op).await;
+            let mut r = self.call("apply_agent_op", &seed, op).await;
             if r.get("ok") != Some(&json!(true)) {
                 return r;
             }
@@ -500,7 +513,7 @@ impl<'a> EngineState<'a> {
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            r = self.call("apply_human_op", &committed, &format!("delete-artboard {SEED_BOARD}")).await;
+            r = self.call("apply_agent_op", &committed, &format!("delete-artboard {SEED_BOARD}")).await;
             if r.get("ok") != Some(&json!(true)) {
                 return json!({"ok": false, "error": format!("seed_cleanup_failed:{op}")});
             }
@@ -644,7 +657,7 @@ fn tools_schema() -> Value {
             "type": "function",
             "function": {
                 "name": "moonviz_op",
-                "description": "Execute one MoonViz MUTATING design operation (AgentGate-validated, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
+                "description": "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
                 "parameters": {
                     "type": "object",
                     "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -863,6 +876,14 @@ pub async fn run(
         json!({"role": "system", "content": instructions()}),
         json!({"role": "user", "content": instruction}),
     ];
+    // 运行日志（stderr → tauri dev 控制台）：无落盘日志时的最小可诊断性——
+    // 每次 op 的结果、run 起止与终态。eprintln 只影响调试，不进产品 UI。
+    eprintln!(
+        "[agent] run start: {:?} (doc {} bytes, model {})",
+        instruction.chars().take(60).collect::<String>(),
+        mbt_b64.map(|b| b.len()).unwrap_or(0),
+        model
+    );
 
     // 实时轨迹推送（前端 Agent 追踪面板）：每步 LLM 回复 / 工具调用 / 结果
     let emit = |typ: &str, v: Value| {
@@ -893,7 +914,9 @@ pub async fn run(
                 // 中途 LLM 失败：已提交的引擎操作不丢弃（对齐旧桥语义）——
                 // 零操作时才整体失败，否则带部分状态返回，前端可应用已完成的变更。
                 emit("failed", json!({"error": e}));
-                return finish_partial(&mut state, &e).await;
+                let partial = finish_partial(&mut state, &e).await;
+                eprintln!("[agent] run end: stop=error ops={} error={e}", partial.get("ops").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0));
+                return partial;
             }
         };
         let Some(msg) = resp
@@ -931,6 +954,7 @@ pub async fn run(
             // 走到这里说明 assistant 已给出自然总结——即便恰在第 MAX_STEPS 轮,
             // 语义是 done;max_turns 只属于循环耗尽仍无总结的路径（循环外兜底）
             let stop = if text.trim().is_empty() && step + 1 >= MAX_STEPS { "max_turns" } else { "done" };
+            eprintln!("[agent] run end: stop={stop} ops={} text_len={}", state.ops.len(), text.len());
             emit("assistant_text", json!({"text": text}));
             emit("done", json!({"stopReason": stop, "ops": state.ops.len()}));
             return json!({
@@ -976,6 +1000,14 @@ pub async fn run(
             let ms = t0.elapsed().as_millis() as u64;
             let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
             let err = result.get("error").and_then(|v| v.as_str()).map(String::from);
+            eprintln!(
+                "[agent] #{seq} {} `{}` -> {}{}{}",
+                name,
+                trace_op.chars().take(70).collect::<String>(),
+                if ok { "ok" } else { "FAIL" },
+                if ok { format!(" {ms}ms") } else { format!(" {}ms", ms) },
+                match &err { Some(e) => format!(" error={e}"), None => String::new() },
+            );
             let mut ev = json!({"seq": seq_n, "ok": ok, "ms": ms});
             if let Some(e) = &err {
                 ev["error"] = json!(e);
@@ -991,6 +1023,7 @@ pub async fn run(
 
     // 跑满步数：尽力返回当前状态
     state.ensure_render().await;
+    eprintln!("[agent] run end: stop=max_turns ops={}", state.ops.len());
     json!({
         "ok": state.mbt.is_some(),
         "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
@@ -1077,7 +1110,20 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Value {
         .unwrap_or_default();
     let models: Vec<Value> = arr
         .iter()
-        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(|id| json!({"id": id})))
+        .filter_map(|m| {
+            let id = m.get("id").and_then(|v| v.as_str())?;
+            // 能力字段按需透传（审查 D6）：OpenAI 风格 /models 通常只有 id，但部分
+            // 端点（OpenRouter 类）带上下文长度/定价/参数支持——有就带回，没有不造；
+            // 档位收紧的权威仍是 models.dev 快照（前端 fillModelHints）
+            let mut o = serde_json::Map::new();
+            o.insert("id".into(), json!(id));
+            for k in ["name", "context_length", "pricing", "supported_parameters", "owned_by"] {
+                if let Some(v) = m.get(k) {
+                    o.insert(k.into(), v.clone());
+                }
+            }
+            Some(Value::Object(o))
+        })
         .collect();
     json!({"ok": true, "models": models})
 }
@@ -1383,6 +1429,48 @@ pub(crate) mod tests {
             prompt_ids, engine_ids,
             "提示词模板清单与引擎 wasm 不一致（差集：左=提示词，右=引擎）"
         );
+    }
+
+    /// 双门模板债登记（moonviz#14）：14 个内置模板在**人类门**必须全过（欢迎页与
+    /// 种子引导的产品承诺）；AgentGate 债清单登记「模板内容自带、过不了代理门」的 id。
+    /// **0.1.5-fix-2 已修复 #14（4 项债全清）**——清单保持为空作哨兵：上游若再引入
+    /// 自带债的模板，此测试会红并指名该 id（同 models.rs KNOWN_DIVERGENCES 模式）。
+    #[tokio::test]
+    async fn templates_human_gate_all_pass_agent_gate_debt_registry() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let out = ENGINE.call("list_templates", "", "").await.unwrap();
+        let arr = out.as_array().expect("list_templates 未返回数组");
+        let ids: Vec<String> = arr
+            .iter()
+            .filter_map(|t| t.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect();
+        assert!(!ids.is_empty());
+        const AGENT_GATE_DEBT: [&str; 0] = [];
+        for id in &ids {
+            let seed = seed_doc(SEED_BOARD, 24, 24);
+            let human = ENGINE
+                .call("apply_human_op", &seed, &format!("template {id} __t"))
+                .await
+                .unwrap();
+            assert_eq!(
+                human.get("ok"),
+                Some(&json!(true)),
+                "模板 {id} 人类门被拒——欢迎页/种子引导的产品承诺被破坏：{human}"
+            );
+            let agent = ENGINE
+                .call("apply_agent_op", &seed, &format!("template {id} __t"))
+                .await
+                .unwrap();
+            let agent_ok = agent.get("ok") == Some(&json!(true));
+            let in_debt = AGENT_GATE_DEBT.contains(&id.as_str());
+            assert_eq!(
+                agent_ok, !in_debt,
+                "模板 {id} 的 AgentGate 行为与债登记清单不符（agent_ok={agent_ok}）——\
+                 若上游已修（agent_ok=true 的债模板），清空 AGENT_GATE_DEBT 并把种子引导换回 apply_agent_op；\
+                 若是新模板自带债（agent_ok=false 且不在清单），把它的 id 加进 AGENT_GATE_DEBT"
+            );
+        }
     }
 
     /// 提示词不得再教 Agent 使用引擎 apply 路径会拒绝的 op。
