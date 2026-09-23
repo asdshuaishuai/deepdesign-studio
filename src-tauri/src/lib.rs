@@ -165,7 +165,11 @@ pub fn run() {
 /// payload = { mode?:'models', instruction, mbt_b64?, api_key?, model?, base_url?, thinking_level? }
 /// 返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text} / models 列表。
 #[tauri::command]
-async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::Value, String> {
+async fn invoke_fx_sdk(
+    app: tauri::AppHandle,
+    payload: String,
+    api_key: String,
+) -> Result<serde_json::Value, String> {
     // 传输门（对齐 save_ddp 的 12MB）：payload 含 mbt_b64（宿主按 UTF-16 写入
     // wasm 内存约 2 倍放大），无门会让异常输入直通引擎内存增长
     if payload.len() > 12 * 1024 * 1024 {
@@ -193,7 +197,15 @@ async fn invoke_fx_sdk(payload: String, api_key: String) -> Result<serde_json::V
     let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
     let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
-    Ok(agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking).await)
+    // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线
+    let run_id = p.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
+    let emitter = app.clone();
+    let progress = move |v: serde_json::Value| {
+        use tauri::Emitter as _;
+        let _ = emitter.emit("agent-event", &v);
+        let _ = run_id; // 前端按监听会话过滤；run 字段由前端事件挂载点区分
+    };
+    Ok(agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress)).await)
 }
 
 /// 模型元数据注册表（vendored models.dev 快照）下发给前端：

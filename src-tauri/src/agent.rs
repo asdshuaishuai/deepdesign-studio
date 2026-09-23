@@ -834,6 +834,7 @@ pub async fn run(
     model: &str,
     base_url: &str,
     thinking: &str,
+    progress: Option<&(dyn Fn(Value) + Send + Sync)>,
 ) -> Value {
     if api_key.trim().is_empty() {
         return json!({"ok": false, "error": "api_key_missing"});
@@ -863,6 +864,20 @@ pub async fn run(
         json!({"role": "user", "content": instruction}),
     ];
 
+    // 实时轨迹推送（前端 Agent 追踪面板）：每步 LLM 回复 / 工具调用 / 结果
+    let emit = |typ: &str, v: Value| {
+        if let Some(f) = progress {
+            let mut full = json!({"type": typ});
+            if let (Some(obj), Some(src)) = (full.as_object_mut(), v.as_object()) {
+                for (k, val) in src {
+                    obj.insert(k.clone(), val.clone());
+                }
+            }
+            f(full);
+        }
+    };
+    let mut seq: usize = 0;
+
     for step in 0..MAX_STEPS {
         let mut resp = chat_once(&client, &base, api_key, model, thinking, &messages).await;
         if let Err(e) = &resp {
@@ -877,6 +892,7 @@ pub async fn run(
             Err(e) => {
                 // 中途 LLM 失败：已提交的引擎操作不丢弃（对齐旧桥语义）——
                 // 零操作时才整体失败，否则带部分状态返回，前端可应用已完成的变更。
+                emit("failed", json!({"error": e}));
                 return finish_partial(&mut state, &e).await;
             }
         };
@@ -884,6 +900,7 @@ pub async fn run(
             .pointer("/choices/0/message")
             .and_then(|v| v.as_object().cloned())
         else {
+            emit("failed", json!({"error": "llm_no_choice"}));
             return finish_partial(&mut state, "llm_no_choice").await;
         };
         let tool_calls: Vec<Value> = msg
@@ -891,10 +908,19 @@ pub async fn run(
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
 
+        // 中间轮的 assistant 文本（计划/说明）进轨迹
+        let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if !mid_text.trim().is_empty() && !tool_calls.is_empty() {
+            emit("assistant_text", json!({"text": mid_text}));
+        }
+
         if tool_calls.is_empty() {
             // 终态：assistant 总结
             let text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if state.mbt.is_none() && state.ops.is_empty() {
+                // 澄清式回复（CLARIFY-FIRST）：文本即 agent 的提问——照常推送轨迹
+                emit("assistant_text", json!({"text": text}));
+                emit("done", json!({"stopReason": "clarify", "ops": 0}));
                 return json!({
                     "ok": false, "error": "agent_no_mbt",
                     "detail": "LLM did not call any tools",
@@ -905,6 +931,8 @@ pub async fn run(
             // 走到这里说明 assistant 已给出自然总结——即便恰在第 MAX_STEPS 轮,
             // 语义是 done;max_turns 只属于循环耗尽仍无总结的路径（循环外兜底）
             let stop = if text.trim().is_empty() && step + 1 >= MAX_STEPS { "max_turns" } else { "done" };
+            emit("assistant_text", json!({"text": text}));
+            emit("done", json!({"stopReason": stop, "ops": state.ops.len()}));
             return json!({
                 "ok": state.mbt.is_some(),
                 "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
@@ -922,6 +950,14 @@ pub async fn run(
             let id = call.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let name = call.pointer("/function/name").and_then(|v| v.as_str()).unwrap_or("");
             let args_raw = call.pointer("/function/arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+            let trace_op = serde_json::from_str::<Value>(args_raw)
+                .ok()
+                .and_then(|a| a.get("op").and_then(|v| v.as_str()).map(String::from))
+                .unwrap_or_else(|| args_raw.chars().take(60).collect());
+            seq += 1;
+            let seq_n = seq;
+            emit("tool_start", json!({"seq": seq_n, "tool": name, "op": trace_op}));
+            let t0 = std::time::Instant::now();
             // 畸形 JSON 带原文片段报错，模型可据此自纠（归并为 op_invalid 会多耗一轮）
             let result = match serde_json::from_str::<Value>(args_raw) {
                 Err(_) => json!({"ok": false, "error": format!(
@@ -937,6 +973,14 @@ pub async fn run(
                     other => json!({"ok": false, "error": format!("unknown_tool:{other}")}),
                 },
             };
+            let ms = t0.elapsed().as_millis() as u64;
+            let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            let err = result.get("error").and_then(|v| v.as_str()).map(String::from);
+            let mut ev = json!({"seq": seq_n, "ok": ok, "ms": ms});
+            if let Some(e) = &err {
+                ev["error"] = json!(e);
+            }
+            emit("tool_end", ev);
             messages.push(json!({
                 "role": "tool",
                 "tool_call_id": id,
@@ -1465,7 +1509,8 @@ pub(crate) mod tests {
             "sk-test",
             "mock-model",
             &format!("http://127.0.0.1:{port}"),
-            "auto",
+            "auto" ,
+            None,
         )
         .await;
         mock.await.unwrap();
@@ -1580,10 +1625,9 @@ pub(crate) mod tests {
             None,
             "sk-test",
             "MiniMax-M3",
-            // 基址带 /v1 尾缀——正是用户粘贴 models.dev 快照值的形态，
-        // 锁死"双 /v1"拼装回归（base_no_v1 strip 逻辑）
-        &format!("http://127.0.0.1:{port}/anthropic/v1"),
+            &format!("http://127.0.0.1:{port}/anthropic/v1"),
             "high",
+            None,
         )
         .await;
         mock.abort();
@@ -1690,6 +1734,7 @@ pub(crate) mod tests {
             "mock-model",
             &format!("http://127.0.0.1:{port}"),
             "auto",
+            None,
         )
         .await;
         mock.abort();
@@ -1758,7 +1803,7 @@ pub(crate) mod tests {
                  "arguments": "{\"op\": \"template login lg\"}"}}
             ]}}]
         })]).await;
-        let out = run(&ENGINE, "建一个登录页", None, "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
+        let out = run(&ENGINE, "建一个登录页", None, "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto", None).await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "部分成功应 ok:true: {out}");
         assert!(out["partial_error"].is_string(), "应带 partial_error: {out}");
@@ -1787,7 +1832,7 @@ pub(crate) mod tests {
                 "choices": [{"message": {"role": "assistant", "content": "当前文档包含画板 rt。"}}]
             }),
         ]).await;
-        let out = run(&ENGINE, "看下现在的文档", Some(&b64_encode(&mbt)), "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto").await;
+        let out = run(&ENGINE, "看下现在的文档", Some(&b64_encode(&mbt)), "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto", None).await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(out["stopReason"], json!("done"));

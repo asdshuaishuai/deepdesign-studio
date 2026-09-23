@@ -311,6 +311,16 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 .trk-h .who{font-size:10px;font-family:ui-monospace;font-weight:700;color:#7c3aed}
 .trk-h .tm{font-size:9.5px;color:var(--tx3);font-family:ui-monospace}
 .trk-msg{font-size:11.5px;color:var(--tx);line-height:1.45;margin-bottom:5px}
+/* agent 实时任务轨迹（时间线） */
+.tl-run{padding:9px 11px;border-radius:var(--r-lg);background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.1));margin-bottom:8px}
+.tl-user{font-size:11.5px;font-weight:700;color:var(--tx);line-height:1.5;margin-bottom:6px}
+.tl-line{font-family:ui-monospace;font-size:10.5px;line-height:1.6;color:var(--tx2);padding:2.5px 6px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-line.tl-assist{color:var(--acc-tx);white-space:pre-wrap;white-space:normal}
+.tl-line.tl-ok{color:var(--ok)}
+.tl-line.tl-err{color:#e05252}
+.tl-line.tl-err .tl-err-msg{color:#e05252}
+.tl-line .tl-ms{color:var(--tx3);font-size:9px}
+.tl-line.tl-done{color:var(--tx3);font-weight:600;margin-top:3px}
 .trk-cmds{border-top:1px dashed rgba(0,0,0,.09);padding-top:5px}
 .trk-cmds .pi{display:flex;gap:6px;font-family:ui-monospace;font-size:10px;color:var(--tx2);padding:1.5px 0}
 .trk-cmds .num{color:var(--tx3)}
@@ -1907,6 +1917,45 @@ function trackAgent(instruction,cmds){
     ${cmds.length?`<div class="trk-cmds">${cmds.map((c,i)=>`<div class="pi"><span class="num">${i+1}</span><span>${escHtml(c)}</span></div>`).join('')}</div>`:''}`;
   body.prepend(d);
 }
+/* ---------- Agent 追踪（右侧面板）：实时任务轨迹 ---------- */
+/* agent run 实时时间线：invoke 前挂 agent-event 监听，逐步渲染
+ * 用户指令 / assistant 计划 / 每个工具调用与结果（含被拒/失败）/ 终态 */
+const TRACE={un:null,run:0};
+function traceOpen(runId,label){
+  const body=$('tl-body');if(!body)return;
+  if(TRACE.un){try{TRACE.un();}catch(_){ } TRACE.un=null;}
+  TRACE.run=runId;
+  const wrap=document.createElement('div');wrap.className='tl-run';wrap.id='tl-run-'+runId;
+  wrap.innerHTML=`<div class="tl-user">▸ ${escHtml(label)}</div>`;
+  body.prepend(wrap);
+  if(!IS_TAURI||!window.__TAURI__.event)return;
+  window.__TAURI__.event.listen('agent-event',ev=>{
+    const p=ev.payload||{};
+    if(p.run!==runId)return;
+    const box=document.getElementById('tl-run-'+runId);if(!box)return;
+    if(p.type==='assistant_text'){appendTraceLine(box,'🤖 '+p.text,'tl-assist');return;}
+    if(p.type==='tool_start'){appendTraceLine(box,'⏳ '+p.op,'tl-tool pending','tlstep-'+runId+'-'+p.seq);return;}
+    if(p.type==='tool_end'){
+      const line=document.getElementById('tlstep-'+runId+'-'+p.seq);
+      if(line){
+        line.className='tl-line '+(p.ok?'tl-ok':'tl-err');
+        line.innerHTML=(p.ok?'✓ ':'✗ ')+escHtml(line.dataset.op||'')+(p.ms?` <span class="tl-ms">${p.ms}ms</span>`:'')+(p.error?` <span class="tl-err-msg">${escHtml(p.error)}</span>`:'');
+      }
+      return;
+    }
+    if(p.type==='done'){appendTraceLine(box,`■ 完成（${p.ops} ops · ${p.stopReason}）`,'tl-done');return;}
+    if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
+  }).then(u=>{TRACE.un=u;}).catch(()=>{});
+}
+function appendTraceLine(box,text,cls,id){
+  const d=document.createElement('div');
+  d.className='tl-line '+(cls||'');
+  if(id)d.id=id;
+  d.innerHTML=escHtml(text);
+  if(id)d.dataset.op=text.replace(/^⏳ /,'');
+  box.appendChild(d);
+  body.scrollTop=0; // 面板在新消息时置顶（prepend 布局）
+}
 /* ---------- MoonBit 源码高亮（scope 名对齐官方 moonbit-tmLanguage） ---------- */
 function mbtHighlight(text){
   const spans=[];
@@ -2006,10 +2055,12 @@ async function runGlobalPrompt(){
     loadAgentConfig();
     setStatus('agent',t,true,'AI 处理中…');
     // 澄清式多轮：agent 上一轮的提问 + 本轮用户回答 → 拼接为完整指令
+    const runId=Date.now();
+    traceOpen(runId,t);
     const instruction=agentThread.pending
       ? `${agentThread.pending}\n\n[用户对上述问题的回答]: ${t}\n\n请基于回答继续执行任务（直接生成，不要再次追问）。`
       : t;
-    const r=await askFxSdk(instruction);
+    const r=await askFxSdk(instruction,runId);
     if((!r.ops||!r.ops.length)&&r.text&&r.text.trim()){
       // agent 的文本回复（澄清问题/确认/说明）——展示给用户，不再丢弃
       agentThread.pending=r.text.trim();
@@ -2724,8 +2775,8 @@ function openSettings(){
   // 在输入赋值之后再算提示：先算会读到上一轮的旧输入值
   fillModelHints();$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
-async function askFxSdk(instruction){
-  const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto'};
+  async function askFxSdk(instruction,runId){
+  const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto',run:runId||0};
   
   const data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:agentConfig.apiKey||''});
   if(!data||data.ok!==true){
