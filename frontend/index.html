@@ -65,7 +65,7 @@ body[data-mode="dark"],body[data-theme="deep"],body[data-theme="glass"],body[dat
 .brand .sub{font-size:9px;color:var(--tx3);font-weight:600;letter-spacing:.12em;margin-left:5px}
 .tsep{width:1px;height:18px;background:rgba(0,0,0,.09);margin:0 5px}
 .proj{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2)}
-.proj b{color:var(--tx);font-weight:600;cursor:pointer}
+.proj b{color:var(--tx);font-weight:600}
 .tbtn{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:var(--r-sm);border:none;background:transparent;color:var(--tx2);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s cubic-bezier(.25,.1,.25,1)}
 .tbtn:hover{background:rgba(0,0,0,.06);color:var(--tx)}
 .tbtn:active,.mode-btn:active,.ctool:active{transform:scale(.96)}
@@ -117,6 +117,7 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .lfoot{padding:8px 12px;border-top:var(--bd);display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--tx3);background:rgba(0,0,0,.02);font-family:ui-monospace}
 .lfoot .eng{display:flex;align-items:center;gap:6px;font-weight:600}
 .lfoot .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.lfoot .dot.bad{background:#e0483e}
 /* 画板行（图层 tab 顶部） */
 .abrow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--r-md);cursor:pointer;margin-bottom:2px;border:1px solid transparent;font-size:12px;transition:background .12s ease,border-color .12s ease}
 .abrow:hover{background:rgba(0,0,0,.04)}
@@ -130,12 +131,6 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .layerrow.on{background:rgba(0,122,255,.09);color:var(--acc-tx);font-weight:600}
 .layerrow .lic{width:15px;text-align:center;flex-shrink:0;opacity:.7;font-size:11px}
 .layerrow .lnm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* UX 审计卡 */
-.audit{margin-top:12px;padding:11px;border-radius:var(--r-lg);background:rgba(157,78,221,.06);border:1px solid rgba(157,78,221,.25)}
-.audit h5{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#7c3aed;margin-bottom:6px}
-.audit p{font-size:11px;color:var(--tx2);line-height:1.55;margin-bottom:8px}
-.audit button{width:100%;padding:6px 0;border:none;border-radius:7px;background:#7c3aed;color:#fff;font-size:11px;font-weight:600;cursor:pointer}
-.audit button:hover{background:#6d28d9}
 /* 组件网格 */
 .compsearch{width:100%;background:rgba(0,0,0,.045);border:1px solid rgba(0,0,0,.07);border-radius:var(--r-md);padding:6px 10px;font-size:12px;outline:none;margin-bottom:8px}
 .compsearch:focus{border-color:var(--acc-tx);background:#fff}
@@ -156,8 +151,10 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .compcell .prev svg{width:100%!important;height:100%!important;pointer-events:none}
 .compcell .nm{font-size:10px;font-weight:600;color:var(--tx2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 流程 */
-.flowrow{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:var(--r-md);font-family:ui-monospace;font-size:10.5px;color:var(--tx2);margin-bottom:3px;background:#fff;border:1px solid rgba(0,0,0,.07)}
+.flowrow{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:var(--r-md);font-family:ui-monospace;font-size:10.5px;color:var(--tx2);margin-bottom:3px;background:#fff;border:1px solid rgba(0,0,0,.07);cursor:pointer}
 .flowrow .arr{color:var(--acc-tx);font-weight:700}
+.flowrow .flow-del{margin-left:auto;color:#c34;cursor:pointer;opacity:.55;padding:0 3px;font-size:11px}
+.flowrow .flow-del:hover{opacity:1}
 .hintbox{color:var(--tx3);font-size:11px;line-height:1.8;padding:6px 4px}
 .hintbox b{color:var(--tx2)}
 
@@ -236,10 +233,6 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .ap-head .ctx{font-size:10.5px;color:var(--tx3);font-family:ui-monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .ap-head .x{color:var(--tx3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:6px;line-height:1}
 .ap-head .x:hover{background:rgba(0,0,0,.05)}
-.ap-plan{display:none;padding:0 12px 6px}
-.ap-plan .step{display:flex;gap:7px;font-size:11px;color:var(--tx2);padding:2.5px 0;align-items:baseline}
-.ap-plan .step .n{width:15px;height:15px;border-radius:4px;background:rgba(0,0,0,.06);font-family:ui-monospace;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.ap-plan .step.done .n{background:rgba(40,167,69,.14);color:var(--ok)}
 .ap-body{padding:0 12px 9px}
 .ap-input{width:100%;border:1.5px solid rgba(0,0,0,.1);border-radius:var(--r-md);padding:8px 11px;font-size:12px;resize:none;outline:none;background:rgba(0,0,0,.02);transition:all .15s cubic-bezier(.25,.1,.25,1)}
 .ap-input:focus{border-color:#9d4edd;background:#fff;box-shadow:0 0 0 3px rgba(157,78,221,.12)}
@@ -280,6 +273,8 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .ix-row span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ix-row button{border:1px solid rgba(0,0,0,.12);background:#fff;border-radius:6px;font-size:9.5px;padding:1px 6px;cursor:pointer}
 .ix-empty{font-size:10.5px;color:var(--tx3);padding:3px 2px}
+.st-chip{border:1px solid rgba(0,0,0,.12);background:rgba(0,0,0,.03);border-radius:6px;padding:1px 7px;font-size:10px;color:var(--tx2);cursor:pointer;margin-left:4px}
+.st-chip:hover{border-color:var(--acc-tx);color:var(--acc-tx)}
 .seg2{display:flex;gap:4px}
 .seg2 button{flex:1;height:26px;border:1px solid rgba(0,0,0,.1);background:#fff;border-radius:7px;font-size:10.5px;font-weight:600;color:var(--tx2);cursor:pointer}
 .seg2 button.on{background:var(--acc);color:#fff;border-color:var(--acc-tx)}
@@ -343,8 +338,6 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 .statusbar .tag.a{background:rgba(124,58,237,.12);color:#7c3aed}
 .statusbar .op{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
 .statusbar .op.err{color:#e05252}
-.statusbar .meta{display:flex;gap:12px;color:var(--tx3);flex-shrink:0;align-items:center}
-.statusbar .meta b{color:var(--tx2);font-weight:600}
 .tmenu{display:flex;align-items:center;gap:8px;width:100%;border:none;background:transparent;padding:6px 10px;border-radius:7px;font-size:12px;color:var(--tx2);cursor:pointer;text-align:left}
 .tmenu:hover{background:rgba(0,122,255,.08);color:var(--acc-tx)}
 .tmenu.cur{color:var(--acc-tx);font-weight:700}
@@ -380,6 +373,13 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 .empty-card p{color:var(--tx3);font-size:12px;margin-bottom:22px}
 .empty-card p kbd{background:rgba(0,0,0,.06);border-radius:5px;padding:1px 6px;font-family:ui-monospace;font-size:10.5px}
 .tpl-row{display:flex;gap:11px;justify-content:center;align-items:stretch;flex-wrap:wrap}
+.tpl-more{margin:13px auto 0;display:block;background:none;border:none;color:var(--tx3);font-size:11.5px;cursor:pointer;padding:4px 12px;border-radius:8px;transition:all .15s}
+.tpl-more:hover{color:var(--acc-tx);background:color-mix(in srgb,var(--acc) 8%,transparent)}
+.tpl-all{margin-top:11px;max-width:560px}
+.tpl-all .tpl-card{width:96px;padding:8px}
+.tpl-all .tpl-card .th{height:56px;margin-bottom:6px}
+.tpl-all .tpl-card h5{font-size:11px}
+.tpl-all .tpl-card span{font-size:9px}
 .compcell.uc{border-color:rgba(75,107,251,.45);background:linear-gradient(180deg,#fff,#f0f4ff)}
 body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .tpl-card{width:126px;padding:11px;background:var(--card-bg);border:1px solid var(--card-line);border-radius:12px;cursor:pointer;transition:all .15s;text-align:left;box-shadow:var(--sh-sm);display:flex;flex-direction:column}
@@ -454,7 +454,6 @@ body.mode-play .ghost-new,body.mode-play #agent-pop{display:none!important}
 body.mode-play .frame-wrap:not(.active){display:none!important}
 body.mode-play .frame-chrome{pointer-events:none;opacity:.55}
 body.mode-play .stage{justify-content:center;padding-top:36px}
-canvas-hint-removed{}
 
 /* ================================================================
    THEMES
@@ -626,8 +625,7 @@ body[data-mode="dark"] .frame-wrap:not(.active):hover .frame-body{box-shadow:0 1
 /* 提示条 pill 化 + 内辉光 */
 body[data-mode="dark"] .canvas-tail,body[data-mode="dark"] .toast{border-radius:999px}
 /* 强调色文字/卡片的 dark 可读性（紫 #7c3aed 在深底仅 ~3.2:1） */
-body[data-mode="dark"] .audit{background:rgba(157,78,221,.14);border-color:rgba(157,78,221,.4)}
-body[data-mode="dark"] .audit h5,body[data-mode="dark"] .ctool.magic,body[data-mode="dark"] .trk-h .who{color:#A78BFA}
+body[data-mode="dark"] .ctool.magic,body[data-mode="dark"] .trk-h .who{color:#A78BFA}
 body[data-mode="dark"] #agent-model-hint .warn{color:#FBBF24}
 /* 输入类/按钮的 dark 底色（浅色硬编码 #fff 的收口） */
 body[data-mode="dark"] .ap-input,body[data-mode="dark"] .ap-input:focus{background:var(--panel-input,#1f1f1f);border-color:var(--panel-line,rgba(255,255,255,.12));color:var(--tx)}
@@ -693,10 +691,12 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div class="fmenu-pop" id="fmenu-pop">
       <button class="fmenu-item" onclick="fmAct('newProject')"><span>新建项目</span><span class="kbd">Ctrl+N</span></button>
       <button class="fmenu-item" onclick="fmAct('openProject')"><span>打开 DDP…</span><span class="kbd">Ctrl+O</span></button>
-      <button class="fmenu-item" onclick="fmAct('saveProject')"><span>保存（导出 DDP）…</span><span class="kbd">Ctrl+S</span></button>
+      <button class="fmenu-item" onclick="fmAct('saveProject')"><span>保存</span><span class="kbd">Ctrl+S</span></button>
       <button class="fmenu-item" onclick="fmAct('exportDdp')"><span>导出 DDP…</span></button>
       <div class="fmenu-sep"></div>
-      <button class="fmenu-item" onclick="fmAct('validateMbt')"><span>校验并渲染（AgentGate）</span></button>
+      <button class="fmenu-item" onclick="fmAct('validateMbt')"><span>校验并渲染</span></button>
+      <button class="fmenu-item" onclick="fmAct('exportHtmlProto')"><span>导出 HTML 原型…</span></button>
+      <button class="fmenu-item" onclick="fmAct('exportSvg')"><span>导出 SVG（当前画板）…</span></button>
       <button class="fmenu-item" onclick="fmAct('runAutoFix')"><span>自动修复（引擎还债）</span></button>
       <div class="fmenu-sep"></div>
       <button class="fmenu-item" onclick="fmAct('openShortcuts')"><span>快捷键说明</span><span class="kbd">Ctrl+/</span></button>
@@ -717,8 +717,8 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   </div>
   <span class="spacer" style="flex:1" data-tauri-drag-region></span>
   <button class="tbtn" onclick="newProject()" title="新建项目"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></button>
-  <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）— 选择文件后按需输入密码解密"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
-  <button class="tbtn" onclick="saveProject()" title="保存 / 导出 DDP（⌘S）— 可选择加密或免密"><svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
+  <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）— 先输密码（免密留空）再选文件"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+  <button class="tbtn" onclick="saveProject()" title="保存（⌘S）· 已有路径原地回写，否则另存"><svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
   <button class="tbtn" onclick="openSettings()" title="设置（外观 / AI 端点）" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <span class="tsep"></span>
   <button class="tbtn" onclick="togglePlay()" title="演示模式（⌘4）· 工作区内禁编辑"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5z"/></svg>演示</button>
@@ -756,7 +756,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         ① 在画布中设计好你的组件样式<br>
         ② 点上方「画板 → 组件」保存到本地<br>
         ③ 在下方「我的组件」分区拖入复用<br>
-        <span style="font-size:9.5px;opacity:.75">Agent 也能帮你生成：对 Prompt 说「做一个 XX 组件」</span>
+        <span style="font-size:9.5px;opacity:.75">Agent 也能帮你生成：对 Prompt 说「做一个 XX 组件」<br>⚠ 用户组件库尚未接线——上述按钮当前会提示不可用</span>
       </div>
       <div id="comp-tree"><div class="hintbox">加载中…</div></div>
     </div>
@@ -766,7 +766,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <div class="sec"><span>Story / 意图</span></div>
       <div class="hintbox">用底部 Prompt 条描述流程意图：<br>「登录后跳转仪表盘」→ Agent 自动建立交互流。</div>
     </div>
-    <div class="lfoot"><span class="eng"><span class="dot"></span><span id="eng-name">deepDesign Engine</span></span><span id="eng-ms">—</span></div>
+    <div class="lfoot"><span class="eng"><span class="dot" id="eng-dot"></span><span id="eng-name">deepDesign Engine</span></span><span id="eng-ms">—</span></div>
   </div>
 
   <!-- ================= 画布 ================= -->
@@ -775,12 +775,12 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <b id="tail-artboard">未打开画板</b>
       <span id="tail-info"></span>
       <span style="flex:1"></span>
-      <span id="tail-ops">0 ops</span>
+      <span id="tail-rev"></span>
     </div>
     <div class="canvas-scroll" id="canvas-scroll">
       <div class="ctools">
         <button class="ctool on" data-tool="select" title="选择 (V)"><svg class="ic" viewBox="0 0 24 24"><path d="M5 3l14 8-6.5 1.5L9 19z"/></svg></button>
-        <button class="ctool" data-tool="frame" title="画板 (A)"><svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M9 4v16M15 4v16M4 9h16M4 15h16"/></svg></button>
+        <button class="ctool" data-tool="frame" title="画板工具开发中——用 Prompt 或模板建板"><svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M9 4v16M15 4v16M4 9h16M4 15h16"/></svg></button>
         <button class="ctool" data-tool="text" title="文本 (T)"><svg class="ic" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
         <button class="ctool" data-tool="link" title="连接交互（先点源按钮，再点目标画板）"><svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/></svg></button>
         <div style="width:1px;height:16px;background:rgba(0,0,0,.1);margin:0 3px"></div>
@@ -799,11 +799,9 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <div class="big"></div>
           <h2>从 deepDesign 开始</h2>
           <p>选择模板即刻开始，或按 <kbd>⌘K</kbd> 直接对 Agent 下命令</p>
-          <div class="tpl-row">
-            <div class="tpl-card" onclick="quickStart('web_login',1280,800)"><div class="th" id="th-tpl-web_login"></div><h5>Web 登录</h5><span>1280 × 800</span></div>
-            <div class="tpl-card" onclick="quickStart('adaptive_landing',1280,800)"><div class="th" id="th-tpl-adaptive_landing"></div><h5>自适应落地页</h5><span>结构式 · 可切设备</span></div>
-            <div class="tpl-card" onclick="quickStart('login',390,844)"><div class="th" id="th-tpl-login"></div><h5>手机登录</h5><span>390 × 844</span></div>
-          </div>
+          <div class="tpl-row" id="tpl-row"></div>
+          <button class="tpl-more" id="tpl-more" onclick="toggleAllTpl()">浏览全部模板（14）▾</button>
+          <div class="tpl-row tpl-all" id="tpl-all" style="display:none"></div>
         </div>
       </div>
       <div id="decl-stage">
@@ -839,7 +837,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <svg class="ic" style="color:var(--purple)" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>
           <input id="gp-input" placeholder="描述意图（如：生成 Web 登录页 / 一键修复 / 深色主题）…" onkeydown="if(event.key==='Enter')runGlobalPrompt()">
           <span class="kbd">⌘K</span>
-          <button class="go" onclick="runGlobalPrompt()"><svg class="ic" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>一键生成</button>
+          <button class="go" id="gp-send" onclick="runGlobalPrompt()"><svg class="ic" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>一键生成</button>
         </div>
       </div>
     </div>
@@ -856,7 +854,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <div id="insp-body">
         <div class="empty-insp">
           <svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M3.5 12.5l8-8a2.1 2.1 0 0 1 3 0l7 7a2.1 2.1 0 0 1 0 3l-8 8a2.1 2.1 0 0 1-3 0l-7-7a2.1 2.1 0 0 1 0-3z"/><path d="M9 9h.01M14.5 14.5L9 20"/></svg>
-          <div style="font-size:12.5px;color:var(--tx2);font-weight:600;margin-bottom:4px">未选中元素</div><div>在画布中点选任意元素<br>属性与约束将在此显示</div><div class="kbd-group"><span class="kbd-row"><span>删除元素</span><kbd>Del</kbd></span><span class="kbd-row"><span>改文字</span><kbd>双击</kbd></span></div>
+          <div style="font-size:12.5px;color:var(--tx2);font-weight:600;margin-bottom:4px">未选中元素</div><div>在画布中点选任意元素<br>属性与交互将在此显示</div><div class="kbd-group"><span class="kbd-row"><span>删除元素</span><kbd>Del</kbd></span><span class="kbd-row"><span>改文字</span><kbd>双击</kbd></span></div>
         </div>
       </div>
     </div>
@@ -876,8 +874,6 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 <div class="statusbar">
   <span class="tag h" id="sb-tag">READY</span>
   <span class="op" id="sb-op">三条输入汇入同一命令流：人类拖拽 · Agent 指令 · 模板</span>
-  <span class="meta">
-    <span></span>
 </div>
 
 <!-- 悬浮行内 Agent -->
@@ -888,14 +884,13 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <span class="ctx" id="ap-ctx"></span>
     <span class="x" onclick="closeAgentPop()">✕</span>
   </div>
-  <div class="ap-plan" id="ap-plan"></div>
   <div class="ap-body">
-    <textarea class="ap-input" id="ap-input" rows="1" placeholder="用一句话描述修改…（⏎ 执行）"></textarea>
+    <textarea class="ap-input" id="ap-input" rows="1" placeholder="用一句话描述修改…（⏎ 执行）" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgent();}"></textarea>
     <div class="ap-chips" id="ap-chips"></div>
     <div class="ap-result" id="ap-result"></div>
   </div>
   <div class="ap-foot">
-    <span class="ap-hint">指令 → 计划 → 命令，全程追踪可撤销</span>
+    <span class="ap-hint">指令 → 引擎命令，全程实时追踪</span>
     <button class="ap-send" id="ap-send" onclick="sendAgent()"><svg class="ic" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>执行</button>
   </div>
 </div>
@@ -908,13 +903,14 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 <div id="shortcuts-modal" onclick="if(event.target===this)closeShortcuts()">
   <div class="sc-card">
     <h3>快捷键与菜单说明</h3>
-    <div class="sc-sub">所有菜单动作最终都经引擎 CLI 落到唯一事实源 .mbt.md</div>
+    <div class="sc-sub">所有菜单动作最终经 WebView 内的 wasm 引擎落到唯一事实源 .mbt.md</div>
     <h4>菜单栏 · 文件</h4>
     <table>
       <tr><td><kbd>⌘N</kbd></td><td>新建项目（模板选择）</td></tr>
       <tr><td><kbd>⌘O</kbd></td><td>打开 DDP（解密 → MBT 重载）</td></tr>
-      <tr><td><kbd>⌘S</kbd></td><td>保存（导出加密 DDP）</td></tr>
+      <tr><td><kbd>⌘S</kbd></td><td>保存（已有路径原地回写；否则另存）</td></tr>
       <tr><td><kbd>⇧⌘E</kbd></td><td>导出 DDP（设置密码）</td></tr>
+      <tr><td><kbd>⇧⌘H</kbd></td><td>导出 HTML 原型（自包含可交互）</td></tr>
     </table>
     <h4>菜单栏 · 视图</h4>
     <table>
@@ -1000,7 +996,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </label>
     </div>
     <div class="settings-sec">AI 端点（Agent）</div>
-    <p class="settings-note">Agent 基于 @open-agent-loops/core，操作一律经 MoonViz AgentGate 校验后写回 <code>.mbt.md</code>。此处配置 LLM 驱动端点：URL 含 <code>/anthropic</code> 走 Anthropic Messages 协议（x-api-key），其余按 OpenAI chat 兼容格式处理。</p>
+    <p class="settings-note">Agent 为本应用内置的 Rust 进程内循环（wasmtime 引擎宿主），变更经 MoonViz 引擎门校验后写回唯一事实源 <code>.mbt.md</code>。此处配置 LLM 驱动端点：URL 含 <code>/anthropic</code> 走 Anthropic Messages 协议（x-api-key），其余按 OpenAI chat 兼容格式处理。</p>
     <div class="settings-grid">
       <label class="wide">服务商预设
         <select id="provider-preset" class="settings-select" onchange="applyProvider(this.value)">
@@ -1017,6 +1013,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <option value="minimax-anthropic-intl">MiniMax（Anthropic 国际）</option>
           <option value="stepfun">StepFun</option>
           <option value="stepfun-plan">StepFun 订阅</option>
+          <option value="custom">自定义 / 其他端点</option>
         </select>
       </label>
       <label class="wide">Base URL<input id="agent-base-url" placeholder="留空 = https://api.deepseek.com（DeepSeek 默认）；支持任意 OpenAI 兼容端点，或 .../anthropic 端点（自动走 Messages 协议）；本地 http 仅限内网地址"></label>
@@ -1047,7 +1044,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 <!-- 演示模式浮层（工作区内：隐藏编辑面板，仅保留交互演示） -->
 <div class="play-chip" id="play-chip">
   <span class="pc-crumb" id="play-crumb"></span>
-  <span style="color:var(--tx3);font-size:10.5px">绿框 = 可点击跳转 · Esc 返回上一页</span>
+  <span style="color:var(--tx3);font-size:10.5px">绿框 = 可点击交互（跳转 / 文字与状态变更） · Esc 返回上一页</span>
   <button onclick="exitPlay()"><svg class="ic" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>退出演示</button>
 </div>
 
@@ -1100,6 +1097,14 @@ let currentW=390,currentH=844;
 let flows=[],sessions={},active='',filePath='',placing=0,placeMode=null;
 let studioFlows=[]; // Legacy migration cache only; canonical flow state now lives in mbtText.
 let mbtText='',mbtRevision=0,declDraftDirty=false;
+let projectDirty=false,fileLabelName='';
+let ddpSessionPassword=''; // 会话级：仅记住本次打开/导出所用口令，供原地保存复用；不持久化
+/* 脏 = 内容脏（applyMbtResult 变更）∨ 源码草稿脏（decl-text 未提交编辑）——
+ * ● 标记、新建/打开/退出守卫、Rust PROJECT_DIRTY（关窗拦截）共用这一语义 */
+function anyDirty(){return projectDirty||declDraftDirty;}
+function syncFileLabel(){$('file-label').textContent=(anyDirty()?'● ':'')+(fileLabelName||('v'+APP_VER));}
+function setFileLabel(name){fileLabelName=name;syncFileLabel();}
+function syncDirtyRemote(){if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_project_dirty',{dirty:projectDirty||declDraftDirty}).catch(()=>{});}
 let projectQueue=Promise.resolve();
 function serializeProject(task){const pending=projectQueue.then(task);projectQueue=pending.catch(()=>{});return pending;}
 let toolMode='select',mode='wireframe',playStack=[],currentSvg='';
@@ -1108,8 +1113,20 @@ let inlineTarget=null;
 let ctxTarget=null;
 let suppressComponentClick=false;
 let modelRegistry=null;   // models.dev 快照（src-tauri/models.json，经 model_registry 命令下发）
+let agentBusy=false;      // Agent 在飞保护：全局 Prompt 与行内 Agent 共用（单 wasmtime 单例 + 单槽会话缓存，不允许并发 run）
 const $=id=>document.getElementById(id);
-$('decl-text').addEventListener('input',()=>{declDraftDirty=true;});
+$('decl-text').addEventListener('input',()=>{declDraftDirty=true;syncFileLabel();syncDirtyRemote();});
+/* 原生 WebView 右键菜单（Reload / Inspect Element 等）一律禁用（严禁开发者菜单）——
+ * 自定义右键菜单（节点/画布/画板/源码）是自绘 div，不依赖原生行为，不受影响 */
+document.addEventListener('contextmenu',e=>e.preventDefault(),true);
+/* 开发者工具快捷键一律拦下：F12 / Cmd+Opt+I·J·C / Ctrl+Shift+I·J·C
+ * （配合 tauri.conf.json 的 devtools:false，双保险——两层各断一路） */
+document.addEventListener('keydown',e=>{
+  const k=(e.key||'').toLowerCase();
+  if(e.key==='F12'||((e.metaKey||e.ctrlKey)&&(e.altKey||e.shiftKey)&&['i','j','c'].includes(k))){
+    e.preventDefault();e.stopPropagation();
+  }
+},true);
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2400);}
 function utf8ToB64(text){return btoa(unescape(encodeURIComponent(text)));}
 function b64ToUtf8(text){return decodeURIComponent(escape(atob(text)));}
@@ -1150,8 +1167,30 @@ const ENGINE_RECYCLE_BYTES=192*1024*1024;
 function engineRecycleIfNeeded(){
   if(!engineExports)return;
   if(engineExports.memory.buffer.byteLength>ENGINE_RECYCLE_BYTES&&engineBytes){
+    engSessionDrop(); // 先在旧实例上弃会话（句柄只在旧实例有效），再重建
     engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
   }
+}
+/* session 检视桥（与 wasmtime_host 同 ABI）：in 槽载 mbt → session_open_in 得句柄，
+ * 检视类 arg 槽载画板名 → session_*_in(handle)。mbt 键控缓存，只读调用不污染文档 */
+let engSessionCache=null; // {handle, mbt}
+function engSessionDrop(){
+  if(engSessionCache&&engineExports){try{engineExports.session_close(engSessionCache.handle);}catch(_){ }}
+  engSessionCache=null;
+}
+async function engSessionInspect(fn,artboard){
+  await loadEngine();
+  if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  engineRecycleIfNeeded();
+  if(!engSessionCache||engSessionCache.mbt!==mbtText){
+    engSessionDrop();
+    engSlotLoad('in_reset','in_push',mbtText);
+    const h=engineExports.session_open_in();
+    if(!Number.isInteger(h)||h<0)return{ok:false,error:'session_open_failed'};
+    engSessionCache={handle:h,mbt:mbtText};
+  }
+  engSlotLoad('arg_reset','arg_push',artboard||'');
+  return JSON.parse(engReadStr(engineExports[fn+'_in'](engSessionCache.handle)));
 }
 function loadEngine(){
   if(engineReady)return engineReady;
@@ -1161,7 +1200,7 @@ function loadEngine(){
       if(!r.ok)throw new Error('wasm fetch HTTP '+r.status);
       engineBytes=await r.arrayBuffer();   // 缓存字节供回收重建
       engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
-    }catch(err){engineFailed=String(err&&err.message||err);}
+    }catch(err){engineFailed=String(err&&err.message||err);const d=$('eng-dot');if(d)d.classList.add('bad');}
   })();
   return engineReady;
 }
@@ -1195,6 +1234,15 @@ async function engValidate(mbt){
   engSlotLoad('in_reset','in_push',mbt);
   return JSON.parse(engReadStr(engineExports.validate_mbt_in()));
 }
+/* 自包含可交互 HTML 原型（经典导出 export_html：mbt 进 → {ok,html} 出），
+ * 交付闭环用——原型工具不能只交得出 .ddp */
+async function engExportHtml(mbt){
+  await loadEngine();
+  if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  engineRecycleIfNeeded();
+  engSlotLoad('in_reset','in_push',mbt);
+  return JSON.parse(engReadStr(engineExports.export_html_in()));
+}
 /* 引擎要求文档至少一个视觉块才能承载 op——空项目起步用最小种子画板引导，
  * 首条 op 落地后随即删掉种子（create 直接以种子为画板，一次 render 即成）。 */
 const SEED_BOARD='__seed';
@@ -1214,8 +1262,11 @@ function mbtResult(result){
 function applyMbtResult(result,{reset=false,acceptDraft=false}={}){
   if(!result||result.ok!==true||!result.mbt)throw new Error('引擎未返回 canonical .mbt.md');
   if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;placeMode=null;playStack=[];}
+  const changed=mbtText!==result.mbt;
   mbtText=result.mbt;mbtRevision=Number(result.revision)||0;
-  const decl=$('decl-text');if(reset||acceptDraft)declDraftDirty=false;if(decl&&!declDraftDirty)decl.value=mbtText;if(typeof renderDeclHighlight==='function')renderDeclHighlight();
+  // 仅内容真变化才置脏（校验并渲染同一 canonical 不应让刚保存的文档复活圆点）
+  if(changed){projectDirty=true;syncFileLabel();syncDirtyRemote();}
+  const decl=$('decl-text');if(reset||acceptDraft){declDraftDirty=false;syncDirtyRemote();}if(decl&&!declDraftDirty)decl.value=mbtText;if(typeof renderDeclHighlight==='function')renderDeclHighlight();
   const next={};
   for(const art of result.artboards||[]){
     next[art.id]={baseCmd:'__mbt__',w:Math.round(art.width||390),h:Math.round(art.height||844),ops:[],svg:art.svg||'',nodes:art.nodes||[]};
@@ -1248,7 +1299,7 @@ function setStatus(src,cmd,ok,detail){
     op.innerHTML=cmd.replace(/</g,'&lt;')+(ok?'':' <span style="color:#e05252">✗ '+escHtml(detail||'failed')+'</span>');
     op.classList.toggle('err',!ok);
   }
-  const _ops=$('tail-ops');if(_ops)_ops.textContent=opCmds.length+' ops';
+  const _rev=$('tail-rev');if(_rev)_rev.textContent=mbtRevision>0?'rev '+mbtRevision:'';
 }
 window.addEventListener('unhandledrejection',e=>setStatus('agent','引擎调用失败',false,String(e.reason).slice(0,60)));
 
@@ -1460,7 +1511,19 @@ function renderFlows(){
   const el=$('flow-list');
   $('flow-cnt').textContent=flows.length;
   if(!flows.length){el.innerHTML='<div class="hintbox">暂无跳转。选中按钮后对 Agent 说「<b>链接 p2</b>」，或 ⌘K → <b>flow p1 p2 节点</b></div>';return;}
-  el.innerHTML=flows.map(f=>`<div class="flowrow">⛓ <span>${escHtml(f.from)}</span><span class="arr">→</span><b style="color:var(--acc-tx)">${escHtml(f.to)}</b><span style="color:var(--tx3)">${escHtml(f.trigger)}</span></div>`).join('');
+  el.innerHTML='';
+  // 每行：点击跳目标画板；✕ 走引擎 unflow 删除单条边（moonviz#12 于 0.1.5-fix-2 落地）
+  flows.forEach(f=>{
+    const node=(f.trigger||'').replace('tap:','');
+    const d=document.createElement('div');d.className='flowrow';
+    d.title='点击切换到 '+f.to;
+    d.innerHTML=`⛓ <span>${escHtml(f.from)}</span><span class="arr">→</span><b style="color:var(--acc-tx)">${escHtml(f.to)}</b><span style="color:var(--tx3)">${escHtml(f.trigger)}</span>`;
+    d.onclick=()=>{if(sessions[f.to])switchSession(f.to);};
+    const del=document.createElement('span');del.className='flow-del';del.textContent='✕';del.title='删除此交互边（unflow）';
+    del.onclick=ev=>{ev.stopPropagation();runOp(`unflow ${f.from} ${f.to} ${node}`,'human').then(ok=>{if(ok)toast('已删除交互边 '+f.from+' → '+f.to);});};
+    d.appendChild(del);
+    el.appendChild(d);
+  });
 }
 
 /* ---------- 图层树 ---------- */
@@ -1658,7 +1721,8 @@ document.addEventListener('contextmenu',ev=>{
   if(mode==='play')return;
   // 画布外右键时收掉残留的自绘菜单（节点/画板菜单不再悬在原地）
   hideMenu();
-  // 只接管画布区域与源码编辑器的右键；其余交给系统/输入框默认菜单
+  // 只收掉残留的自绘菜单（节点/画板菜单不再悬在原地）；原生菜单已被
+  // 顶部捕获级 contextmenu preventDefault 全局禁用，画布区域在此弹自定义菜单
   const cs=$('canvas-scroll');
   const ds=$('decl-stage');
   if(cs&&cs.contains(ev.target)&&!(ds&&ds.contains(ev.target))){
@@ -1707,7 +1771,7 @@ function canvasMenu(x,y){
     '-',
     {label:mode==='hifi'?'◻ 切换到线框图':'🎨 切换到高保真',action:()=>setMode(mode==='hifi'?'wireframe':'hifi')},
     {label:'‹/› 查看 MBT 源码',kbd:'⌘3',action:()=>setMode('decl')},
-    {label:'✓ 校验并渲染（AgentGate）',action:()=>validateMbt()},
+    {label:'✓ 校验并渲染',action:()=>validateMbt()},
     {label:'▶ 演示模式',kbd:'⌘4',action:()=>setMode('play')},
     '-',
     {label:'⛶ 适配窗口',kbd:'⌘0',action:()=>zoomReset()},
@@ -1733,7 +1797,7 @@ function declMenu(x,y){
     {label:'⌿ 全选',kbd:'⌘A',action:()=>{const d=$('decl-text');d.focus();d.select();}},
     {label:'⧉ 复制源码',action:()=>{navigator.clipboard.writeText($('decl-text').value).then(()=>toast('已复制完整 .mbt.md'));}},
     '-',
-    {label:'✓ 校验并渲染（AgentGate）',action:()=>validateMbt()},
+    {label:'✓ 校验并渲染',action:()=>validateMbt()},
     {label:'🗑 清空编辑器',danger:true,action:()=>{$('decl-text').value='';declDraftDirty=true;renderDeclHighlight();$('decl-text').focus();}},
   ]);
 }
@@ -1779,6 +1843,8 @@ function nativeMenuAction(id){
     'open-ddp':()=>openProject(),
     'save':()=>saveProject(),
     'export-ddp':()=>exportDdp(),
+    'export-html':()=>exportHtmlProto(),
+    'export-svg':()=>exportSvg(),
     'view-wireframe':()=>setMode('wireframe'),
     'view-hifi':()=>setMode('hifi'),
     'view-decl':()=>setMode('decl'),
@@ -1790,12 +1856,24 @@ function nativeMenuAction(id){
     'validate':()=>{setMode('decl');validateMbt();},
     'shortcuts':()=>openShortcuts(),
     'settings':()=>openSettings(),
+    'quit-app':()=>quitApp(),
   };
   if(map[id])map[id]();
 }
 /* 原生菜单经 Rust webview.eval 直调 nativeMenuAction；
  * 不再注册 event.listen——Tauri ACL 默认未放行 event:allow-listen，
  * 曾在状态栏留下「引擎调用失败 × event.listen not allowed」报错。 */
+/* ⌘Q/菜单退出：预置 quit 走 terminate: 不触发 CloseRequested（拦截对它无效），
+ * 故自定义菜单项经此函数——脏确认后 app_exit，否则留在文档 */
+async function quitApp(){
+  if(anyDirty()){
+    const stay=await window.__TAURI__.core.invoke('confirm_discard',{title:'未保存的更改',message:'当前文档有未保存的更改（含源码草稿），确定退出吗？'}).catch(()=>true);
+    if(stay)return;
+    projectDirty=false;declDraftDirty=false;syncFileLabel();
+    try{await window.__TAURI__.core.invoke('set_project_dirty',{dirty:false});}catch(_){ }
+  }
+  try{await window.__TAURI__.core.invoke('app_exit');}catch(_){winCtl('close');}
+}
 /* ---------- 快捷键说明弹窗 ---------- */
 function openShortcuts(){$('shortcuts-modal').style.display='flex';}
 function closeShortcuts(){$('shortcuts-modal').style.display='none';}
@@ -1817,7 +1895,9 @@ document.addEventListener('keydown',async e=>{
       'n':()=>sh?createBlank():newProject(),
       'o':()=>openProject(),
       'd':()=>sh?duplicateActiveBoard():null,
+      'e':()=>sh?exportDdp():null,
       'f':()=>sh?runAutoFix():null,
+      'h':()=>sh?exportHtmlProto():null,
       '1':()=>setMode('wireframe'),
       '2':()=>setMode('hifi'),
       '3':()=>setMode('decl'),
@@ -1829,6 +1909,13 @@ document.addEventListener('keydown',async e=>{
     if(bind){e.preventDefault();const r=bind();if(r&&r.then)r.catch(()=>{});return;}
   }
   if(document.activeElement&&(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA'))return;
+  /* 工具单键：与 tooltip 承诺一致（V 选择 / T 文本；画板工具未实现，不绑 A）。
+     toLowerCase 兜 CapsLock；不含修饰键，避免吃掉 Ctrl+V 粘贴 */
+  if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['v','t'].includes((e.key||'').toLowerCase())){
+    const btn=document.querySelector(`.ctool[data-tool="${e.key.toLowerCase()==='v'?'select':'text'}"]`);
+    if(btn){e.preventDefault();btn.click();}
+    return;
+  }
   if(e.key==='Escape'&&(placeMode||linkSource)){placeMode=null;linkSource=null;$('canvas-scroll').classList.remove('placing','linking');$('canvas-hint').textContent='选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流';return;}
   if(e.key.startsWith('Arrow')&&selected){
     e.preventDefault();
@@ -1849,7 +1936,7 @@ function openAgentPop(ev){
   const n=nodeOf(selected);if(!n)return;
   const pop=$('agent-pop');
   $('ap-ctx').textContent=selected+' · '+(n.component&&n.component!=='frame'?n.component:n.kind);
-  $('ap-plan').style.display='none';$('ap-result').style.display='none';
+  $('ap-result').style.display='none';
   const chips=$('ap-chips');chips.innerHTML='';
   QUICK.forEach(c=>{const s=document.createElement('span');s.className='ap-chip';s.textContent=c;s.onclick=()=>{$('ap-input').value=c;$('ap-input').focus();};chips.appendChild(s);});
   pop.style.display='block';
@@ -1864,9 +1951,9 @@ function closeAgentPop(){$('agent-pop').style.display='none';}
 async function sendAgent(){
   const text=$('ap-input').value.trim();if(!text||!selected)return;
   const n=nodeOf(selected);if(!n)return;
-  $('ap-send').disabled=true;
-  const planEl=$('ap-plan');const res=$('ap-result');
-  const showSteps=steps=>{planEl.style.display='block';planEl.innerHTML=steps.map((s,i)=>`<div class="step" id="apstep${i}"><span class="n">${i+1}</span><span>${escHtml(s)}</span></div>`).join('');};
+  if(agentBusy){toast('上一条还在生成中…');return;}
+  agentBusy=true;$('ap-send').disabled=true;
+  const res=$('ap-result');
   try{
     loadAgentConfig();
     // 注入选区上下文，让 agent 知道用户针对哪个节点/画板；澄清续轮拼接上文
@@ -1881,29 +1968,33 @@ async function sendAgent(){
         agentThread.pending=r.text.trim();
         res.style.display='block';res.className='ap-result ok';res.style.whiteSpace='pre-wrap';
         res.textContent='🤖 '+r.text.trim()+'\n\n— 在下方输入回答后再次发送，Agent 会结合回答继续';
-        $('ap-send').disabled=false;return;
+        $('ap-send').disabled=false;agentBusy=false;return;
       }
       res.style.display='block';res.className='ap-result err';
       res.textContent=r.partial_error?('Agent 出错：'+String(r.partial_error).slice(0,120)):'未生成可执行操作';
-      $('ap-send').disabled=false;return;
+      $('ap-send').disabled=false;agentBusy=false;return;
     }
     agentThread.pending=null;
     // 已提交工作不得丢:render 缺失时从 mbt_b64 的 canonical 重渲染兜底
     if(r.render){
-      try{await serializeProject(()=>applyMbtResult(r.render));}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用渲染结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;return;}
+      try{await serializeProject(()=>applyMbtResult(r.render));}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用渲染结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;agentBusy=false;return;}
     }else if(r.mbt_b64){
       const src=b64ToUtf8(r.mbt_b64);
-      await serializeProject(async()=>{mbtText=src;await renderMbtSource();});
+      // 直写 mbtText 绕过 applyMbtResult 的脏逻辑——agent 已提交的工作必须显式置脏
+      await serializeProject(async()=>{mbtText=src;projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();});
     }
-    document.querySelectorAll('#ap-plan .step').forEach(s=>s.classList.add('done'));
     res.style.display='block';res.className='ap-result ok';
     const cut=r.stopReason==='max_turns'?'（已达步数上限）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
-    res.textContent=`已通过 MoonViz 提交 ${r.ops.length} 条变更（AgentGate）${cut}${r.text?' — '+String(r.text).slice(0,120):''}`;
+    res.textContent=`已通过 MoonViz 提交 ${r.ops.length} 条变更${cut}${r.text?' — '+String(r.text).slice(0,120):''}`;
     trackAgent(text,r.ops);
     $('ap-send').disabled=false;$('ap-input').value='';
   }catch(err){
-    res.style.display='block';res.className='ap-result err';res.textContent='Agent 不可用：'+String(err).slice(0,120);
+    const msg=String(err);
+    res.style.display='block';res.className='ap-result err';
+    res.textContent=msg.includes('api_key_missing')?'未配置 AI 端点：请到 设置 ▸ AI 端点 填入 Base URL 与 Token':('Agent 不可用：'+msg.slice(0,120));
     $('ap-send').disabled=false;
+  }finally{
+    agentBusy=false;
   }
 }
 /* Agent 追踪（参考 diff 卡） */
@@ -1918,25 +2009,25 @@ function trackAgent(instruction,cmds){
   body.prepend(d);
 }
 /* ---------- Agent 追踪（右侧面板）：实时任务轨迹 ---------- */
-/* agent run 实时时间线：invoke 前挂 agent-event 监听，逐步渲染
- * 用户指令 / assistant 计划 / 每个工具调用与结果（含被拒/失败）/ 终态 */
-const TRACE={un:null,run:0};
+/* agent run 实时时间线：事件监听全局只注册一次（按事件里的 run id 分发到对应容器），
+ * traceOpen 只负责新建本次 run 的容器——多个 run 的事件互不干扰，也不存在
+ * 旧监听器被覆盖泄漏的问题 */
+const TRACE={un:null,tried:false};
 function traceOpen(runId,label){
   const body=$('tl-body');if(!body)return;
-  if(TRACE.un){try{TRACE.un();}catch(_){ } TRACE.un=null;}
-  TRACE.run=runId;
   const wrap=document.createElement('div');wrap.className='tl-run';wrap.id='tl-run-'+runId;
   wrap.innerHTML=`<div class="tl-user">▸ ${escHtml(label)}</div>`;
   body.prepend(wrap);
-  if(!IS_TAURI||!window.__TAURI__.event)return;
+  // tried 标记：listen 失败被吞后不再反复注册（否则每个 run 叠一个监听器）
+  if(TRACE.un||TRACE.tried||!IS_TAURI||!window.__TAURI__.event)return;
+  TRACE.tried=true;
   window.__TAURI__.event.listen('agent-event',ev=>{
     const p=ev.payload||{};
-    if(p.run!==runId)return;
-    const box=document.getElementById('tl-run-'+runId);if(!box)return;
+    const box=document.getElementById('tl-run-'+p.run);if(!box)return;
     if(p.type==='assistant_text'){appendTraceLine(box,'🤖 '+p.text,'tl-assist');return;}
-    if(p.type==='tool_start'){appendTraceLine(box,'⏳ '+p.op,'tl-tool pending','tlstep-'+runId+'-'+p.seq);return;}
+    if(p.type==='tool_start'){appendTraceLine(box,'⏳ '+p.op,'tl-tool pending','tlstep-'+p.run+'-'+p.seq);return;}
     if(p.type==='tool_end'){
-      const line=document.getElementById('tlstep-'+runId+'-'+p.seq);
+      const line=document.getElementById('tlstep-'+p.run+'-'+p.seq);
       if(line){
         line.className='tl-line '+(p.ok?'tl-ok':'tl-err');
         line.innerHTML=(p.ok?'✓ ':'✗ ')+escHtml(line.dataset.op||'')+(p.ms?` <span class="tl-ms">${p.ms}ms</span>`:'')+(p.error?` <span class="tl-err-msg">${escHtml(p.error)}</span>`:'');
@@ -2034,24 +2125,26 @@ function newId(){return 'p'+Date.now().toString(36)+Math.floor(Math.random()*99)
 async function runGlobalPrompt(){
   const inp=$('gp-input');
   const t=inp.value.trim();if(!t)return;
-  // Keep the prompt draft until the user replaces it.
-  // 快捷放置：仅当输入「精确等于」某个组件 id 时才本地放置，其余一律交给 LLM
-  // （旧版用 修复|优化|深色|浅色|白 等子串劫持，"把登录页优化成深色并加按钮"这类
-  //  复合意图被吞成单个 fix/theme——审查 A1，已移除）
-  if(baseCmd&&allComps.some(c=>c.id===t)){
-    placing++;await runOp(`place ${active} ${t} ${t}_${placing} - 60 120`,'agent');trackAgent(t,[`place ${active} ${t}`]);return;
-  }
-  // ===== 兜底：完整自然语言 → AI Agent（不再有"未识别意图"） =====
-  // 无画板时先自动建一个 390×844 画板承接（AI 在其上继续操作）
-  if(!baseCmd||!mbtText){
-    // addBoard(prefix,w,h,src) 自行生成画板 id
-    const okBoard=await addBoard('create',390,844,'agent');
-    if(!okBoard){toast('自动创建画板失败，请检查引擎连接');return;}
-    trackAgent(t,['create 390 844（自动承接）']);
-  }
-  if(gpBusy){toast('上一条还在生成中…');return;}
-  gpBusy=true;$('gp-send')&&($('gp-send').disabled=true);
+  // 在飞门：检查与置位之间不得有 await——中间夹 addBoard 的话，双触发窗口内
+  // 两次都过检查 → 重复建板 + 并发 run（违反标志自身"不允许并发"的不变量）
+  if(agentBusy){toast('上一条还在生成中…');return;}
+  agentBusy=true;$('gp-send')&&($('gp-send').disabled=true);
   try{
+    // Keep the prompt draft until the user replaces it.
+    // 快捷放置：仅当输入「精确等于」某个组件 id 时才本地放置，其余一律交给 LLM
+    // （旧版用 修复|优化|深色|浅色|白 等子串劫持，"把登录页优化成深色并加按钮"这类
+    //  复合意图被吞成单个 fix/theme——审查 A1，已移除）
+    if(baseCmd&&allComps.some(c=>c.id===t)){
+      placing++;await runOp(`place ${active} ${t} ${t}_${placing} - 60 120`,'agent');trackAgent(t,[`place ${active} ${t}`]);return;
+    }
+    // ===== 兜底：完整自然语言 → AI Agent（不再有"未识别意图"） =====
+    // 无画板时先自动建一个 390×844 画板承接（AI 在其上继续操作）
+    if(!baseCmd||!mbtText){
+      // addBoard(prefix,w,h,src) 自行生成画板 id
+      const okBoard=await addBoard('create',390,844,'agent');
+      if(!okBoard){toast('自动创建画板失败，请检查引擎连接');return;}
+      trackAgent(t,['create 390 844（自动承接）']);
+    }
     loadAgentConfig();
     setStatus('agent',t,true,'AI 处理中…');
     // 澄清式多轮：agent 上一轮的提问 + 本轮用户回答 → 拼接为完整指令
@@ -2072,7 +2165,7 @@ async function runGlobalPrompt(){
     agentThread.pending=null;
     $('gp-thread').classList.remove('open');
     if(!r.ops||!r.ops.length){
-      toast(r.error==='api_key_missing'?'请先在设置中配置 AI 端点与 Token':'AI 未生成操作 — 试试更具体的描述，如「做一个微信风格的聊天列表页」');
+      toast('AI 未生成操作 — 试试更具体的描述，如「做一个微信风格的聊天列表页」');
       trackAgent(t,[],false);
       return true;
     }
@@ -2085,7 +2178,7 @@ async function runGlobalPrompt(){
           applyMbtResult({ok:true,mbt:src,entry:r.render.entry,artboards:r.render.artboards,flows:r.render.flows,revision:r.render.revision});
         }else{
           // 桥异常未带 render 时，直接从 canonical 源重渲染兜底
-          mbtText=src;await renderMbtSource();
+          mbtText=src;projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
         }
       });
     }
@@ -2097,7 +2190,7 @@ async function runGlobalPrompt(){
     toast(msg.includes('api_key_missing')?'请先在设置中配置 AI 端点与 Token（设置 ▸ AI 端点）':'AI 调用失败：'+msg.slice(0,90));
     trackAgent(t,[],false);
   }finally{
-    gpBusy=false;if($('gp-send'))$('gp-send').disabled=false;
+    agentBusy=false;if($('gp-send'))$('gp-send').disabled=false;
   }
 }
 function usePrompt(t){$('gp-input').value=t;runGlobalPrompt();}
@@ -2129,7 +2222,15 @@ function setMode(m){
   if(m!=='wireframe'&&m!=='hifi')closeAgentPop();
   ['wireframe','hifi','decl'].forEach(x=>{const b=$('mode-'+x);if(b)b.classList.toggle('on',x===m);});
   $('decl-stage').style.display=m==='decl'?'flex':'none';
-  if(m==='play'){if(!playStack.length||playStack[playStack.length-1]!==active)playStack=[active];renderStage();}
+  if(m==='play'){if(!playStack.length||playStack[playStack.length-1]!==active)playStack=[active];renderStage();
+    // interact 绑定异步预热：就绪后热区补挂（flows 热区已在 renderStage 同步挂好）；
+    // 非 tap 触发器演示不支持——如实计数提示，不做静默隐身
+    prefetchPlayIx().then(()=>{
+      if(mode!=='play')return;
+      attachPlayHotZones();
+      const n=Object.values(playIxHits).reduce((a,l)=>a+l.filter(x=>x.trigger!=='tap').length,0);
+      if(n)toast(`演示仅支持 tap 交互；另有 ${n} 个非 tap 交互绑定不会响应`);
+    });}
   else if(m==='decl'){loadDeclMain();}
   else {playClearHot();renderStage();}
 }
@@ -2161,12 +2262,12 @@ async function validateMbtNow(){
     if(!check.ok){toast('MBT 校验失败：'+String(check.error||'unknown').slice(0,80));return;}
     const result=await engRender(text);
     if(!mbtResult(result)){toast('MBT 渲染失败：'+String(result&&result.error||'unknown').slice(0,80));return;}
-    applyMbtResult(result,{acceptDraft:$('decl-text').value===text});toast('MBT 已校验并由引擎重新渲染');setStatus('agent','校验并渲染 ✓（AgentGate 级重建）',true,'');
+    applyMbtResult(result,{acceptDraft:$('decl-text').value===text});toast('MBT 已校验并由引擎重新渲染');setStatus('agent','校验并渲染 ✓',true,'');
   }catch(err){toast('MBT 校验失败：'+String(err).slice(0,80));}
 }
 /* ---------- 组件库 ---------- */
 const COMP_META={user:{label:'我的组件'},actions:{label:'操作'},inputs:{label:'输入'},selection:{label:'选择'},display:{label:'展示'},layout:{label:'布局'},navigation:{label:'导航'},feedback:{label:'反馈'},overlay:{label:'浮层'}};
-const COMP_PREV={button:'▸',fab:'＋',text_input:'▭',search_bar:'⌕',slider:'●─',checkbox:'☑',switch:'⊚',radio:'◉',avatar:'☺',progress:'▬',chip:'◍',image:'▣',card:'▢',app_bar:'▤',divider:'─',rect:'□',list_item:'☰',tab_bar:'≡',alert:'⚠',toast:'◉',dialog:'▢',drawer:'▤',menu:'☰',table:'▦',kbd:'⌨',rating:'★',stat:'№'};
+const COMP_PREV={button:'▸',fab:'＋',text_input:'▭',search_bar:'⌕',slider:'●─',checkbox:'☑',switch:'⊚',radio:'◉',avatar:'☺',progress:'▬',chip:'◍',image:'▣',card:'▢',app_bar:'▤',divider:'─',rect:'□',list_item:'☰',tab_bar:'≡',alert:'⚠',toast:'◉',dialog:'▢',drawer:'▤',menu:'☰',table:'▦',kbd:'⌨',rating:'★',stat:'№',multi_select:'☑',toggle_group:'⇆',steps:'⇢',status_dot:'●',scrim:'▨',hover_card:'⌸',lightbox:'⛶',command_palette:'⌘',chat_bubble:'❝',marquee:'⇉',masonry:'▥',bento_grid:'▦',resize_handle:'⤡'};
 let allComps=[];
 function toggleCompGuide(){
   const hasUser=allComps.some(c=>c.source==='user');
@@ -2242,7 +2343,7 @@ function filterComps(v){renderCompTree(v.trim());}
  * 用户组件库（component-compile / library-snapshot 系列）属引擎会话面 + Rust 侧持久化。
  * 旧 wasm 产物未导出该注册表，三入口曾整体降级为提示；engine-v0.1.1-fix 的 session API
  * 已导出 session_component_compile_b64 / session_library_snapshot，恢复路由待接线。 */
-const USERCOMP_UNAVAILABLE='用户组件库需要引擎 CLI 会话面，wasm 预编译版暂未提供';
+const USERCOMP_UNAVAILABLE='用户组件沉淀 / MCF 导入导出尚未接线——引擎导出已在产物中（session_component_compile_b64 等），持久化模型未决前不上线';
 async function saveAsComponent(){
   if(!baseCmd||!active){toast('先创建一个活动画板');return;}
   toast(USERCOMP_UNAVAILABLE);
@@ -2291,11 +2392,13 @@ function startComponentPointerDrag(e,cid,cell){
 /* ---------- 工具箱 ---------- */
 document.querySelectorAll('.ctool[data-tool]').forEach(b=>{
   b.onclick=()=>{
+    // 画板工具未实现（引擎无拖拽定义尺寸的 op）——点它只说明，不切换状态
+    if(b.dataset.tool==='frame'){toast('画板工具开发中——用 Prompt 或模板建板');return;}
     toolMode=b.dataset.tool;
     document.querySelectorAll('.ctool[data-tool]').forEach(x=>x.classList.toggle('on',x===b));
     $('canvas-scroll').style.cursor=toolMode==='select'?'default':'crosshair';
     linkSource=null;$('canvas-scroll').classList.remove('linking');
-    const tips={text:'文本工具：点击画布放置文本',frame:'画板工具',link:'连接工具：先点击源按钮，再点击目标画板标题栏',hand:''};
+    const tips={text:'文本工具：点击画布放置文本',link:'连接工具：先点击源按钮，再点击目标画板标题栏',hand:''};
     if(toolMode==='link'){$('canvas-scroll').classList.add('linking');$('canvas-hint').textContent='连接工具：先点源按钮，再点目标画板标题栏';}
     else $('canvas-hint').textContent='选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流';
     if(tips[toolMode])toast(tips[toolMode]);
@@ -2309,7 +2412,7 @@ function renderInspector(){
   const n=selected&&nodeOf(selected);
   if(!n){
     body.dataset.node='';
-    body.innerHTML=`<div class="empty-insp"><svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M3.5 12.5l8-8a2.1 2.1 0 0 1 3 0l7 7a2.1 2.1 0 0 1 0 3l-8 8a2.1 2.1 0 0 1-3 0l-7-7a2.1 2.1 0 0 1 0-3z"/></svg><div style="font-size:12.5px;color:var(--tx2);font-weight:600;margin-bottom:4px">未选中元素</div><div>在画布中点选任意元素<br>属性、约束与交互配置将在此显示</div><div class="kbd-group"><span class="kbd-row"><span>删除元素</span><kbd>Del</kbd></span><span class="kbd-row"><span>改文字</span><kbd>双击</kbd></span></div></div>`;
+    body.innerHTML=`<div class="empty-insp"><svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M3.5 12.5l8-8a2.1 2.1 0 0 1 3 0l7 7a2.1 2.1 0 0 1 0 3l-8 8a2.1 2.1 0 0 1-3 0l-7-7a2.1 2.1 0 0 1 0-3z"/></svg><div style="font-size:12.5px;color:var(--tx2);font-weight:600;margin-bottom:4px">未选中元素</div><div>在画布中点选任意元素<br>属性与交互将在此显示</div><div class="kbd-group"><span class="kbd-row"><span>删除元素</span><kbd>Del</kbd></span><span class="kbd-row"><span>改文字</span><kbd>双击</kbd></span></div></div>`;
     return;
   }
   const sh=n.style.shadow||'none';
@@ -2321,10 +2424,14 @@ function renderInspector(){
   const lay=n.layout||null;
   const layMode=lay?(lay.dir||'vertical'):'none';
   const layJust=lay?(lay.justify||'start'):'start';
+  // 引擎为每个节点返回 constraint（谓词门判定结果）——只读展示（编辑入口未接）
+  const cs=n.constraint;
+  const csText=cs==null?'':(typeof cs==='string'?cs:JSON.stringify(cs));
   const segBtns=(key,cur,pairs,cb)=>pairs.map(p=>{const[v,l]=p.split(':');return `<button class="${cur===v?'on':''}" onclick="${cb}('${key}','${v}')">${l}</button>`;}).join('');
   const previous=body.dataset.node;const drafts=previous===active+'/'+selected?Array.from(body.querySelectorAll('input')).filter(i=>i.value!==i.defaultValue).map(i=>[i.id,i.value]):[];body.dataset.node=active+'/'+selected;
   body.innerHTML=`
     <div class="nodecard"><div><div class="lbl">当前选中节点</div><div class="val">${escHtml(n.id)}</div></div><span class="tag">${escHtml(n.component&&n.component!=='frame'?n.component:n.kind)}</span></div>
+    ${csText?`<div class="frow"><label>约束</label><input type="text" style="grid-column:2/4" value="${escAttr(csText)}" disabled title="约束由引擎谓词门维护（只读展示，编辑入口未接）"></div>`:''}
     <div class="frow"><label>位置</label><input type="number" id="p-x" value="${Math.round(n.rect.x)}"><input type="number" id="p-y" value="${Math.round(n.rect.y)}"></div>
     <div class="frow"><label>尺寸</label><input type="number" id="p-w" value="${Math.round(n.rect.w)}"><input type="number" id="p-h" value="${Math.round(n.rect.h)}"></div>
     <div class="frow"><label>文本</label><input type="text" id="p-text" style="grid-column:2/4" value="${escAttr(n.text||'')}"></div>
@@ -2417,14 +2524,39 @@ async function defineSt(){
   const ok=await runOp(`state ${active} ${selected} ${name} fill=${n.style.fill}`,'human');
   if(ok){toast('已定义状态 '+name);loadStList();}
 }
-/* 交互/状态清单：interactions/states 属引擎只读检视面，wasm 产物未导出——降级为提示 */
+/* 交互/状态清单：经前端 session 检视桥读引擎 session_interactions / session_states
+ * （导出已在产物中；0.1.4 探针实证），渲染为只读行 + 可点击的状态切换 chip */
 async function loadIxList(){
-  const box=$('ix-list');if(!box||!active)return;
-  box.innerHTML='<div class="ix-empty">交互清单读取需引擎 inspect 面（wasm 版待提供）；绑定/解绑交互仍可用</div>';
+  if(!active||!mbtText)return;
+  const r=await engSessionInspect('session_interactions',active).catch(err=>({ok:false,error:String(err)}));
+  const box=$('ix-list');if(!box)return; // await 后重取：renderInspector 可能已重建面板
+  if(!r||!r.ok){box.innerHTML='<div class="ix-empty">交互清单读取失败：'+escHtml(String(r&&r.error||'unknown').slice(0,60))+'</div>';return;}
+  if(!r.data||!r.data.length){box.innerHTML='<div class="ix-empty">本画板暂无交互绑定 — 检查器上方绑定后在此可见</div>';return;}
+  // 引擎 tap 解析顺序 flow → marker：同节点既有 flow 边又有 interact 标记时，
+  // 演示只走 flow、marker 永不触发——如实标注，消除「绑了但不响」的困惑
+  const graph=studioFlows.length?studioFlows:flows;
+  box.innerHTML=r.data.map(x=>{
+    const shadowed=graph.some(f=>f.from===active&&f.trigger==='tap:'+x.node);
+    return `<div class="ix-empty">⛓ ${escHtml(x.node)} · ${escHtml(x.trigger)} → ${escHtml(x.action)}${shadowed?' <span style="color:var(--tx3)">（同节点已有 flow，演示时 flow 优先）</span>':''}</div>`;
+  }).join('');
 }
 async function loadStList(){
-  const box=$('st-list');if(!box||!active)return;
-  box.innerHTML='<div class="ix-empty">状态清单读取需引擎 inspect 面（wasm 版待提供）；定义/切换状态仍可用</div>';
+  if(!active||!mbtText)return;
+  const r=await engSessionInspect('session_states',active).catch(err=>({ok:false,error:String(err)}));
+  const box=$('st-list');if(!box)return; // await 后重取：renderInspector 可能已重建面板
+  if(!r||!r.ok){box.innerHTML='<div class="ix-empty">状态清单读取失败：'+escHtml(String(r&&r.error||'unknown').slice(0,60))+'</div>';return;}
+  if(!r.data||!r.data.length){box.innerHTML='<div class="ix-empty">本画板暂无组件状态 — 上方定义后在此可见/可切换</div>';return;}
+  box.replaceChildren(...(r.data||[]).map(x=>{
+    const d=document.createElement('div');d.className='ix-empty';
+    d.innerHTML=`◉ ${escHtml(x.node)} · 当前 <b style="color:var(--tx2)">${escHtml(x.current)}</b>：`;
+    (x.states||[]).forEach(s=>{
+      const b=document.createElement('button');b.className='st-chip';b.textContent=s;
+      b.title='切换到状态 '+s+'（set-state toggle）';
+      b.onclick=()=>runOp(`set-state ${x.node} ${s} toggle`,'human').then(ok=>{if(ok)loadStList();});
+      d.appendChild(b);
+    });
+    return d;
+  }));
 }
 /* ---------- 面板切换 ---------- */
 function switchLeft(w){
@@ -2455,6 +2587,21 @@ function zoomReset(){zoom=1;applyZoom();}
  * 不再切换独立全屏页：隐藏编辑面板、隐藏非当前画板，
  * 在当前画板上叠加绿色热区（HTML div，命中可靠），点击沿 flow 导航。 */
 let playReturnMode='wireframe';
+/* 演示模式的 interact 绑定缓存：flows 之外，interact 标记（引擎 tap 解析顺序
+ * flow → marker）也参与热区与跳转——绑定交互的按钮在演示中必须可点（审查 C1） */
+let playIxHits={},playIx={};
+async function prefetchPlayIx(){
+  playIxHits={};playIx={};
+  if(!mbtText)return;
+  for(const id of Object.keys(sessions)){
+    const r=await engSessionInspect('session_interactions',id).catch(()=>null);
+    if(r&&r.ok){
+      // hits 保留全部触发器（供 playTap 与非 tap 提示计数）；playIx 只收 tap（可点热区）
+      playIxHits[id]=(r.data||[]);
+      playIx[id]=new Set(playIxHits[id].filter(x=>x.trigger==='tap').map(x=>x.node));
+    }
+  }
+}
 function togglePlay(on){
   const want=typeof on==='boolean'?on:mode!=='play';
   if(want){
@@ -2472,11 +2619,12 @@ function attachPlayHotZones(){
   const sess=sessions[active];
   const graph=studioFlows.length?studioFlows:flows;
   const linked=new Set(graph.filter(f=>f.from===active).map(f=>(f.trigger||'').replace('tap:','')));
+  (playIx[active]||[]).forEach(n=>linked.add(n));
   const s=parseFloat(wrap.dataset.displayScale)||1;
   (sess&&Array.isArray(sess.nodes)?sess.nodes:[]).forEach(n=>{
     if(!linked.has(n.id)||!n.rect||!n.rect.w)return;
     const d=document.createElement('div');
-    d.className='pm-hot';d.title=n.id+'（点击跳转）';
+    d.className='pm-hot';d.title=n.id+'（点击执行交互）';
     d.style.left=(n.rect.x*s)+'px';d.style.top=(n.rect.y*s)+'px';
     d.style.width=(n.rect.w*s)+'px';d.style.height=(n.rect.h*s)+'px';
     d.addEventListener('click',()=>playTap(active,n.id));
@@ -2494,8 +2642,36 @@ function playApplySession(id){
 async function playTap(fromAb,nodeId){
   const graph=studioFlows.length?studioFlows:flows;
   const f=graph.find(x=>x.from===fromAb&&x.trigger==='tap:'+nodeId);
-  if(f){playStack.push(f.to);active=f.to;playApplySession(f.to);await renderStage();setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');}
-  else toast(`「${nodeId}」未链接交互流`);
+  if(f){playStack.push(f.to);active=f.to;playApplySession(f.to);await renderStage();setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');return;}
+  // flows 未命中 → 回退 interact 标记（引擎 tap 解析顺序 flow → marker）
+  const hit=(playIxHits[fromAb]||[]).find(x=>x.node===nodeId&&x.trigger==='tap');
+  if(hit){
+    const act=hit.action||'';
+    if(act==='back'){playBack();return;}
+    if(act.startsWith('navigate_to:')){
+      const to=act.slice('navigate_to:'.length);
+      if(sessions[to]){playStack.push(to);active=to;playApplySession(to);await renderStage();setStatus('human',`▶ ${nodeId} → ${to}`,true,'播放导航（interact）');}
+      else toast(`目标画板「${to}」不存在`);
+      return;
+    }
+    if(act.startsWith('show_toast:')){toast('💬 '+act.slice('show_toast:'.length));return;}
+    // 引擎明文支持、演示可真执行的两个动作（op 走人类门回写，画布重渲染即见效果）
+    if(act.startsWith('set_text:')){
+      const rest=act.slice('set_text:'.length),i=rest.indexOf(':');
+      if(i>0){const target=rest.slice(0,i),txt=rest.slice(i+1);
+        await runOp(`update ${fromAb} ${target} text=${JSON.stringify(txt)}`,'human');
+        setStatus('human',`▶ ${nodeId} set_text → ${target}`,true,'演示交互');return;}
+    }
+    if(act.startsWith('set_state:')){
+      const rest=act.slice('set_state:'.length),i=rest.indexOf(':');
+      if(i>0){const target=rest.slice(0,i),st=rest.slice(i+1);
+        await runOp(`set-state ${target} ${st}`,'human');
+        setStatus('human',`▶ ${nodeId} set_state → ${target}:${st}`,true,'演示交互');return;}
+    }
+    toast(`动作 ${act} 暂不支持演示播放`);
+    return;
+  }
+  toast(`「${nodeId}」未链接交互流`);
 }
 function playBack(){
   if(playStack.length>1){playStack.pop();active=playStack[playStack.length-1];playApplySession(active);renderStage();}
@@ -2554,12 +2730,59 @@ async function exportDdpNow(){
   try{
     const r=await window.__TAURI__.core.invoke('save_ddp',{mbtB64:utf8ToB64(mbtText),password});
     if(!r||r==='canceled')return;
-    filePath=r.path;$('file-label').textContent=r.path.split('/').pop();
+    // 口令只在导出成功后成为会话口令——取消/失败不得污染（否则 ⌘S 会用新口令重加密旧文件）
+    ddpSessionPassword=password;
+    filePath=r.path;projectDirty=false;syncDirtyRemote();setFileLabel(r.path.split(/[\\/]/).pop());
     toast(password?'已导出加密 DDP（DDP1）':'已导出 DDP（免密 DDP2）');
   }catch(err){toast('DDP 导出失败：'+String(err).slice(0,80));}
 }
-async function saveProject(){await exportDdp();}
+/* 保存：已有路径（打开/导出过）→ 原地回写并复用会话口令；否则回落导出对话框 */
+async function saveProject(){
+  if(mbtText&&filePath){
+    try{
+      // 进 serializeProject：与在途 op 串行化，mbtText 取队列时点的一致快照——
+      // 裸 invoke 会与 agent 终态 apply 竞态（磁盘写旧内容 + 清掉刚置的脏）
+      await serializeProject(async()=>{
+        await window.__TAURI__.core.invoke('save_ddp',{mbtB64:utf8ToB64(mbtText),password:ddpSessionPassword,path:filePath});
+        projectDirty=false;syncFileLabel();syncDirtyRemote();
+      });
+      toast('已保存到 '+filePath.split(/[\\/]/).pop());
+    }catch(err){toast('保存失败：'+String(err).slice(0,80));}
+    return;
+  }
+  await exportDdp();
+}
+/* 导出 HTML 原型：引擎 export_html → 系统保存对话框（.html） */
+async function exportHtmlProto(){
+  if(!mbtText){toast('先创建画板或打开 DDP');return;}
+  if(!IS_TAURI){toast('导出 HTML 需要桌面端');return;}
+  try{
+    const r=await engExportHtml(mbtText);
+    if(!r||!r.ok||!r.html){toast('HTML 导出失败：'+String(r&&r.error||'unknown').slice(0,80));return;}
+    const base=filePath?filePath.split(/[\\/]/).pop().replace(/\.ddp$/i,''):'deepdesign-prototype';
+    const rr=await window.__TAURI__.core.invoke('save_text_file',{defaultName:base+'.html',contentsB64:utf8ToB64(r.html)});
+    if(!rr||rr==='canceled')return;
+    toast('已导出可交互 HTML 原型');
+  }catch(err){toast('HTML 导出失败：'+String(err).slice(0,80));}
+}
+/* 导出 SVG（当前活动画板）：画板 SVG 由引擎 render 交付（sessions[active].svg），直接落盘 */
+async function exportSvg(){
+  const svg=sessions[active]&&sessions[active].svg;
+  if(!svg){toast('先创建画板');return;}
+  if(!IS_TAURI){toast('导出 SVG 需要桌面端');return;}
+  try{
+    const rr=await window.__TAURI__.core.invoke('save_text_file',{defaultName:(active||'artboard')+'.svg',contentsB64:utf8ToB64(svg)});
+    if(!rr||rr==='canceled')return;
+    toast('已导出当前画板 SVG');
+  }catch(err){toast('SVG 导出失败：'+String(err).slice(0,80));}
+}
 async function openProject(){
+  if(agentBusy){toast('Agent 正在生成，完成后再打开');return;}
+  // 仅确有未保存更改（内容或源码草稿）时确认；确认框回车默认「继续编辑」（安全侧），返回 true=留下
+  if(IS_TAURI&&anyDirty()){
+    const stay=await window.__TAURI__.core.invoke('confirm_discard',{title:'打开 DDP',message:'当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。'}).catch(()=>true);
+    if(stay)return;
+  }
   const password=await promptDdpPassword('输入 DDP 密码（免密文件留空直接确认）：');
   if(password===null)return;
   try{
@@ -2567,11 +2790,20 @@ async function openProject(){
     if(!r||r==='canceled')return;
     await serializeProject(async()=>{const result=await engRender(b64ToUtf8(r.mbt_b64));
     if(!mbtResult(result)){toast('DDP 中的 MBT 校验失败：'+String(result&&result.error||'unknown').slice(0,80));return;}
-    applyMbtResult(result,{reset:true});filePath=r.path;$('file-label').textContent=r.path.split('/').pop();toast('已打开 DDP，并从 MBT 重新渲染');});
+    // 口令只在「渲染校验通过且 filePath 真正切换」时才成为会话口令——校验失败提前
+    // return 时旧文件 + 新口令的组合会让 ⌘S 用错口令重加密旧文件
+    ddpSessionPassword=password;
+    applyMbtResult(result,{reset:true});filePath=r.path;projectDirty=false;syncDirtyRemote();setFileLabel(r.path.split(/[\\/]/).pop());toast('已打开 DDP，并从 MBT 重新渲染');});
   }catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));}
 }
-function newProject(){
+async function newProject(){
   // 真正空白项目：无画板，显示 welcome 空态（模板卡 + Prompt 引导）
+  if(agentBusy){toast('Agent 正在生成，完成后再新建');return;}
+  // 仅确有未保存更改（内容或源码草稿）时确认（回车默认「继续编辑」，返回 true=留下）
+  if(IS_TAURI&&anyDirty()){
+    const stay=await window.__TAURI__.core.invoke('confirm_discard',{title:'新建项目',message:'当前文档有未保存的更改（含源码草稿），新建将丢弃这些更改。'}).catch(()=>true);
+    if(stay)return;
+  }
   agentThread.pending=null;const th=$('gp-thread');if(th)th.classList.remove('open');
   serializeProject(async()=>{
     mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];
@@ -2582,7 +2814,7 @@ function newProject(){
     $('decl-text').value='';
     closeAgentPop();cancelInline();
     $('ap-input').value='';$('gp-input').value='';$('tl-body').replaceChildren();
-    $('file-label').textContent='新项目';$('proj-name').textContent='未命名项目';
+    projectDirty=false;fileLabelName='新项目';syncFileLabel();syncDirtyRemote();$('proj-name').textContent='未命名项目';
     renderStage();renderAbs();renderFlows();renderInspector();
     setStatus('human','new',true,'空白项目');
   });
@@ -2622,12 +2854,57 @@ function setAppMode(m){
   try{m=localStorage.getItem('dd-mode')||'light';}catch(_){}
   setAppMode(m);
   refreshAppearanceControls();
-  const names={win11:'Win11',mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'};
-  const c=$('theme-cur');if(c)c.textContent=names[t]||t;
 })();
 
 let agentConfig={baseUrl:'',apiKey:'',model:'',thinkingLevel:'auto'};
-function loadAgentConfig(){try{const saved=JSON.parse(localStorage.getItem('deepdesign-fx-config')||'{}');agentConfig={...agentConfig,...saved};agentConfig.thinkingLevel={on:'high'}[agentConfig.thinkingLevel]||(['auto','off','low','medium','high','max'].includes(agentConfig.thinkingLevel)?agentConfig.thinkingLevel:'auto');}catch(_){} }
+/* ---------- 按服务商持久化的端点配置 ----------
+ * 每个服务商一个槽位（baseUrl/apiKey/model/thinkingLevel），存
+ * localStorage `deepdesign-fx-providers`（map）+ `deepdesign-fx-active`（当前启用）。
+ * 切换服务商 = 启用该服务商已持久化的配置（选择即生效）；表单当前内容先存回
+ * 原槽位再切换——多家配置并存互不覆盖。旧单槽 deepdesign-fx-config 首次迁移。 */
+let fxProviders=null,fxActiveKey='';
+function providerKeyFor(baseUrl){
+  const norm=u=>{const t=String(u||'').replace(/\/+$/,'');return t.replace(/\/v1$/,'').toLowerCase();};
+  const want=norm(baseUrl);
+  if(!want)return '';
+  for(const[k,c]of Object.entries(PROVIDERS)){if(norm(c.baseUrl)===want)return k;}
+  return 'custom';
+}
+function loadFxProviders(){
+  if(fxProviders)return;
+  try{fxProviders=JSON.parse(localStorage.getItem('deepdesign-fx-providers')||'{}')||{};}catch(_){fxProviders={};}
+  try{fxActiveKey=localStorage.getItem('deepdesign-fx-active')||'';}catch(_){fxActiveKey='';}
+  const legacy=localStorage.getItem('deepdesign-fx-config');
+  if(legacy){
+    try{
+      const c=JSON.parse(legacy);
+      if(c&&(c.baseUrl||c.apiKey||c.model)){
+        const k=providerKeyFor(c.baseUrl);
+        if(!fxProviders[k])fxProviders[k]={baseUrl:c.baseUrl||'',apiKey:c.apiKey||'',model:c.model||'',thinkingLevel:c.thinkingLevel||'auto'};
+        if(!fxActiveKey)fxActiveKey=k;
+      }
+    }catch(_){ }
+  }
+  if(!fxActiveKey||(fxActiveKey!=='custom'&&!PROVIDERS[fxActiveKey]))fxActiveKey='deepseek';
+}
+function persistFxProviders(){
+  try{
+    localStorage.setItem('deepdesign-fx-providers',JSON.stringify(fxProviders));
+    localStorage.setItem('deepdesign-fx-active',fxActiveKey);
+  }catch(_){ }
+}
+function loadAgentConfig(){
+  loadFxProviders();
+  const slot=fxProviders[fxActiveKey]||{};
+  const preset=PROVIDERS[fxActiveKey]||PROVIDERS.deepseek;
+  agentConfig={
+    baseUrl:slot.baseUrl||preset.baseUrl,
+    apiKey:slot.apiKey||'',
+    model:slot.model||preset.model,
+    thinkingLevel:slot.thinkingLevel,
+  };
+  agentConfig.thinkingLevel={on:'high'}[agentConfig.thinkingLevel]||(['auto','off','low','medium','high','max'].includes(agentConfig.thinkingLevel)?agentConfig.thinkingLevel:'auto');
+}
 const PROVIDERS={
   deepseek:{baseUrl:'https://api.deepseek.com',model:'deepseek-flash'},
   glm:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-5.3'},
@@ -2753,17 +3030,30 @@ function fillModelHints(){
   if(sel&&typeof agentConfig==='object')agentConfig.thinkingLevel=sel.value;
 }
 function applyProvider(p){
-  const c=PROVIDERS[p];if(!c)return;
-  $('agent-base-url').value=c.baseUrl;$('agent-model').value=c.model;
-  toast('已填入 '+p+' 预设，补全 API Token 即可');
-  const ids=presetRegistryIds(p);
-  if(ids.length)$('fx-model-list').innerHTML=ids.map(i=>`<option value="${i}">`).join('');
+  if(p!=='custom'&&!PROVIDERS[p])return;
+  loadFxProviders();
+  // 表单当前内容先存回「切走前」的槽位——切服务商不丢已填内容（含 Token）
+  const prev=$('provider-preset').dataset.active||fxActiveKey;
+  if(prev&&($('agent-base-url').value.trim()||$('agent-api-key').value)){
+    fxProviders[prev]={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto'};
+  }
+  // 载入目标槽位（从未配置过则用预设默认值）——选择即启用已持久化的配置
+  const slot=fxProviders[p]||{baseUrl:(PROVIDERS[p]||{}).baseUrl||'',apiKey:'',model:(PROVIDERS[p]||{}).model||'',thinkingLevel:'auto'};
+  $('agent-base-url').value=slot.baseUrl;$('agent-api-key').value=slot.apiKey||'';$('agent-model').value=slot.model;
+  restoreThinkingOptions($('agent-thinking'),slot.thinkingLevel);
+  $('agent-thinking').value=slot.thinkingLevel||'auto';
+  $('provider-preset').dataset.active=p;fxActiveKey=p;
+  persistFxProviders();loadAgentConfig();
+  toast(slot.apiKey?('已启用 '+p+'（使用之前保存的配置）'):('已启用 '+p+' 预设，补全 API Token 即可'));
+  if(p!=='custom'){
+    const ids=presetRegistryIds(p);
+    if(ids.length)$('fx-model-list').innerHTML=ids.map(i=>`<option value="${i}">`).join('');
+  }
   fillModelHints();
 }
 function refreshAppearanceControls(){
   document.querySelectorAll('[data-theme-chip]').forEach(b=>b.classList.toggle('on',document.body.dataset.theme===b.dataset.themeChip));
   const m=$('app-mode');if(m)m.value=document.body.dataset.mode==='dark'?'dark':'light';
-  const c=$('theme-cur');if(c)c.textContent={win11:'Win11',mac:'Mac',deep:'Deep',neu:'Neu',glass:'Glass'}[document.body.dataset.theme]||'';
 }
 function openSettings(){
   loadAgentConfig();if(!modelRegistry)loadModelRegistry();
@@ -2775,6 +3065,12 @@ function openSettings(){
   // fillModelHints 随后钳到 auto 并写回——存储配置被静默降级
   restoreThinkingOptions($('agent-thinking'),agentConfig.thinkingLevel);
   $('agent-thinking').value=agentConfig.thinkingLevel||'auto';
+  // 下拉反映「真实启用的端点」：按 Base URL 反查服务商，对不上则显示自定义
+  // ——设置哪个就显示哪个，不再与实际状态脱节
+  const sel=$('provider-preset');
+  const key=providerKeyFor(agentConfig.baseUrl)||fxActiveKey||'custom';
+  sel.value=(key==='custom'||PROVIDERS[key])?key:'custom';
+  sel.dataset.active=sel.value;
   // 在输入赋值之后再算提示：先算会读到上一轮的旧输入值
   fillModelHints();$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
@@ -2788,7 +3084,14 @@ function closeSettings(){ $('settings-modal').style.display='none';$('settings-m
   }
   return data; // {ok, mbt_b64, render, ops[], stopReason, text}
 }
-function saveSettings(){agentConfig={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto'};localStorage.setItem('deepdesign-fx-config',JSON.stringify(agentConfig));closeSettings();toast('LLM 端点配置已保存');}
+function saveSettings(){
+  loadFxProviders();
+  // 表单写回当前选中的服务商槽位并启用——多服务商配置并存，互不覆盖
+  const k=$('provider-preset').value||'custom';
+  fxProviders[k]={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto'};
+  fxActiveKey=k;persistFxProviders();loadAgentConfig();
+  closeSettings();toast('已保存并启用「'+($('provider-preset').selectedOptions[0]&&$('provider-preset').selectedOptions[0].textContent||k)+'」端点配置');
+}
 async function fetchFxModels(){
   const baseUrl=$('agent-base-url').value.trim(), apiKey=$('agent-api-key').value.trim();
   const payload={mode:'models',api_key:apiKey||undefined,base_url:baseUrl};
@@ -2824,19 +3127,64 @@ loadEngine().then(()=>{           // wasm 引擎预加载（画布首帧 op 前�
   else if(typeof setStatus==='function')setStatus('','',true,'引擎 wasm 就绪');
 });
 renderAbs();
-$('file-label').textContent='v'+APP_VER;
+syncFileLabel();
+/* 脏文档关窗拦截：Rust 拦下 CloseRequested 后交前端确认；确认放弃则清脏再关（第二次放行） */
+if(IS_TAURI&&window.__TAURI__.event)window.__TAURI__.event.listen('app-close-request',async()=>{
+  const stay=await window.__TAURI__.core.invoke('confirm_discard',{title:'未保存的更改',message:'当前文档有未保存的更改（含源码草稿），确定退出吗？'}).catch(()=>true);
+  if(!stay){
+    projectDirty=false;declDraftDirty=false;syncFileLabel();
+    try{await window.__TAURI__.core.invoke('set_project_dirty',{dirty:false});}catch(_){ }
+    winCtl('close');
+  }
+});
 setStatus('','',true);
 document.body.classList.add('mode-wireframe','design-active');
+/* 引擎模板全集（list_templates 权威清单，14 个；sync-engine 探针校验）——
+ * 欢迎页全量暴露，人与 Agent 可用集合对齐（审查 D2）。尺寸按 device 档 */
+const TPLS=[
+  ['login','登录页','mobile'],['signup','注册页','mobile'],['dashboard','仪表盘','mobile'],
+  ['profile','个人主页','mobile'],['settings','设置页','mobile'],['list_detail','列表-详情','mobile'],
+  ['onboarding','引导页','mobile'],['empty_state','空状态页','mobile'],
+  ['web_landing','Web 落地页','web'],['web_login','Web 登录','web'],['web_dashboard','Web 仪表盘','web'],
+  ['pc_app','PC 桌面应用','pc'],['adaptive_landing','自适应落地页','adaptive'],['login_v2','登录页 v2','adaptive'],
+];
+const TPL_SIZE={mobile:[390,844],web:[1280,800],pc:[1280,800],adaptive:[1280,800]};
+/* 精选 3 张常驻欢迎卡（原始三件套）；全集 14 个收进可展开的紧凑网格——
+ * 全量可达（对齐 Agent 可用集合，审查 D2）但不把欢迎页铺成模板墙 */
+const TPL_FEATURED=['web_login','adaptive_landing','login'];
+function mkTplCard(tid,name,device,thumbPrefix){
+  const[w,h]=TPL_SIZE[device];
+  const d=document.createElement('div');d.className='tpl-card';d.title='模板 '+tid;
+  d.innerHTML=`<div class="th" id="${thumbPrefix}${tid}"></div><h5>${escHtml(name)}</h5><span>${device} · ${w} × ${h}</span>`;
+  d.onclick=()=>quickStart(tid,w,h);
+  return d;
+}
+function renderTplRow(){
+  const row=$('tpl-row'),all=$('tpl-all');
+  if(row){row.innerHTML='';TPLS.filter(([tid])=>TPL_FEATURED.includes(tid)).forEach(([tid,name,device])=>row.appendChild(mkTplCard(tid,name,device,'th-tpl-')));}
+  if(all){all.innerHTML='';TPLS.forEach(([tid,name,device])=>all.appendChild(mkTplCard(tid,name,device,'th-tpla-')));}
+}
+function toggleAllTpl(){
+  const all=$('tpl-all'),btn=$('tpl-more');
+  if(!all||!btn)return;
+  const open=all.style.display!=='none';
+  all.style.display=open?'none':'flex';
+  btn.textContent=open?`浏览全部模板（${TPLS.length}）▾`:'收起 ▴';
+}
 /* 模板卡真实预览：种子文档 + template op，取新画板的 svg（种子板留在一次性草稿里，不入库） */
 (async function loadTemplateThumbs(){
+  renderTplRow();
   await loadEngine();
   if(!engineExports)return;
-  const defs=[['web_login','th-tpl-web_login',1280,800],['adaptive_landing','th-tpl-adaptive_landing',1280,800],['login','th-tpl-login',390,844]];
-  for(const[tid,elId,w,h]of defs){
+  for(const[tid,,device]of TPLS){
+    const[w,h]=TPL_SIZE[device];
     try{
       const r=await engApply('human',seedDoc(SEED_BOARD,24,24),`template ${tid} __t_${tid} ${w} ${h}`);
       const art=r.ok&&r.artboards&&r.artboards.find(a=>a.id==='__t_'+tid);
-      if(art&&art.svg&&art.svg.length>50){const el=$(elId);if(el)el.innerHTML=art.svg;}
+      if(art&&art.svg&&art.svg.length>50){
+        // 一次引擎调用填两处：精选大卡（th-tpl-，3 张）与展开网格（th-tpla-，全集）
+        for(const p of['th-tpl-','th-tpla-']){const el=$(p+tid);if(el)el.innerHTML=art.svg;}
+      }
       else console.warn('thumb miss',tid,String(r.error||''));
     }catch(err){console.warn('thumb err',tid,String(err).slice(0,100));}
   }
