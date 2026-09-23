@@ -206,6 +206,12 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
    内容再高也无需滚动即可见(修复:此前 promptbar 绝对定位挂在 overflow:auto
    容器内,矮窗口下被顶到滚动区下方) */
 .canvas-dock{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 14px 12px;pointer-events:none;animation:fadeUp .3s ease .05s backwards}
+/* Agent 澄清对话线程（agent 提问 → 用户回答 → 继续生成） */
+.gp-thread{pointer-events:auto;width:100%;max-width:680px;background:var(--panel,#fff);border:1px solid var(--acc);border-radius:var(--r-xl);box-shadow:var(--sh-pop);padding:10px 14px;display:none}
+.gp-thread.open{display:block}
+.gp-thread .gt-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--acc-tx);margin-bottom:6px}
+.gp-thread .gt-body{white-space:pre-wrap;font-size:12.5px;line-height:1.7;color:var(--tx);max-height:200px;overflow-y:auto}
+.gp-thread .gt-hint{margin-top:8px;font-size:10.5px;color:var(--tx3)}
 .canvas-hint{font-size:10.5px;color:var(--tx3);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .promptbar{pointer-events:auto;width:100%;max-width:680px;display:flex;flex-direction:column;gap:7px;padding:9px;border-radius:var(--r-xl);box-shadow:var(--sh-pop);background:rgba(255,255,255,.92);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,.08)}
 .pchips{display:flex;align-items:center;gap:5px;overflow-x:auto;font-size:11px;padding-top:1px;position:relative;z-index:30}
@@ -804,6 +810,11 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </div>
     </div>
     <div class="canvas-dock">
+      <div class="gp-thread" id="gp-thread">
+        <div class="gt-head">🤖 Agent 需要确认</div>
+        <div class="gt-body" id="gp-thread-body"></div>
+        <div class="gt-hint">在下方输入你的回答，再次点击「一键生成」继续</div>
+      </div>
       <div class="canvas-hint" id="canvas-hint">选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流</div>
       <div class="promptbar">
         <div class="pchips">
@@ -1033,6 +1044,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 <script>
 'use strict';
 const APP_VER='6.0';
+let agentThread={pending:null}; // agent 澄清上下文（提问 → 用户回答 → 续跑）；置于测试切片起点
 const IS_TAURI=!!(window.__TAURI__&&window.__TAURI__.core);
 const IS_WIN=/Win/i.test(navigator.platform||navigator.userAgent);
 if(IS_TAURI)document.documentElement.classList.add('native');
@@ -1847,17 +1859,25 @@ async function sendAgent(){
   const showSteps=steps=>{planEl.style.display='block';planEl.innerHTML=steps.map((s,i)=>`<div class="step" id="apstep${i}"><span class="n">${i+1}</span><span>${escHtml(s)}</span></div>`).join('');};
   try{
     loadAgentConfig();
-    // 注入选区上下文，让 agent 知道用户针对哪个节点/画板
-    const ctx=`Target: node "${n.id}" on artboard "${active}". Task: ${text}`;
+    // 注入选区上下文，让 agent 知道用户针对哪个节点/画板；澄清续轮拼接上文
+    const base=`Target: node "${n.id}" on artboard "${active}". Task: ${text}`;
+    const ctx=agentThread.pending
+      ? `${base}\n\n[Agent 上一轮的提问]: ${agentThread.pending}\n\n[用户已回答]: 请基于回答继续执行（直接操作，不要再次追问）。`
+      : base;
     const r=await askFxSdk(ctx);
-    showSteps(r.ops.map(x=>'op→ '+x));
-    // 与 Rust 契约对齐(finish_partial):ok:true + partial_error + mbt_b64 + render(可能 null)
-    // ——零 ops 但带 partial_error 时必须把真实错误亮出来,而不是误导性的「未生成可执行操作」
     if(!r.ops.length){
+      if(r.text&&r.text.trim()){
+        // agent 的澄清提问/说明——展示并挂起，用户回答后继续
+        agentThread.pending=r.text.trim();
+        res.style.display='block';res.className='ap-result ok';res.style.whiteSpace='pre-wrap';
+        res.textContent='🤖 '+r.text.trim()+'\n\n— 在下方输入回答后再次发送，Agent 会结合回答继续';
+        $('ap-send').disabled=false;return;
+      }
       res.style.display='block';res.className='ap-result err';
       res.textContent=r.partial_error?('Agent 出错：'+String(r.partial_error).slice(0,120)):'未生成可执行操作';
       $('ap-send').disabled=false;return;
     }
+    agentThread.pending=null;
     // 已提交工作不得丢:render 缺失时从 mbt_b64 的 canonical 重渲染兜底
     if(r.render){
       try{await serializeProject(()=>applyMbtResult(r.render));}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用渲染结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;return;}
@@ -1985,9 +2005,23 @@ async function runGlobalPrompt(){
   try{
     loadAgentConfig();
     setStatus('agent',t,true,'AI 处理中…');
-    const r=await askFxSdk(t);
+    // 澄清式多轮：agent 上一轮的提问 + 本轮用户回答 → 拼接为完整指令
+    const instruction=agentThread.pending
+      ? `${agentThread.pending}\n\n[用户对上述问题的回答]: ${t}\n\n请基于回答继续执行任务（直接生成，不要再次追问）。`
+      : t;
+    const r=await askFxSdk(instruction);
+    if((!r.ops||!r.ops.length)&&r.text&&r.text.trim()){
+      // agent 的文本回复（澄清问题/确认/说明）——展示给用户，不再丢弃
+      agentThread.pending=r.text.trim();
+      $('gp-thread-body').textContent=r.text.trim();
+      $('gp-thread').classList.add('open');
+      toast('Agent 有问题需要确认 — 回答后再次点击「一键生成」');
+      return;
+    }
+    agentThread.pending=null;
+    $('gp-thread').classList.remove('open');
     if(!r.ops||!r.ops.length){
-      toast('AI 未生成操作 — 试试更具体的描述，如「做一个微信风格的聊天列表页」');
+      toast(r.error==='api_key_missing'?'请先在设置中配置 AI 端点与 Token':'AI 未生成操作 — 试试更具体的描述，如「做一个微信风格的聊天列表页」');
       trackAgent(t,[],false);
       return;
     }
@@ -2484,6 +2518,7 @@ async function openProject(){
 }
 function newProject(){
   // 真正空白项目：无画板，显示 welcome 空态（模板卡 + Prompt 引导）
+  agentThread.pending=null;const th=$('gp-thread');if(th)th.classList.remove('open');
   serializeProject(async()=>{
     mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];
     opCmds=[];filePath='';placing=0;linkSource=null;placeMode=null;playStack=[];
