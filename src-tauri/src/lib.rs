@@ -413,8 +413,22 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .build()?;
 
     let edit = SubmenuBuilder::new(app, "编辑")
-        .item(&PredefinedMenuItem::undo(app, Some("撤销"))?)
-        .item(&PredefinedMenuItem::redo(app, Some("重做"))?)
+        // 自定义撤销/重做（文档级，走前端历史会话）：预置项只作用于焦点文本框，
+        // 会让 ⌘Z 被文本语义吞掉；undoMbt 对输入框焦点回退 execCommand 文本撤销
+        .item(&MenuItem::with_id(
+            app,
+            "edit-undo",
+            "撤销",
+            true,
+            Some("CmdOrCtrl+Z"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "edit-redo",
+            "重做",
+            true,
+            Some("CmdOrCtrl+Shift+Z"),
+        )?)
         .separator()
         .item(&PredefinedMenuItem::cut(app, Some("剪切"))?)
         .item(&PredefinedMenuItem::copy(app, Some("复制"))?)

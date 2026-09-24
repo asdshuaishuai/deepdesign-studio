@@ -697,6 +697,9 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <button class="fmenu-item" onclick="fmAct('validateMbt')"><span>校验并渲染</span></button>
       <button class="fmenu-item" onclick="fmAct('exportHtmlProto')"><span>导出 HTML 原型…</span></button>
       <button class="fmenu-item" onclick="fmAct('exportSvg')"><span>导出 SVG（当前画板）…</span></button>
+      <div class="fmenu-sep"></div>
+      <button class="fmenu-item" onclick="fmAct('undoMbt')"><span>撤销</span><span class="kbd">Ctrl+Z</span></button>
+      <button class="fmenu-item" onclick="fmAct('redoMbt')"><span>重做</span><span class="kbd">Ctrl+Shift+Z</span></button>
       <button class="fmenu-item" onclick="fmAct('runAutoFix')"><span>自动修复（引擎还债）</span></button>
       <div class="fmenu-sep"></div>
       <button class="fmenu-item" onclick="fmAct('openShortcuts')"><span>快捷键说明</span><span class="kbd">Ctrl+/</span></button>
@@ -926,6 +929,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     </table>
     <h4>画布操作</h4>
     <table>
+      <tr><td><kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd></td><td>撤销 / 重做（当前画板；输入框内为文本撤销）</td></tr>
       <tr><td><kbd>⌘K</kbd></td><td>聚焦 Agent 指令输入</td></tr>
       <tr><td>方向键 / <kbd>⇧</kbd>+方向键</td><td>移动选中元素 1px / 10px</td></tr>
       <tr><td><kbd>⌫</kbd></td><td>删除选中元素</td></tr>
@@ -1168,8 +1172,86 @@ function engineRecycleIfNeeded(){
   if(!engineExports)return;
   if(engineExports.memory.buffer.byteLength>ENGINE_RECYCLE_BYTES&&engineBytes){
     engSessionDrop(); // 先在旧实例上弃会话（句柄只在旧实例有效），再重建
+    histResync();     // 历史会话同样随实例失效（撤销栈在回收后重置，罕见路径）
     engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
   }
+}
+/* ---------- 产品级撤销/重做（宿主侧历史，moonviz#16 撤回后的本层实现） ----------
+ * 编辑期常驻一个会话：init 各画板 → 每次成功变更后 commit 打点 → undo/redo 在同一
+ * 会话内闭环（返回 rev 的 canonical）。外部变更（agent 终态/打开/校验）使会话 doc
+ * 漂移时 histEnsure 自动重开并重建基线——agent run 边界即撤销栈边界（与既有的
+ * 「run 整体覆盖」语义一致）。回收实例同样重置撤销栈。 */
+let histS=null,histDoc=null,histSynced=false,histApplying=false;
+function histResync(){
+  if(histS&&engineExports){try{engineExports.session_close(histS.handle);}catch(_){ }}
+  histS=null;histDoc=null;histSynced=false;
+}
+async function histEnsure(){
+  await loadEngine();
+  if(!engineExports)return null;
+  engineRecycleIfNeeded();
+  if(histS&&histDoc===mbtText&&histSynced)return histS.handle;
+  if(histS){try{engineExports.session_close(histS.handle);}catch(_){ } histS=null;}
+  if(!mbtText)return null;
+  engSlotLoad('in_reset','in_push',mbtText);
+  const h=engineExports.session_open_in();
+  if(!Number.isInteger(h)||h<0)return null;
+  histS={handle:h};histDoc=mbtText;histSynced=true;
+  // 引擎按画板各自维护撤销栈（moonviz 探针实证）：逐板 init，无 baseline commit——
+  // 首次 undo 前 commits 为空，诚实报「没有可撤销的操作」而非空转一步
+  for(const id of Object.keys(sessions)){
+    engSlotLoad('arg_reset','arg_push','init '+id);
+    try{JSON.parse(engReadStr(engineExports.session_history_in(h)));}catch(_){ }
+  }
+  return h;
+}
+function histCommit(board){
+  (async()=>{
+    const h=await histEnsure();
+    if(h==null)return;
+    engSlotLoad('arg_reset','arg_push','commit '+(board||active||Object.keys(sessions)[0]||''));
+    try{JSON.parse(engReadStr(engineExports.session_history_in(h)));}catch(_){ }
+  })();
+}
+/* 撤销/重做：在常驻历史会话内执行（引擎按画板各栈，作用于当前活动画板），
+ * 返回的 canonical 经 engRender 重灌画布。焦点在输入框时退回原生文本撤销 */
+async function undoMbt(){
+  const a=document.activeElement;
+  if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA')){try{if(!document.execCommand('undo'))toast('此处无可撤销的文本编辑');}catch(_){ }return;}
+  if(agentBusy){toast('Agent 正在生成，稍后再撤销');return;}
+  if(mode==='play'){toast('演示模式不支持撤销');return;}
+  await serializeProject(async()=>{
+    const h=await histEnsure();
+    if(h==null){toast(engineFailed?'引擎不可用，无法撤销':'没有可撤销的操作');return;}
+    engSlotLoad('arg_reset','arg_push','undo '+(active||''));
+    let r;try{r=JSON.parse(engReadStr(engineExports.session_history_in(h)));}catch(_){toast('撤销失败');return;}
+    if(!r.ok||r.mbt===mbtText){toast(r.error==='nothing_to_undo'||r.mbt===mbtText?'当前画板没有可撤销的操作':'撤销失败：'+String(r.error||'').slice(0,60));return;}
+    histApplying=true;histSynced=true;if(r.mbt)histDoc=r.mbt;
+    try{
+      const render=await engRender(r.mbt);
+      applyMbtResult({ok:true,mbt:r.mbt,revision:r.rev||r.revision,entry:(render&&render.entry)||active,artboards:(render&&render.artboards)||[],flows:(render&&render.flows)||[]});
+      toast('已撤销');
+    }finally{histApplying=false;}
+  });
+}
+async function redoMbt(){
+  const a=document.activeElement;
+  if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA')){try{if(!document.execCommand('redo'))toast('此处无可重做的文本编辑');}catch(_){ }return;}
+  if(agentBusy){toast('Agent 正在生成，稍后再重做');return;}
+  if(mode==='play'){toast('演示模式不支持重做');return;}
+  await serializeProject(async()=>{
+    const h=await histEnsure();
+    if(h==null){toast(engineFailed?'引擎不可用，无法重做':'没有可重做的操作');return;}
+    engSlotLoad('arg_reset','arg_push','redo '+(active||''));
+    let r;try{r=JSON.parse(engReadStr(engineExports.session_history_in(h)));}catch(_){toast('重做失败');return;}
+    if(!r.ok||r.mbt===mbtText){toast(r.error==='nothing_to_redo'||r.mbt===mbtText?'当前画板没有可重做的操作':'重做失败：'+String(r.error||'').slice(0,60));return;}
+    histApplying=true;histSynced=true;if(r.mbt)histDoc=r.mbt;
+    try{
+      const render=await engRender(r.mbt);
+      applyMbtResult({ok:true,mbt:r.mbt,revision:r.rev||r.revision,entry:(render&&render.entry)||active,artboards:(render&&render.artboards)||[],flows:(render&&render.flows)||[]});
+      toast('已重做');
+    }finally{histApplying=false;}
+  });
 }
 /* session 检视桥（与 wasmtime_host 同 ABI）：in 槽载 mbt → session_open_in 得句柄，
  * 检视类 arg 槽载画板名 → session_*_in(handle)。mbt 键控缓存，只读调用不污染文档 */
@@ -1214,6 +1296,28 @@ async function engApply(gate,mbt,op){
   engSlotLoad('in_reset','in_push',mbt);engSlotLoad('arg_reset','arg_push',op);
   const out=JSON.parse(engReadStr(engineExports[gate==='agent'?'apply_agent_op_in':'apply_human_op_in']()));
   $('eng-ms').textContent=Math.round(performance.now()-t0)+'ms';
+  return out;
+}
+/* 会话化写入：所有真实编辑经常驻会话（session_apply_*_in）走，保证撤销历史与
+ * 文档同步；信封不带 render，成功后补一次 render_mbt 拼回画布数据 */
+async function engApplySession(gate,op){
+  const stub=window.__ENGINE_STUB__;
+  if(stub&&stub.apply)return stub.apply(gate,mbtText,op);
+  await loadEngine();
+  if(!engineExports)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  engineRecycleIfNeeded();
+  const h=await histEnsure();
+  if(h==null)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
+  engSlotLoad('arg_reset','arg_push',op);
+  const out=JSON.parse(engReadStr(engineExports[gate==='agent'?'session_apply_agent_in':'session_apply_human_in'](h)));
+  if(out&&out.ok){
+    histSynced=true;
+    if(out.mbt)histDoc=out.mbt;
+    if(!out.artboards){
+      const render=await engRender(out.mbt);
+      if(render&&render.artboards)out={...out,entry:render.entry,artboards:render.artboards,flows:render.flows};
+    }
+  }
   return out;
 }
 async function engRender(mbt){
@@ -1264,8 +1368,12 @@ function applyMbtResult(result,{reset=false,acceptDraft=false}={}){
   if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;placeMode=null;playStack=[];}
   const changed=mbtText!==result.mbt;
   mbtText=result.mbt;mbtRevision=Number(result.revision)||0;
-  // 仅内容真变化才置脏（校验并渲染同一 canonical 不应让刚保存的文档复活圆点）
-  if(changed){projectDirty=true;syncFileLabel();syncDirtyRemote();}
+  // 会话化写入（runOpNow/撤销）已把会话 doc 推进到 result.mbt（histSynced=true）；
+  // 外部写入（agent 终态/打开/校验渲染）后 histEnsure 依 histDoc 漂移判定重开并重建基线
+  if(changed){
+    projectDirty=true;syncFileLabel();syncDirtyRemote();
+    if(!histApplying)histCommit(active);
+  }
   const decl=$('decl-text');if(reset||acceptDraft){declDraftDirty=false;syncDirtyRemote();}if(decl&&!declDraftDirty)decl.value=mbtText;if(typeof renderDeclHighlight==='function')renderDeclHighlight();
   const next={};
   for(const art of result.artboards||[]){
@@ -1561,7 +1669,7 @@ function runOp(cmd,src){return serializeProject(()=>runOpNow(cmd,src));}
 async function runOpNow(cmd,src){
   if(!mbtText){setStatus(src,cmd,false,'空项目请先创建画板');return false;}
   let result;
-  try{result=await engApply(src==='agent'?'agent':'human',mbtText,cmd);}
+  try{result=await engApplySession(src==='agent'?'agent':'human',cmd);}
   catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
   if(!mbtResult(result)){setStatus(src,cmd,false,(result&&result.error)||'MBT 提交失败');return false;}
   try{applyMbtResult(result);}catch(err){setStatus(src,cmd,false,String(err).slice(0,70));return false;}
@@ -1857,6 +1965,8 @@ function nativeMenuAction(id){
     'shortcuts':()=>openShortcuts(),
     'settings':()=>openSettings(),
     'quit-app':()=>quitApp(),
+    'edit-undo':()=>undoMbt(),
+    'edit-redo':()=>redoMbt(),
   };
   if(map[id])map[id]();
 }
@@ -1898,6 +2008,7 @@ document.addEventListener('keydown',async e=>{
       'e':()=>sh?exportDdp():null,
       'f':()=>sh?runAutoFix():null,
       'h':()=>sh?exportHtmlProto():null,
+      'z':()=>sh?redoMbt():undoMbt(),
       '1':()=>setMode('wireframe'),
       '2':()=>setMode('hifi'),
       '3':()=>setMode('decl'),
