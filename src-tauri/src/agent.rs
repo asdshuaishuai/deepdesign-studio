@@ -596,7 +596,8 @@ impl<'a> EngineState<'a> {
                 return json!({"ok": false, "op": op, "error": r.get("error").cloned().unwrap_or(json!("readonly_failed"))});
             }
             self.ops.push(op.to_string());
-            return json!({"ok": true, "op": op, "result": r});
+            // L0 整形：export-* 信封化 / 检视类超限截断（失败信封已在内部原样放行）
+            return shape_readonly_result(op, r);
         }
 
         // 变更操作：session_apply_agent（AgentGate——engine-v0.1.1-session 修复
@@ -621,7 +622,13 @@ impl<'a> EngineState<'a> {
 
     async fn read_mbt(&self) -> Value {
         match &self.mbt {
-            Some(m) => json!({"ok": true, "mbt": m}),
+            // L0 整形：剥 ```mbt check 围栏块（引擎对节点声明的逐字重复，~40-50%）。
+            // ids/属性全保留在视觉声明块里；前端终态仍拿完整 canonical（mbt_b64）。
+            Some(m) => json!({
+                "ok": true,
+                "mbt": strip_mbt_check_blocks(m),
+                "note": "'mbt check' test fences stripped to save context (they duplicate the source declarations verbatim); all ids and properties are intact in the visual blocks",
+            }),
             None => json!({"ok": false, "error": "no_mbt_loaded"}),
         }
     }
@@ -665,6 +672,168 @@ fn artboard_index(a: &Value) -> Value {
         ),
         None => json!([]),
     }
+}
+
+// ===================== 上下文管理（分层裁剪，设计见 docs/agent-context.md） =====================
+// 背景：历史全链路曾零截断——read_mbt 全量 canonical 入历史（其中每画板的
+// ```mbt check 围栏块把节点声明逐字重复第二遍，真机实测占 ~40-50%），export-svg/html
+// 整段渲染体入历史，200 步上限下历史随轮次线性膨胀。三层确定性裁剪（不做 LLM
+// 摘要压缩——那是演进方向）：
+//   L0 源头整形：read_mbt 剥 check 围栏块；export-* 只回信封；检视类超限头尾截断。
+//   L1 去supersede：同类工具（read_mbt/list_components）的新结果出现后，旧结果占位化。
+//   L2 预算守卫：估算超阈值时，最近 RECENT_TOOL_KEEP 条之外的 tool 内容全部占位化。
+// 硬约束：只缩 tool 消息的 content，绝不删消息——OpenAI wire 要求每个 tool_call_id
+// 都有配对的 tool 消息，删消息 = 协议错误。messages 本体完整保留（轨迹/journal 用），
+// 收缩只发生在请求侧副本上。
+
+/// L0：剥除所有 ```mbt check 围栏块。check 块逐字重复源声明的每个 page.add(...)
+/// 节点、仅多两行 assert（真机对照实证），剥除不丢任何 id/属性信息。
+/// 仅用于 LLM 侧 read_mbt 整形；前端终态 mbt_b64 仍交付完整 canonical。
+fn strip_mbt_check_blocks(mbt: &str) -> String {
+    let mut out = String::with_capacity(mbt.len());
+    let mut rest = mbt;
+    while let Some(start) = rest.find("```mbt check") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + "```mbt check".len()..];
+        match after.find("\n```") {
+            Some(end) => rest = &after[end + "\n```".len()..],
+            // 没有闭合 fence（畸形输入）：保守起见保留剩余全部
+            None => {
+                out.push_str(&rest[start..]);
+                return out;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// L0：检视类结果的体积上限（超限头尾截断，保 [truncated] 标记）。
+const READONLY_RESULT_CAP: usize = 12 * 1024;
+
+/// L0：export-svg / export-html 的渲染体对后续设计决策零信息量（LLM 不消费 SVG/HTML
+/// 全文），只回信封；其余检视结果（lint/critique/spec/query/...）超 12KB 头尾截断。
+/// 失败信封（ok:false）原样放行——错误详情是模型自纠的输入，不得截。
+fn shape_readonly_result(op: &str, r: Value) -> Value {
+    if r.get("ok") == Some(&json!(false)) {
+        return json!({"ok": false, "op": op, "error": r.get("error").cloned().unwrap_or(json!("readonly_failed"))});
+    }
+    let head = op.split_whitespace().next().unwrap_or(op);
+    if head == "export-svg" || head == "export-html" {
+        let text = serde_json::to_string(&r).unwrap_or_default();
+        return json!({
+            "ok": true, "op": op,
+            "bytes": text.len(),
+            "head": text.chars().take(400).collect::<String>(),
+            "note": "render body elided (envelope only); the artifact itself is not needed for further design steps",
+        });
+    }
+    let text = serde_json::to_string(&r).unwrap_or_default();
+    if text.len() <= READONLY_RESULT_CAP {
+        return json!({"ok": true, "op": op, "result": r});
+    }
+    let head_len = READONLY_RESULT_CAP - 2 * 1024;
+    let head_part: String = text.chars().take(head_len).collect();
+    let mut tail_start = text.len().saturating_sub(2 * 1024);
+    while tail_start < text.len() && !text.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
+    let tail_part = &text[tail_start..];
+    json!({
+        "ok": true, "op": op,
+        "result": format!("{head_part}\n…[truncated {} of {} bytes]…\n{tail_part}",
+            text.len() - head_part.len() - tail_part.len(), text.len()),
+        "truncated": true,
+        "bytes": text.len(),
+    })
+}
+
+/// L1：请求侧历史去supersede。tool 消息 content 为 JSON 字符串——带 "mbt" 键的是
+/// read_mbt 结果、带 "components" 键的是 list_components 结果；每类只保留最后一个
+/// （最新的才是当前真相），旧的替换为占位。中间过程值对后续轮次无信息量，
+/// 却随轮次线性累积（提示词要求 create 后 read、VERIFY 再 read）。
+fn supersede_stale_tool_results(messages: &[Value]) -> Vec<Value> {
+    fn kind_of(m: &Value) -> Option<&'static str> {
+        if m.get("role").and_then(|v| v.as_str()) != Some("tool") {
+            return None;
+        }
+        let c = m.get("content")?.as_str()?;
+        let v: Value = serde_json::from_str(c).ok()?;
+        if v.get("mbt").is_some() {
+            Some("read_mbt")
+        } else if v.get("components").is_some() {
+            Some("list_components")
+        } else {
+            None
+        }
+    }
+    let mut last: std::collections::HashMap<&'static str, usize> = Default::default();
+    for (i, m) in messages.iter().enumerate() {
+        if let Some(k) = kind_of(m) {
+            last.insert(k, i);
+        }
+    }
+    messages
+        .iter()
+        .enumerate()
+        .map(|(i, m)| match kind_of(m) {
+            Some(k) if last.get(k) != Some(&i) => {
+                let mut r = m.clone();
+                r["content"] = json!(format!(
+                    "[superseded by a later {k} result — call {k} for the current state]"
+                ));
+                r
+            }
+            _ => m.clone(),
+        })
+        .collect()
+}
+
+/// L2 预算：128K tokens 的保守字符近似（utf-8 字节/3——CJK 精确、英文高估即保守）。
+/// 逐模型窗口（models.json 有 context 长度）的贯通是演进方向；固定保守值先行。
+const CONTEXT_BUDGET_BYTES: usize = 128 * 1024 * 3;
+/// 触发激进裁剪的阈值比例（给摘要/回复留余量）。
+const CONTEXT_BUDGET_RATIO: f64 = 0.7;
+/// L2 激进裁剪时，最近 N 条 tool 结果保持原样（近期上下文最相关）。
+const RECENT_TOOL_KEEP: usize = 6;
+
+fn estimate_context_bytes(messages: &[Value]) -> usize {
+    messages
+        .iter()
+        .map(|m| serde_json::to_string(m).map(|s| s.len()).unwrap_or(0))
+        .sum()
+}
+
+/// L2：预算超限时把最近 RECENT_TOOL_KEEP 条之外的 tool 消息内容占位化。
+/// 返回（收缩后副本, 被占位化的字节数）。
+fn elide_stale_tool_contents(messages: &[Value]) -> (Vec<Value>, usize) {
+    let keep: std::collections::HashSet<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.get("role").and_then(|v| v.as_str()) == Some("tool"))
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .take(RECENT_TOOL_KEEP)
+        .collect();
+    let mut elided = 0usize;
+    let out = messages
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            if m.get("role").and_then(|v| v.as_str()) == Some("tool") && !keep.contains(&i) {
+                let mut r = m.clone();
+                let old = r.get("content").and_then(|v| v.as_str()).map(|s| s.len()).unwrap_or(0);
+                r["content"] = json!("[elided: stale tool output beyond context budget]");
+                elided += old;
+                r
+            } else {
+                m.clone()
+            }
+        })
+        .collect();
+    (out, elided)
 }
 
 /// OpenAI chat tools 定义：async-openai 类型层构造（wire schema 的权威形态）。
@@ -966,11 +1135,39 @@ pub async fn run(
         }
     };
     let mut seq: usize = 0;
+    let mut context_event_sent = false;
 
     for step in 0..MAX_STEPS {
+        // 上下文管理（请求侧收缩；messages 本体完整保留作轨迹/journal）：
+        // L1 常态去supersede + L2 预算守卫
+        let mut request_messages = supersede_stale_tool_results(&messages);
+        let est = estimate_context_bytes(&request_messages);
+        if est > (CONTEXT_BUDGET_BYTES as f64 * CONTEXT_BUDGET_RATIO) as usize {
+            let (shrunk, elided_bytes) = elide_stale_tool_contents(&request_messages);
+            request_messages = shrunk;
+            if !context_event_sent {
+                context_event_sent = true;
+                eprintln!(
+                    "[agent] context budget: est ~{} tokens over {:.0}% of {} — elided {} bytes of stale tool output",
+                    est / 3,
+                    CONTEXT_BUDGET_RATIO * 100.0,
+                    CONTEXT_BUDGET_BYTES / 3,
+                    elided_bytes
+                );
+                emit(
+                    "context_usage",
+                    json!({
+                        "est_tokens": est / 3,
+                        "budget_tokens": CONTEXT_BUDGET_BYTES / 3,
+                        "elided_bytes": elided_bytes,
+                        "action": "elide_stale_tool",
+                    }),
+                );
+            }
+        }
         // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
         // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够
-        let mut resp = chat_once_with_retry(&client, &base, api_key, model, thinking, &messages).await;
+        let mut resp = chat_once_with_retry(&client, &base, api_key, model, thinking, &request_messages).await;
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
@@ -1233,6 +1430,102 @@ pub(crate) mod tests {
         assert_eq!(body["tools"].as_array().expect("tools").len(), 3);
         // 未设置的 optional 字段不得出现在 wire 上（SDK skip_serializing_if 契约）
         assert!(body.get("stream").is_none());
+    }
+
+    /// L0：剥 check 围栏块保 id（fixture 结构照真机 canonical：每画板一对
+    /// ```mbt 视觉声明 + ```mbt check 逐字重复声明 + assert）。
+    #[test]
+    fn strip_mbt_check_blocks_preserves_ids() {
+        let fixture = "---\nmoonviz:\n  format: visual-document\n  revision: 11\n---\n\n# doc\n\n\
+<!-- moonviz:artboard login -->\n```mbt\nfn visual_login() -> @decl.Prototype {\n  \
+let page = @decl.prototype(name=\"login\", width=390.0, height=844.0)\n  \
+page.add(@decl.generic_node(id=\"welcome_title\",component=\"heading\"))\n  \
+page.add(@decl.generic_node(id=\"email_input\",component=\"text_input\"))\n  page\n}\n```\n\n\
+```mbt check\ntest \"login visual declaration\" {\n  \
+let page = @decl.prototype(name=\"login\", width=390, height=844)\n  \
+page.add(@decl.generic_node(id=\"welcome_title\",component=\"heading\"))\n  \
+page.add(@decl.generic_node(id=\"email_input\",component=\"text_input\"))\n  \
+assert_eq(page.check().length(), 0)\n}\n```\n";
+        let stripped = strip_mbt_check_blocks(fixture);
+        assert!(!stripped.contains("```mbt check"), "check 围栏必须全部剥除");
+        assert!(stripped.contains("id=\"welcome_title\""), "节点 id 不得丢失");
+        assert!(stripped.contains("id=\"email_input\""), "节点 id 不得丢失");
+        assert!(stripped.contains("fn visual_login"), "视觉声明块必须保留");
+        assert!(stripped.len() < fixture.len() * 3 / 4, "体积应显著缩小");
+        // 畸形输入（无闭合 fence）：保守保留
+        let malformed = "```mbt check\nnever closed";
+        assert!(strip_mbt_check_blocks(malformed).contains("never closed"));
+        // 不含 check 块的输入原样返回
+        assert_eq!(strip_mbt_check_blocks("plain"), "plain");
+    }
+
+    /// L0：export-* 信封化 + 检视类超限截断；失败信封不截。
+    #[test]
+    fn shape_readonly_result_envelope_and_cap() {
+        let env = shape_readonly_result(
+            "export-svg wl",
+            json!({"ok": true, "svg": "<svg>".repeat(5000)}),
+        );
+        assert_eq!(env["ok"], json!(true));
+        assert!(env["bytes"].as_u64().unwrap() > 20_000);
+        assert!(env["head"].as_str().unwrap().chars().count() <= 400);
+        assert!(env.get("svg").is_none(), "渲染体不得整段入历史");
+        let small = shape_readonly_result("lint wl", json!({"ok": true, "lint": ["x"]}));
+        assert_eq!(small["result"]["lint"], json!(["x"]), "小结果原样放行");
+        let big = shape_readonly_result(
+            "critique wl",
+            json!({"ok": true, "issues": "x".repeat(20_000)}),
+        );
+        assert_eq!(big["truncated"], json!(true));
+        assert!(big["result"].as_str().unwrap().contains("[truncated"));
+        let fail = shape_readonly_result("lint wl", json!({"ok": false, "error": "unknown_artboard:wl"}));
+        assert_eq!(fail["error"], json!("unknown_artboard:wl"), "失败信封必须完整回传");
+    }
+
+    /// L1：同类工具只留最新，旧结果占位；消息数与 tool_call_id 配对不变。
+    #[test]
+    fn supersede_keeps_latest_and_pairing() {
+        let tool_msg = |id: &str, content: Value| {
+            json!({"role": "tool", "tool_call_id": id, "content": serde_json::to_string(&content).unwrap()})
+        };
+        let messages = vec![
+            json!({"role": "system", "content": "sys"}),
+            json!({"role": "user", "content": "go"}),
+            json!({"role": "assistant", "content": null, "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "read_mbt", "arguments": "{}"}},
+                {"id": "c2", "type": "function", "function": {"name": "list_components", "arguments": "{}"}}]}),
+            tool_msg("c1", json!({"ok": true, "mbt": "OLD"})),
+            tool_msg("c2", json!({"ok": true, "components": [{"id": "badge"}]})),
+            json!({"role": "assistant", "content": null, "tool_calls": [
+                {"id": "c3", "type": "function", "function": {"name": "read_mbt", "arguments": "{}"}}]}),
+            tool_msg("c3", json!({"ok": true, "mbt": "NEW"})),
+        ];
+        let shaped = supersede_stale_tool_results(&messages);
+        assert_eq!(shaped.len(), messages.len(), "绝不删消息（tool_call_id 配对硬约束）");
+        assert_eq!(shaped[5]["content"], messages[5]["content"], "最新 read_mbt 原样保留");
+        let old = shaped[3]["content"].as_str().unwrap();
+        assert!(old.contains("superseded") && old.contains("read_mbt"), "旧 read_mbt 应被占位：{old}");
+        assert_eq!(shaped[4]["content"], messages[4]["content"], "唯一的 list_components 保留");
+        assert_eq!(shaped[3]["tool_call_id"], json!("c1"), "tool_call_id 不变");
+    }
+
+    /// L2：预算超限的激进裁剪只动最近 N 条之外的 tool 内容。
+    #[test]
+    fn elide_keeps_recent_tool_contents() {
+        let messages: Vec<Value> = (0..8)
+            .map(|i| {
+                json!({"role": "tool", "tool_call_id": format!("c{i}"),
+                       "content": format!("{{\\\"payload\\\":\\\"{}\\\"}}", "x".repeat(100))})
+            })
+            .chain(std::iter::once(json!({"role": "assistant", "content": "done"})))
+            .collect();
+        let (shaped, elided) = elide_stale_tool_contents(&messages);
+        assert_eq!(shaped.len(), messages.len());
+        let one = messages[0]["content"].as_str().unwrap().len();
+        assert_eq!(elided, 2 * one, "只有最早的 2 条被占位（keep={}）", RECENT_TOOL_KEEP);
+        assert!(shaped[0]["content"].as_str().unwrap().contains("elided"));
+        assert!(shaped[7]["content"].as_str().unwrap().contains("payload"), "最近结果保留");
+        assert_eq!(shaped[8]["content"], json!("done"), "非 tool 消息不动");
     }
 
     #[test]
@@ -1952,6 +2245,52 @@ pub(crate) mod tests {
             !second.contains("unavailable"),
             "只读 op 仍被拦为不可用（session 路由未生效）：{}",
             &second[..second.len().min(400)]
+        );
+    }
+
+    /// L0 上下文整形端到端（真机引擎）：模板建板 + read_mbt 后，第二轮请求的
+    /// 历史里必须含节点 id（id 可见性）且不含 check 围栏（~40-50% 冗余被剥）。
+    #[tokio::test]
+    async fn agent_loop_read_mbt_shaping_keeps_ids() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let (port, mock, bodies) = spawn_mock_llm(vec![
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "moonviz_op",
+                     "arguments": "{\"op\": \"template login cs\"}"}},
+                    {"id": "c2", "type": "function", "function": {"name": "read_mbt",
+                     "arguments": "{}"}}
+                ]}}]
+            }),
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": "已读取文档。"}}]
+            }),
+        ])
+        .await;
+        let out = run(
+            &ENGINE,
+            "建登录页并读取文档",
+            None,
+            "sk-test",
+            "mock-model",
+            &format!("http://127.0.0.1:{port}"),
+            "auto",
+            None,
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        let bs = bodies.lock().unwrap();
+        assert!(bs.len() >= 2, "应有 2 轮请求");
+        let second = &bs[1];
+        assert!(
+            second.contains("welcome_title"),
+            "整形后的 read_mbt 结果必须保留节点 id（id 可见性是裁剪的硬边界）"
+        );
+        assert!(
+            !second.contains("```mbt check"),
+            "check 围栏块（节点声明的逐字重复）必须被剥除（note 文案里的 'mbt check' 字样不算围栏）"
         );
     }
 
