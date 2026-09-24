@@ -108,6 +108,33 @@ const mappedIds=new Set([...mapBody.matchAll(/'([A-Za-z0-9_-]+)'\s*:/g)].map(m=>
 const unmapped=menuIds.filter(id=>!mappedIds.has(id));
 assert.deepEqual(unmapped,[],`原生菜单 id 未在 nativeMenuAction 中映射：${unmapped}`);
 
+/* 检查 F：启动期自动执行守卫。引用 runGlobalPrompt 的 setTimeout/setInterval 回调
+ * 只允许出现在 dd-dev-autorun 开关门内（一次性、用后即焚）。
+ * 事故形态：露营 e2e 调试残留以无条件 setTimeout(…,1500) 提交入库，每次启动自动
+ * 跑真实 LLM run；vm 动态切片不执行脚本尾部，所以当时全部防线绿灯——必须静态拦。 */
+const autorunGuardStart=script.indexOf("localStorage.getItem('dd-dev-autorun')");
+const autorunGuardEnd=autorunGuardStart>=0?script.indexOf('catch(_){ }',autorunGuardStart):-1;
+assert(autorunGuardStart>=0&&autorunGuardEnd>autorunGuardStart,
+  'dd-dev-autorun 开关门不存在或结构变了——请同步更新检查 F');
+const strayAutorun=[];
+// 括号平衡取完整调用参数区间（正则非贪婪会被无大括号箭头体骗过吞到别处的 `}`）。
+// openAt 必须指向调用自身的 '('：深度从 1 起算，遇到配对的 ')' 才闭合。
+function callSpan(src,openAt){
+  let depth=1;
+  for(let i=openAt+1;i<src.length&&i<openAt+2000;i++){
+    if(src[i]==='(')depth++;
+    else if(src[i]===')'){depth--;if(depth===0)return src.slice(openAt,i+1);}
+  }
+  return null;
+}
+for(const m of script.matchAll(/\b(?:setTimeout|setInterval)\s*\(/g)){
+  const body=callSpan(script,m.index+m[0].length-1);
+  if(body&&/runGlobalPrompt\s*\(/.test(body)&&!(m.index>autorunGuardStart&&m.index<autorunGuardEnd))
+    strayAutorun.push(script.slice(m.index,m.index+60));
+}
+assert.deepEqual(strayAutorun,[],
+  `守卫块外发现引用 runGlobalPrompt 的延时自动执行（启动期自动跑 agent）：${strayAutorun}`);
+
 /* ---------- 动态检查：真实状态机 ---------- */
 function fn(name){const start=script.indexOf('function '+name+'(');assert(start>=0,name);const brace=script.indexOf('){',start)+1;let depth=1,i=brace+1;for(;depth;i++){if(script[i]==='{')depth++;if(script[i]==='}')depth--;}return (script.slice(start-6,start)==='async '?'async ':'')+script.slice(start,i)}
 const context=vm.createContext({console,window:{addEventListener(){}},document:{addEventListener(){},querySelectorAll:()=>[],body:{nodeType:1,querySelectorAll:()=>[]},createTreeWalker:()=>({nextNode:()=>null}),documentElement:{classList:{add(){}}},getElementById:element},navigator:{platform:'Win32',userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},performance:{now:()=>0},setTimeout,clearTimeout,requestAnimationFrame(fn){if(typeof fn==='function')fn();},MutationObserver:class{observe(){}},NodeFilter:{SHOW_TEXT:4},btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),encodeURIComponent,decodeURIComponent,escape,unescape});

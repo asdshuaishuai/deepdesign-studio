@@ -3292,11 +3292,9 @@ try{
   const devp=localStorage.getItem('dd-dev-autorun');
   if(devp){localStorage.removeItem('dd-dev-autorun');setTimeout(()=>{$('gp-input').value=devp;runGlobalPrompt();},1200);}
 }catch(_){ }
-/* E2E 测试：启动 1.5s 后自动执行露营需求（测试完删除此块） */
-setTimeout(()=>{
-  $('gp-input').value='直接开始构建"城市露营装备租赁"小程序，375x812 中文界面，不要提问。5 个页面互相跳转：home（首页：定位+搜索框+3 分类入口（帐篷/睡袋炊具/桌椅灯具）+6 件装备卡片+底部导航 4 tab）、search（搜索+分类筛选+装备列表）、detail（装备图+名称+日租金押金+规格+租期 3 档+数量选择+立即租赁按钮→confirm_order）、confirm_order（装备摘要+租期+取还方式+联系人+费用明细+提交→order_detail）、order_detail（状态"租赁中"+装备+取还时间地点+费用+联系客服）。颜色 #2F6B4F #F7F4EC #E67E22。6 件装备 mock：云尚2人帐38/日、森野4人帐68/日、极光睡袋22/日、卡式炉18/日、克米特椅12/日、营地灯9/日。背景 rect 用 width_mode=fill height_mode=fill。';
-  runGlobalPrompt();
-},1500);
+/* 露营 e2e 的前端 autorun 残留已删（曾以无条件 setTimeout 每次启动自动跑真实 LLM
+ * run；露营链路由 src-tauri/tests/agent_llm_e2e.rs 的 CAMPING_E2E 环境门控覆盖，
+ * 前端侧仅保留上方 dd-dev-autorun 开关门。test_studio.cjs 检查 F 锚定此约束）。 */
 /* 引擎模板全集（list_templates 权威清单，14 个；sync-engine 探针校验）——
  * 欢迎页全量暴露，人与 Agent 可用集合对齐（审查 D2）。尺寸按 device 档 */
 const TPLS=[
