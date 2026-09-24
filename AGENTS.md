@@ -360,8 +360,12 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   文件，stderr 的 `[agent]` 行是同一事件流的控制台镜像。
 - **Agent 长任务与人类编辑的丢失更新**：agent run 以请求起点的 `mbtText` 快照驱动
   （Rust 侧 EngineState 每请求重建），秒级窗口内人类提交的 op 会被 agent 终态整体
-  覆盖。修法需要 rebase/合并机制（把 agent 的 op 流重放到最新 canonical），属设计决策；
-  交互缓解：在飞门（agentBusy）已拦截并发 run 与 run 中的新建/打开（新建/打开还会经原生确认框）；画布编辑仍建议等 run 结束。
+  覆盖。**修法已决策为终态 rebase**（方案 C：快照起点不变，终态时把 run 的变更 op 流
+  重放到最新 canonical，门拒绝即跳过并报告）——决策记录与实施清单见
+  `docs/agent-rebase.md`，**待上游 [#19](https://github.com/asdshuaishuai/moonviz/issues/19)
+  （变更信封带 canonical，引擎升级中）落地后实施**。
+  现行交互缓解：在飞门（agentBusy）已拦截并发 run 与 run 中的新建/打开（新建/打开还会经
+  原生确认框）；rebase 落地后画布编辑安全，新建/打开拦截保留（整文档替换超出 rebase 范围）。
 - **~~工具结果无截断~~（已解决，2026-09）**：三层确定性裁剪已落地（`docs/agent-context.md`）——
   L0 源头整形（read_mbt 剥 `mbt check` 围栏块、export-* 信封化、检视类 12KB 截断）、
   L1 去supersede（旧 read_mbt/list_components 结果占位化）、L2 预算守卫（**逐模型窗口**：

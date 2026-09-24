@@ -71,7 +71,7 @@
 
 | 项 | 边界 | 备注 |
 |----|------|------|
-| Agent 在飞时切换/新建/撤销 | 硬拦截 + toast | 丢更新风险；rebase/合并机制属设计决策（AGENTS.md 已登记） |
+| Agent 在飞时切换/新建/撤销 | 硬拦截 + toast | 编辑覆盖已决策终态 rebase（`docs/agent-rebase.md`，待上游 [#19](https://github.com/asdshuaishuai/moonviz/issues/19) 后实施）；切换/新建拦截保留（整文档替换超出 rebase 范围） |
 | 切换项目重置撤销栈 | 引擎 history 按画板分栈、宿主边界 | 多板全局线性撤销待上游 history 持久化方向 |
 | 多窗口/并排项目 | 单窗口模型 | 本期范围外；多项目 = 换文档 |
 | 跨 run 对话记忆 | 每次 run 全新 payload | ChatGPT 式连续对话是演进方向（Rust 侧历史 + 对话视图） |
