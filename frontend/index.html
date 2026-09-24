@@ -2124,10 +2124,42 @@ function trackAgent(instruction,cmds){
  * traceOpen 只负责新建本次 run 的容器——多个 run 的事件互不干扰，也不存在
  * 旧监听器被覆盖泄漏的问题 */
 const TRACE={un:null,tried:false};
-function traceOpen(runId,label){
+function traceOpen(runId,label,continuation){
   const body=$('tl-body');if(!body)return;
+  // 续轮（澄清回答）合并进现有块：只追加一行短回答，不再重复用户全文
+  if(continuation){
+    const wrap=document.querySelector('.tl-run');
+    if(wrap){
+      wrap.id='tl-run-'+runId;
+      const line=document.createElement('div');
+      line.className='tl-line tl-user-cont';
+      line.textContent='↳ 回答：'+(label.length>60?label.slice(0,60)+'…':label);
+      line.title=label;
+      wrap.appendChild(line);
+      if(TRACE.un||TRACE.tried||!IS_TAURI||!window.__TAURI__.event)return;
+      TRACE.tried=true;
+      window.__TAURI__.event.listen('agent-event',ev=>{
+        const p=ev.payload||{};
+        const box=document.getElementById('tl-run-'+p.run);if(!box)return;
+        if(p.type==='assistant_text'){appendTraceLine(box,'🤖 '+p.text,'tl-assist');return;}
+        if(p.type==='tool_start'){appendTraceLine(box,'⏳ '+p.op,'tl-tool pending','tlstep-'+p.run+'-'+p.seq);return;}
+        if(p.type==='tool_end'){
+          const line=document.getElementById('tlstep-'+p.run+'-'+p.seq);
+          if(line){
+            line.className='tl-line '+(p.ok?'tl-ok':'tl-err');
+            line.innerHTML=(p.ok?'✓ ':'✗ ')+escHtml(line.dataset.op||'')+(p.ms?` <span class="tl-ms">${p.ms}ms</span>`:'')+(p.error?` <span class="tl-err-msg">${escHtml(p.error)}</span>`:'');
+          }
+          return;
+        }
+        if(p.type==='done'){appendTraceLine(box,`■ 完成（${p.ops} ops · ${p.stopReason}）`,'tl-done');return;}
+        if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
+      }).then(u=>{TRACE.un=u;}).catch(()=>{});
+      return;
+    }
+  }
   const wrap=document.createElement('div');wrap.className='tl-run';wrap.id='tl-run-'+runId;
-  wrap.innerHTML=`<div class="tl-user">▸ ${escHtml(label)}</div>`;
+  const shown=label.length>100?label.slice(0,100)+'…':label;
+  wrap.innerHTML=`<div class="tl-user" title="${escHtml(label)}">▸ ${escHtml(shown)}</div>`;
   body.prepend(wrap);
   // tried 标记：listen 失败被吞后不再反复注册（否则每个 run 叠一个监听器）
   if(TRACE.un||TRACE.tried||!IS_TAURI||!window.__TAURI__.event)return;
@@ -2260,7 +2292,7 @@ async function runGlobalPrompt(){
     setStatus('agent',t,true,'AI 处理中…');
     // 澄清式多轮：agent 上一轮的提问 + 本轮用户回答 → 拼接为完整指令
     const runId=Date.now();
-    traceOpen(runId,t);
+    traceOpen(runId,t,!!agentThread.pending);
     const instruction=agentThread.pending
       ? `${agentThread.pending}\n\n[用户对上述问题的回答]: ${t}\n\n请基于回答继续执行任务（直接生成，不要再次追问）。`
       : t;
