@@ -87,11 +87,13 @@ Navigation / theme / tokens:
 改回默认值即撤销覆盖）·
 `fix <ab>`（违规**严格减少**才提交的还债语义；因此它属于变更类，绝不能走只读管道）
 
-CLI/MCP 会话级工具（0.1.5 skill 载明；**classic wasm 产物未导出**——实测导出面无
-`session_history*`/`session_undo*` 等，wasm 宿主（wasmtime/WebView）当前一律不可用，
-勿经 op 或工具尝试；deepDesign 已向上游提 issue 请求 wasm 对齐，落地后本节转正）：
-`history init|commit|log|undo|redo|checkout|diff`（设计版本控制——撤销/重做的事实源）·
-`collab-merge <base_rev> <agent>=<op>[+op...]`（多 agent OT 三方合并）·
+CLI/MCP 会话级工具（0.1.5-fix-2 起分层可用）：
+`history init|commit|log|undo|redo|checkout|diff`（设计版本控制）——**wasm 已导出
+`session_history`/`session_history_in`**（0.1.5-fix-2，arg 槽 `<sub> [artboard]`、须先
+init、apply 不自动入史须显式 commit），deepDesign 前端已据此实现产品级撤销/重做；但对
+**Agent op 面仍不可达**（moonviz_op 无 history 头，勿经 op 尝试）·
+`collab-merge` / `anim-css` / `anim-list` / `protest` 仍为 CLI/MCP 独有，wasm 未导出，
+勿经 op 尝试：`collab-merge <base_rev> <agent>=<op>[+op...]`（多 agent OT 三方合并）·
 `anim-css <node> <preset>` / `anim-list`（press/fade_in/slide_in_right/modal_present/
 shake/pop 六预设 → CSS @keyframes）·
 `protest <ab> <script>`（断言式原型测试：`tap:x:y>board; back>board; swipe:left>board;

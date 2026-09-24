@@ -63,6 +63,7 @@ const IN_FACE_EXPORTS = [
   'session_generate_responsive_in', 'session_infer_missing_in', 'session_infer_page_type_in',
   'session_interactions_in', 'session_lint_in', 'session_open_project_json_in',
   'session_query_nodes_in', 'session_spec_in', 'session_states_in', 'session_tap_in',
+  'session_history_in',
 ];
 
 // session API（26 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
@@ -77,6 +78,7 @@ const SESSION_EXPORTS = [
   'session_infer_missing', 'session_extract_design_system', 'session_generate_responsive',
   'session_benchmark', 'session_save', 'session_component_compile_b64',
   'session_library_snapshot', 'session_tap', 'session_count', 'session_open_project_json',
+  'session_history',
 ];
 
 // 组件描述词典（本地展示文案，前端面板 tooltip 与 agent list_components 共用）。
