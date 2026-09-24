@@ -19,6 +19,7 @@
 |--------|--------|--------------------|
 | 新建项目… | ⌘N | `new-project` → `newProject()`（有未保存更改时先弹原生确认） |
 | 打开 DDP… | ⌘O | `open-ddp` → `openProject()`（先输密码（免密留空）再选文件 → 解密 → MBT 重载） |
+| 打开最近的项目… | — | `open-recent` → `openRecentMenu()`（前端文件菜单展开并渲染最近项目区；注册表存 localStorage `dd-recent-projects`，经 `list_ddp_projects` 磁盘对账；点击行免对话框切换 `openProject(path)`——先试会话口令/空口令，失败再问） |
 | 保存 | ⌘S | `save` → `saveProject()`（已有路径原地回写并复用会话口令；否则回落导出对话框） |
 | 导出 DDP… | ⇧⌘E | `export-ddp` → `exportDdp()`（加密/免密选择，总弹保存对话框） |
 | 导出 HTML 原型… | ⇧⌘H | `export-html` → `exportHtmlProto()`（引擎 `export_html`：自包含可交互 HTML） |

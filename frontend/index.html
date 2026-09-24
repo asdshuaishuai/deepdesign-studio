@@ -92,6 +92,14 @@ html.win .fmenu-wrap{display:block}
 .fmenu-pop{display:none;position:absolute;top:36px;left:0;min-width:220px;background:var(--panel,#fff);border:var(--bd);border-radius:var(--r-lg);box-shadow:var(--sh-pop);padding:5px;z-index:200}
 .fmenu-pop.open{display:block}
 .fmenu-item{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;padding:7px 12px;border:none;background:transparent;border-radius:7px;font-size:12.5px;color:var(--tx);cursor:pointer;text-align:left}
+.fm-recents{max-height:176px;overflow:auto;margin:2px 0 4px;border-bottom:1px solid var(--bd);padding-bottom:4px}
+.recent-block{margin-top:18px;text-align:left}
+.recent-block h3{font-size:11.5px;margin:0 0 8px;color:rgba(0,0,0,.5);letter-spacing:.06em}
+.recent-list{display:flex;flex-direction:column;gap:6px}
+.recent-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid rgba(0,0,0,.09);border-radius:10px;background:rgba(255,255,255,.55);cursor:pointer;font-size:12.5px}
+.recent-row:hover{border-color:rgba(47,107,79,.5)}
+.recent-row .rc-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent-row .rc-meta{color:rgba(0,0,0,.45);font-size:11px;white-space:nowrap}
 .fmenu-item:hover{background:rgba(0,122,255,.09);color:var(--acc-tx)}
 .fmenu-item .kbd{font-size:10px;color:var(--tx3);font-family:ui-monospace}
 .fmenu-sep{height:1px;background:rgba(0,0,0,.08);margin:4px 8px}
@@ -691,6 +699,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div class="fmenu-pop" id="fmenu-pop">
       <button class="fmenu-item" onclick="fmAct('newProject')"><span>新建项目</span><span class="kbd">Ctrl+N</span></button>
       <button class="fmenu-item" onclick="fmAct('openProject')"><span>打开 DDP…</span><span class="kbd">Ctrl+O</span></button>
+      <div class="fm-recents" id="fm-recents" style="display:none"></div>
       <button class="fmenu-item" onclick="fmAct('saveProject')"><span>保存</span><span class="kbd">Ctrl+S</span></button>
       <button class="fmenu-item" onclick="fmAct('exportDdp')"><span>导出 DDP…</span></button>
       <div class="fmenu-sep"></div>
@@ -805,6 +814,10 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <div class="tpl-row" id="tpl-row"></div>
           <button class="tpl-more" id="tpl-more" onclick="toggleAllTpl()">浏览全部模板（14）▾</button>
           <div class="tpl-row tpl-all" id="tpl-all" style="display:none"></div>
+          <div class="recent-block" id="welcome-recents" style="display:none">
+            <h3>最近项目</h3>
+            <div class="recent-list" id="recent-list"></div>
+          </div>
         </div>
       </div>
       <div id="decl-stage">
@@ -1091,7 +1104,7 @@ function winCtl(action){
   if(!IS_TAURI||!window.__TAURI__.window)return;
   try{window.__TAURI__.window.getCurrentWindow()[action]();}catch(e){console.warn('winCtl',e);}
 }
-function toggleFileMenu(ev){if(ev)ev.stopPropagation();$('fmenu-pop').classList.toggle('open');}
+function toggleFileMenu(ev){if(ev)ev.stopPropagation();const pop=$('fmenu-pop');const opening=!pop.classList.contains('open');pop.classList.toggle('open');if(opening)renderRecentRows($('fm-recents'));}
 function fmAct(fn){$('fmenu-pop').classList.remove('open');if(typeof window[fn]==='function')window[fn]();}
 document.addEventListener('click',ev=>{const pop=$('fmenu-pop');if(pop&&pop.classList.contains('open')&&!ev.target.closest('.fmenu-wrap'))pop.classList.remove('open');});
 let baseCmd='',opCmds=[];
@@ -1103,11 +1116,21 @@ let studioFlows=[]; // Legacy migration cache only; canonical flow state now liv
 let mbtText='',mbtRevision=0,declDraftDirty=false;
 let projectDirty=false,fileLabelName='';
 let ddpSessionPassword=''; // 会话级：仅记住本次打开/导出所用口令，供原地保存复用；不持久化
+let ddpPasswordByPath={}; // 会话级 per-path 口令映射：最近项目免对话框切换时先试后问（不持久化明文）
 /* 脏 = 内容脏（applyMbtResult 变更）∨ 源码草稿脏（decl-text 未提交编辑）——
  * ● 标记、新建/打开/退出守卫、Rust PROJECT_DIRTY（关窗拦截）共用这一语义 */
 function anyDirty(){return projectDirty||declDraftDirty;}
 function syncFileLabel(){$('file-label').textContent=(anyDirty()?'● ':'')+(fileLabelName||('v'+APP_VER));}
 function setFileLabel(name){fileLabelName=name;syncFileLabel();}
+/* 项目名三处同步：顶栏 #proj-name、document.title、原生窗口标题。
+ * 原生标题需 capabilities 的 core:window:allow-set-title（真实功能所需的最小权限）。
+ * 放在 vm 动态切片区间内（newProject 会调它）——移位需同步 test_studio.cjs。 */
+function syncProjName(pathOrName){
+  const name=(pathOrName||'').split(/[\\/]/).pop().replace(/\.ddp$/i,'')||'未命名项目';
+  $('proj-name').textContent=name;document.title=name;
+  if(IS_TAURI&&window.__TAURI__.window&&window.__TAURI__.window.getCurrentWindow)
+    window.__TAURI__.window.getCurrentWindow().setTitle(name+' — deepDesign Studio').catch(()=>{ });
+}
 function syncDirtyRemote(){if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_project_dirty',{dirty:projectDirty||declDraftDirty}).catch(()=>{});}
 let projectQueue=Promise.resolve();
 function serializeProject(task){const pending=projectQueue.then(task);projectQueue=pending.catch(()=>{});return pending;}
@@ -1949,6 +1972,7 @@ function nativeMenuAction(id){
   const map={
     'new-project':()=>newProject(),
     'open-ddp':()=>openProject(),
+    'open-recent':()=>openRecentMenu(),
     'save':()=>saveProject(),
     'export-ddp':()=>exportDdp(),
     'export-html':()=>exportHtmlProto(),
@@ -2848,6 +2872,51 @@ function closeDdpPassword(value=null){
 }
 $('ddp-password').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeDdpPassword();}else if(e.key==='Enter'){e.preventDefault();submitDdpPassword();}else if(e.key==='Tab'){const els=Array.from($('ddp-password').querySelectorAll('input,button'));const i=els.indexOf(document.activeElement);e.preventDefault();els[(i+(e.shiftKey?-1:1)+els.length)%els.length].focus();}});
 async function promptDdpPassword(label){return requestDdpPassword(label);}
+/* ---------- 多项目：最近项目注册表（localStorage）+ 磁盘对账 ---------- */
+const RECENT_KEY='dd-recent-projects',RECENT_MAX=10;
+function recentProjects(){try{const l=JSON.parse(localStorage.getItem(RECENT_KEY));return Array.isArray(l)?l:[];}catch(_){return [];}}
+function saveRecents(list){try{localStorage.setItem(RECENT_KEY,JSON.stringify(list.slice(0,RECENT_MAX)));}catch(_){ }}
+function rememberProject(path){
+  if(!path)return;
+  saveRecents([{path,name:path.split(/[\\/]/).pop().replace(/\.ddp$/i,''),ts:Date.now()},
+    ...recentProjects().filter(p=>p.path!==path)]);
+  renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();
+}
+function forgetProject(path){saveRecents(recentProjects().filter(p=>p.path!==path));renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();}
+/* 对账：按父目录批量扫描（Rust list_ddp_projects），文件已删除的条目剔除、mtime 刷新。
+ * 位置在 vm 动态切片外——仅在运行时（启动/用户操作）被调用。 */
+async function refreshRecents(){
+  if(!IS_TAURI)return;
+  const list=recentProjects();if(!list.length){updateWelcomeRecents();return;}
+  const found=new Map();
+  for(const dir of [...new Set(list.map(p=>p.path.replace(/[\\/][^\\/]+$/,'')))]){
+    try{const r=await window.__TAURI__.core.invoke('list_ddp_projects',{dir});for(const it of(r&&r.projects)||[])found.set(it.path,it);}catch(_){ }
+  }
+  const next=list.filter(p=>found.has(p.path)).map(p=>({path:p.path,name:p.name,ts:Math.max(p.ts||0,(found.get(p.path).modified||0)*1000)}));
+  if(next.length!==list.length)saveRecents(next);
+  renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();
+}
+function relTime(ts){
+  if(!ts)return'';
+  const s=Math.max(0,(Date.now()-ts)/1000);
+  if(s<60)return'刚刚';if(s<3600)return Math.floor(s/60)+' 分钟前';
+  if(s<86400)return Math.floor(s/3600)+' 小时前';return Math.floor(s/86400)+' 天前';
+}
+/* 两个呈现位（文件菜单 fm-recents / 欢迎面板 recent-list）共用一份注册表渲染 */
+function renderRecentRows(box){
+  if(!box)return;
+  const list=recentProjects().slice(0,6);
+  if(box.id==='fm-recents'){
+    box.style.display=list.length?'block':'none';
+    box.innerHTML=list.map(p=>
+      `<button class="fmenu-item" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span>${escHtml(p.name)}</span><span class="kbd">${escHtml(relTime(p.ts))}</span></button>`).join('');
+  }else{
+    box.innerHTML=list.map(p=>
+      `<div class="recent-row" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}</span><span class="rc-meta">${escHtml(relTime(p.ts))}</span></div>`).join('');
+  }
+}
+function updateWelcomeRecents(){const b=$('welcome-recents');if(b)b.style.display=recentProjects().length?'block':'none';}
+function openRecentMenu(){$('fmenu-pop').classList.add('open');renderRecentRows($('fm-recents'));}
 function exportDdp(){return serializeProject(exportDdpNow);}
 /* 导出：先问“是否加密”（DDP1 加密 / DDP2 免密），拿到密码后再弹系统保存对话框 */
 let exportDdpResolve=null;
@@ -2876,10 +2945,18 @@ async function exportDdpNow(){
   try{
     const r=await window.__TAURI__.core.invoke('save_ddp',{mbtB64:utf8ToB64(mbtText),password});
     if(!r||r==='canceled')return;
-    // 口令只在导出成功后成为会话口令——取消/失败不得污染（否则 ⌘S 会用新口令重加密旧文件）
-    ddpSessionPassword=password;
-    filePath=r.path;projectDirty=false;syncDirtyRemote();setFileLabel(r.path.split(/[\\/]/).pop());
-    toast(password?'已导出加密 DDP（DDP1）':'已导出 DDP（免密 DDP2）');
+    if(!filePath){
+      // 首次落盘（项目从未保存过）：导出即保存——接管会话口令与路径；
+      // 口令只在成功后生效，取消/失败不得污染（否则 ⌘S 会用新口令重加密旧文件）
+      ddpSessionPassword=password;ddpPasswordByPath[r.path]=password;
+      filePath=r.path;projectDirty=false;syncDirtyRemote();
+      setFileLabel(r.path.split(/[\\/]/).pop());syncProjName(r.path);rememberProject(r.path);
+      toast(password?'已导出加密 DDP（DDP1）':'已导出 DDP（免密 DDP2）');
+    }else{
+      // 已有绑定项目：导出=纯副本——绝不改绑 filePath/会话口令，
+      // 否则此后 ⌘S 会写进导出位置（多项目下的错文件事故源）
+      toast('已导出副本；当前项目仍保存到 '+filePath.split(/[\\/]/).pop());
+    }
   }catch(err){toast('DDP 导出失败：'+String(err).slice(0,80));}
 }
 /* 保存：已有路径（打开/导出过）→ 原地回写并复用会话口令；否则回落导出对话框 */
@@ -2890,7 +2967,7 @@ async function saveProject(){
       // 裸 invoke 会与 agent 终态 apply 竞态（磁盘写旧内容 + 清掉刚置的脏）
       await serializeProject(async()=>{
         await window.__TAURI__.core.invoke('save_ddp',{mbtB64:utf8ToB64(mbtText),password:ddpSessionPassword,path:filePath});
-        projectDirty=false;syncFileLabel();syncDirtyRemote();
+        projectDirty=false;syncFileLabel();syncDirtyRemote();syncProjName(filePath);rememberProject(filePath);
       });
       toast('已保存到 '+filePath.split(/[\\/]/).pop());
     }catch(err){toast('保存失败：'+String(err).slice(0,80));}
@@ -2922,25 +2999,43 @@ async function exportSvg(){
     toast('已导出当前画板 SVG');
   }catch(err){toast('SVG 导出失败：'+String(err).slice(0,80));}
 }
-async function openProject(){
+async function openProject(path){
   if(agentBusy){toast('Agent 正在生成，完成后再打开');return;}
   // 仅确有未保存更改（内容或源码草稿）时确认；确认框回车默认「继续编辑」（安全侧），返回 true=留下
   if(IS_TAURI&&anyDirty()){
     const stay=await window.__TAURI__.core.invoke('confirm_discard',{title:'打开 DDP',message:'当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。'}).catch(()=>true);
     if(stay)return;
   }
-  const password=await promptDdpPassword('输入 DDP 密码（免密文件留空直接确认）：');
-  if(password===null)return;
-  try{
-    const r=await window.__TAURI__.core.invoke('open_ddp',{password});
-    if(!r||r==='canceled')return;
-    await serializeProject(async()=>{const result=await engRender(b64ToUtf8(r.mbt_b64));
+  let password=null,r=null;
+  if(path){
+    // 免对话框切换（最近项目/切换器）：先静默尝试记住的口令与空口令（DDP2 免密），失败再问
+    const tried=[];
+    for(const cand of [ddpPasswordByPath[path],'']){
+      if(typeof cand!=='string'||tried.includes(cand))continue;tried.push(cand);
+      try{r=await window.__TAURI__.core.invoke('open_ddp',{password:cand,path});password=cand;}catch(_){r=null;}
+      if(r)break;
+    }
+    if(!r){
+      password=await promptDdpPassword('输入 DDP 密码（免密文件留空直接确认）：');
+      if(password===null)return;
+      try{r=await window.__TAURI__.core.invoke('open_ddp',{password,path});}
+      catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));return;}
+    }
+  }else{
+    password=await promptDdpPassword('输入 DDP 密码（免密文件留空直接确认）：');
+    if(password===null)return;
+    try{r=await window.__TAURI__.core.invoke('open_ddp',{password});}
+    catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));return;}
+  }
+  if(!r||r==='canceled')return;
+  await serializeProject(async()=>{const result=await engRender(b64ToUtf8(r.mbt_b64));
     if(!mbtResult(result)){toast('DDP 中的 MBT 校验失败：'+String(result&&result.error||'unknown').slice(0,80));return;}
     // 口令只在「渲染校验通过且 filePath 真正切换」时才成为会话口令——校验失败提前
     // return 时旧文件 + 新口令的组合会让 ⌘S 用错口令重加密旧文件
-    ddpSessionPassword=password;
-    applyMbtResult(result,{reset:true});filePath=r.path;projectDirty=false;syncDirtyRemote();setFileLabel(r.path.split(/[\\/]/).pop());toast('已打开 DDP，并从 MBT 重新渲染');});
-  }catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));}
+    ddpSessionPassword=password;ddpPasswordByPath[r.path]=password;
+    applyMbtResult(result,{reset:true});filePath=r.path;projectDirty=false;syncDirtyRemote();
+    setFileLabel(r.path.split(/[\\/]/).pop());syncProjName(r.path);rememberProject(r.path);
+    toast('已打开 DDP，并从 MBT 重新渲染');});
 }
 async function newProject(){
   // 真正空白项目：无画板，显示 welcome 空态（模板卡 + Prompt 引导）
@@ -2960,7 +3055,7 @@ async function newProject(){
     $('decl-text').value='';
     closeAgentPop();cancelInline();
     $('ap-input').value='';$('gp-input').value='';$('tl-body').replaceChildren();
-    projectDirty=false;fileLabelName='新项目';syncFileLabel();syncDirtyRemote();$('proj-name').textContent='未命名项目';
+    projectDirty=false;fileLabelName='新项目';syncFileLabel();syncDirtyRemote();syncProjName('');
     renderStage();renderAbs();renderFlows();renderInspector();
     setStatus('human','new',true,'空白项目');
   });
@@ -3268,6 +3363,7 @@ let _resizeRaf=0;window.addEventListener('resize',()=>{if(!Object.keys(sessions)
 window.__state=()=>({baseCmd,opCmds,nodes,selected,flows,active,sessions,mode});
 loadComponents();
 if(IS_TAURI)loadModelRegistry();   // 模型注册表快照（离线；失败不影响主流程）
+if(IS_TAURI)refreshRecents();      // 最近项目磁盘对账（剔除已删除文件；失败不影响主流程）
 loadEngine().then(()=>{           // wasm 引擎预加载（画布首帧 op 前就绪）
   if(engineFailed)console.warn('引擎 wasm 加载失败：',engineFailed);
   else if(typeof setStatus==='function')setStatus('','',true,'引擎 wasm 就绪');

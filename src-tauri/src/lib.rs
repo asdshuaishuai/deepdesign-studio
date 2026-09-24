@@ -500,6 +500,13 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         )?)
         .item(&MenuItem::with_id(
             app,
+            "open-recent",
+            "打开最近的项目…",
+            true,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
             "save",
             "保存",
             true,
