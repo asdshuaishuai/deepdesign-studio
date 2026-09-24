@@ -17,7 +17,7 @@ use std::time::Duration;
 use crate::EngineHost;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-const MAX_STEPS: usize = 20;
+const MAX_STEPS: usize = 40;
 /// 单次引擎调用超时。必须**晚于**宿主的 epoch 中断预算（wasmtime_host::CALL_TIMEOUT
 /// 30s + tick 粒度 + 外层 5s 宽限）：这里先到点会把「引擎已中断/未提交」误报成
 /// engine_timeout，还可能与宿主竞态。45s 保证总能收到宿主的真实结果。
@@ -60,8 +60,13 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 - Think in flows: a prototype is screens + navigation. An unconnected screen is unfinished.
 - Write real product copy (realistic labels, names, numbers), never lorem ipsum.
 - Full-bleed backgrounds are fine: place a background rect and grow it with
-  width_mode/height_mode=fill — content may sit on top of it. Other sibling overlaps are
-  still rejected (no_sibling_overlap): plan non-intersecting rects for everything else.
+  width_mode=fill & height_mode=fill — content placed later may sit on top of
+  a fill-mode node. Nodes with EXPLICIT sizes still must never intersect any
+  sibling rect (no_sibling_overlap rejects them): before each place, reserve a
+  non-intersecting slot; run query <ab> to learn actual sizes, then update w/h
+  right after placing.
+- Tiny precision nodes (battery/status icons, switches) occupy small rects
+  inside bars — place them FIRST, then place larger siblings around them.
 - Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
   get read_mbt, one targeted op, done.
 
@@ -145,6 +150,13 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 - Errors: unknown_artboard/unknown_node/unknown_component/unknown_template → read_mbt then retry with real ids.
   Predicate violations (overflow, overlap) reject the op with predicate + node_id + detail → adjust values;
   if stuck run fix <artboard>. Never repeat an identical failing op.
+- Errors: unknown_artboard/unknown_node/unknown_component/unknown_template → read_mbt then retry with real ids.
+  Predicate violations (overflow, overlap) reject the op with predicate + node_id + detail → adjust values;
+  if stuck run fix <artboard>. Never repeat an identical failing op.
+  delete failing with mbt_flow_unknown_node:<ab>:<node> → that node is a navigation-edge endpoint:
+  unflow the edge(s) first (unflow <ab> <target> <node>), then delete.
+  A "template" op rejected with mbt_gate_block means that built-in template's content carries gate
+  debt — do NOT retry it; build the screen with "create" + "place"/"update" instead.
 - keep ops gate-clean (violations → mbt_gate_block rejection, not tolerated debt). All changes go through moonviz_op only."#;
 
 fn instructions() -> String {
