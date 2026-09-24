@@ -3285,6 +3285,18 @@ if(IS_TAURI&&window.__TAURI__.event)window.__TAURI__.event.listen('app-close-req
 });
 setStatus('','',true);
 document.body.classList.add('mode-wireframe','design-active');
+/* 开发者自驱测试入口：localStorage 写入 dd-dev-autorun=<指令> 后重启，
+ * 启动即自动经 runGlobalPrompt 执行该指令（一次性，用后即焚）——
+ * 用于外部驱动端到端功能测试（无键盘注入依赖） */
+try{
+  const devp=localStorage.getItem('dd-dev-autorun');
+  if(devp){localStorage.removeItem('dd-dev-autorun');setTimeout(()=>{$('gp-input').value=devp;runGlobalPrompt();},1200);}
+}catch(_){ }
+/* E2E 测试：启动 1.5s 后自动执行露营需求（测试完删除此块） */
+setTimeout(()=>{
+  $('gp-input').value='请根据以下需求，生成一个"城市露营装备租赁"移动端小程序的高保真可交互原型。要求范围克制，但核心流程完整。页面：首页（定位、搜索框、分类入口、热门装备卡片、底部导航）、分类/搜索页、装备详情页（租期选择、数量选择、立即租赁）、确认订单页（费用明细、提交订单）、订单详情页（订单状态、联系客服）。交互：页面间可点击跳转，租期数量实时更新价格。视觉：主色 #2F6B4F、辅助 #F7F4EC、橙色 #E67E22，375x812 中文界面。mock 数据 6 件装备 3 个分类。';
+  runGlobalPrompt();
+},1500);
 /* 引擎模板全集（list_templates 权威清单，14 个；sync-engine 探针校验）——
  * 欢迎页全量暴露，人与 Agent 可用集合对齐（审查 D2）。尺寸按 device 档 */
 const TPLS=[

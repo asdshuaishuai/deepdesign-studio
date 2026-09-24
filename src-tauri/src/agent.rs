@@ -17,7 +17,7 @@ use std::time::Duration;
 use crate::EngineHost;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-const MAX_STEPS: usize = 40;
+const MAX_STEPS: usize = 200;
 /// 单次引擎调用超时。必须**晚于**宿主的 epoch 中断预算（wasmtime_host::CALL_TIMEOUT
 /// 30s + tick 粒度 + 外层 5s 宽限）：这里先到点会把「引擎已中断/未提交」误报成
 /// engine_timeout，还可能与宿主竞态。45s 保证总能收到宿主的真实结果。

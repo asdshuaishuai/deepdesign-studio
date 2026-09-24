@@ -55,8 +55,7 @@ async fn camping_real_llm_e2e() {
 
     let mut mbt: Option<String> = None;
     let mut instruction = CAMPING_PROMPT.to_string();
-    let total_ops: usize = 0;
-    for round in 1..=4 {
+    for round in 1..=6 {
         let round_start = std::time::Instant::now();
         let result = agent::run(
             &host,
@@ -91,7 +90,10 @@ async fn camping_real_llm_e2e() {
         }
         instruction = format!(
             "{CAMPING_PROMPT}\n\n[续跑说明] 以上需求你已完成一部分（见当前文档）。\
-             请不要提问、不要复述计划，直接继续完成剩余页面与交互，然后给出完成总结。"
+             请先 read_mbt 盘点已有页面与节点，然后直接继续完成剩余页面与交互\
+             （目标是全部 5 个页面：home/search/detail/order/order_detail，\
+             6 件露营装备 mock 数据、3 个分类、全部核心跳转），\
+             不要提问、不要复述计划，完成后给出简要总结。"
         );
     }
     let final_doc = mbt.unwrap_or_default();
