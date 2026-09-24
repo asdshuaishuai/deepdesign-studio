@@ -70,7 +70,6 @@ async fn camping_real_llm_e2e() {
         .await;
         let ops = result.get("ops").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
         let stop = result.get("stopReason").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-        let _ = total_ops + ops;
         eprintln!(
             "[e2e] round {round} in {:?}: stop={stop} ops={ops} (累计上限 4 轮)",
             round_start.elapsed()

@@ -79,18 +79,23 @@ async fn save_ddp(
 /// 打开不透明 DDP，并把解密后的 MBT 作为 Base64 传回给 Moonviz 引擎验证。
 /// Rust 不解释 Markdown、MoonBit block 或视觉语义。
 #[tauri::command]
-async fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json::Value, String> {
-    let Some(path) = app
-        .dialog()
-        .file()
-        .add_filter("deepDesign 视觉文档", &["ddp"])
-        .blocking_pick_file()
-    else {
+async fn open_ddp(
+    app: tauri::AppHandle,
+    password: String,
+    path: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let picked: Option<PathBuf> = match path {
+        Some(p) if !p.trim().is_empty() => Some(PathBuf::from(p.trim().to_string())),
+        _ => app
+            .dialog()
+            .file()
+            .add_filter("deepDesign 视觉文档", &["ddp"])
+            .blocking_pick_file()
+            .and_then(|fp| fp.into_path().ok()),
+    };
+    let Some(pb) = picked else {
         return Ok(serde_json::Value::Null); // 用户取消，见 save_ddp 注释
     };
-    let pb = path
-        .into_path()
-        .map_err(|e| format!("ddp_path_invalid:{e}"))?;
     let password = Zeroizing::new(password);
     if std::fs::metadata(&pb).map_err(|e| e.to_string())?.len() > 16 * 1024 * 1024 + 45 {
         return Err("ddp_container_invalid".into());
@@ -107,6 +112,38 @@ async fn open_ddp(app: tauri::AppHandle, password: String) -> Result<serde_json:
         "path": pb.display().to_string(),
         "mbt_b64": BASE64.encode(mbt.as_bytes()),
     }))
+}
+
+/// 扫描工作区目录中的 .ddp 项目文件，返回元数据列表（多项目切换器数据源）。
+#[tauri::command]
+fn list_ddp_projects(dir: String) -> Result<serde_json::Value, String> {
+    let dir_path = PathBuf::from(dir.trim());
+    if !dir_path.is_dir() {
+        return Ok(serde_json::json!({"ok": true, "projects": []}));
+    }
+    let mut projects = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir_path) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            if p.extension().map(|x| x == "ddp").unwrap_or(false) {
+                let meta = entry.metadata().ok();
+                projects.push(serde_json::json!({
+                    "file": p.file_name().unwrap_or_default().to_string_lossy(),
+                    "path": p.display().to_string(),
+                    "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                    "modified": meta.as_ref().and_then(|m| m.modified().ok())
+                        .map(|t| t.duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64).unwrap_or(0)).unwrap_or(0),
+                }));
+            }
+        }
+    }
+    projects.sort_by(|a, b| {
+        let da = a.get("modified").and_then(|v| v.as_i64()).unwrap_or(0);
+        let db = b.get("modified").and_then(|v| v.as_i64()).unwrap_or(0);
+        db.cmp(&da)
+    });
+    Ok(serde_json::json!({"ok": true, "projects": projects}))
 }
 
 /// 保存引擎交付的工件（消费者：export_html 的自包含 HTML 原型 / 当前画板 SVG）。
@@ -240,6 +277,7 @@ pub fn run() {
             confirm_discard,
             set_project_dirty,
             app_exit,
+            list_ddp_projects,
             model_registry
         ])
         .on_window_event(|window, event| {
