@@ -215,13 +215,19 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 - 同时在本仓库做**登记性缓解**（提示词禁令/可用配方、登记性测试、诚实降级文案），
   并在代码注释或本文件引用 issue 编号——上游修复会让登记性测试变红，驱动本侧回收
   （例：`AGENT_GATE_DEBT` 清单对应 #14）；
-- 已提交的引擎 issue 台账（**0.1.5-fix-2 已修 #12/#13/#14/#15**）：#11（history——
-  **会话内全链路可用**：arg 槽 `<sub> [artboard]`、须先 `init`、place 不自动入史须显式
-  `commit`；但**历史不跨会话存活**→ moonviz#16 待上游定持久化方向，产品级撤销接线挂起）、
-  #12（缺 flow 删除 op→`unflow` 已落地，前端流程面板已接删除）、#13（节点父子层级不可达→
-  `session_query_nodes` 已带 `parent` 字段，图层树层级可重建）、#14（4 模板自带债过
-  AgentGate→已修，`AGENT_GATE_DEBT` 清空为哨兵、种子引导已换回 AgentGate）、#15（代理门
-  背景层死锁→已修，提示词禁令已撤）。
+- 已提交的引擎 issue 台账（**0.1.5-fix-2 已修 #12/#13/#14/#15**）：#11（history——会话内
+  全链路可用，arg 槽 `<sub> [artboard]`、须先 `init`、place 不自动入史须显式 `commit`；
+  曾误报「不跨会话存活」为引擎缺陷后撤回 [#16](https://github.com/asdshuaishuai/moonviz/issues/16)
+  ——历史持久是**宿主职责**，已在 deepDesign 前端实现：编辑期常驻历史会话
+  （histEnsure/histCommit/undoMbt/redoMbt），写入全走 `session_apply_*_in`，agent 终态/
+  打开/实例回收作为撤销栈边界）、#12（缺 flow 删除 op→`unflow` 已落地，前端流程面板已接
+  删除）、#13（节点父子层级不可达→`session_query_nodes` 已带 `parent` 字段，图层树层级
+  可重建）、#14（4 模板自带债过 AgentGate→已修，`AGENT_GATE_DEBT` 清空为哨兵、种子引导
+  已换回 AgentGate）、#15（代理门背景层死锁→已修，提示词禁令已撤）。
+- **撤销/重做边界（引擎 history 按画板分栈，实测语义）**：⌘Z 作用于**当前活动画板**；
+  agent 终态回灌、打开 DDP、实例回收（192MB 棘轮）都会重置撤销栈；源码编辑器的**已提交**
+  编辑同样会重置栈（提交即外部变更），未提交草稿走文本撤销。多板全局线性撤销待上游
+  history 持久化方向明确后评估。
 
 ## 前端约定（`frontend/index.html`，单文件 ~3000 行）
 
