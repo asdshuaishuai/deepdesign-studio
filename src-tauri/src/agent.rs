@@ -157,9 +157,6 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 - Errors: unknown_artboard/unknown_node/unknown_component/unknown_template → read_mbt then retry with real ids.
   Predicate violations (overflow, overlap) reject the op with predicate + node_id + detail → adjust values;
   if stuck run fix <artboard>. Never repeat an identical failing op.
-- Errors: unknown_artboard/unknown_node/unknown_component/unknown_template → read_mbt then retry with real ids.
-  Predicate violations (overflow, overlap) reject the op with predicate + node_id + detail → adjust values;
-  if stuck run fix <artboard>. Never repeat an identical failing op.
   delete failing with mbt_flow_unknown_node:<ab>:<node> → that node is a navigation-edge endpoint:
   unflow the edge(s) first (unflow <ab> <target> <node>), then delete.
   A "template" op rejected with mbt_gate_block means that built-in template's content carries gate

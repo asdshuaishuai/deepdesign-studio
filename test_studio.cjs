@@ -135,6 +135,22 @@ for(const m of script.matchAll(/\b(?:setTimeout|setInterval)\s*\(/g)){
 assert.deepEqual(strayAutorun,[],
   `守卫块外发现引用 runGlobalPrompt 的延时自动执行（启动期自动跑 agent）：${strayAutorun}`);
 
+/* 检查 G：字符串分发的菜单目标必须在场（9f48220 同构盲区）。
+ * fmAct('fn') 以带引号字符串经 window[fn] 分发——检查 A 的调用点扫描看不见；
+ * nativeMenuAction 映射体的箭头目标同理（检查 D 只验证 id 有键，不验证目标函数存在）。
+ * 删掉任一目标 = 文件菜单/原生菜单静默变哑，点开才 ReferenceError。 */
+const fmTargets=[...new Set([markup,script].flatMap(src=>
+  [...src.matchAll(/\bfmAct\('([A-Za-z0-9_]+)'\)/g)].map(m=>m[1])))];
+assert(fmTargets.length>0,'未能提取 fmAct 字符串分发目标（结构变了请同步检查 G）');
+// window[fn] 要求目标是顶层 function 声明（const 箭头不挂 window）
+const missingFm=fmTargets.filter(n=>!new RegExp('function\\s+'+n+'\\s*\\(').test(script));
+assert.deepEqual(missingFm,[],`fmAct 字符串分发目标不是顶层 function 声明（window[fn] 不可达）：${missingFm}`);
+const mapBodyG=(script.match(/function nativeMenuAction\(id\)\{[\s\S]*?\n\}/)||[''])[0];
+const mapCalls=[...new Set([...mapBodyG.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)].map(m=>m[1]))];
+assert(mapCalls.length>0,'未能提取 nativeMenuAction 映射体调用目标（结构变了请同步检查 G）');
+const missingMap=mapCalls.filter(n=>!defined.has(n)&&!bound.has(n)&&!GLOBALS.has(n)&&!KEYWORDS.has(n));
+assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函数：${missingMap}`);
+
 /* ---------- 动态检查：真实状态机 ---------- */
 function fn(name){const start=script.indexOf('function '+name+'(');assert(start>=0,name);const brace=script.indexOf('){',start)+1;let depth=1,i=brace+1;for(;depth;i++){if(script[i]==='{')depth++;if(script[i]==='}')depth--;}return (script.slice(start-6,start)==='async '?'async ':'')+script.slice(start,i)}
 const context=vm.createContext({console,window:{addEventListener(){}},document:{addEventListener(){},querySelectorAll:()=>[],body:{nodeType:1,querySelectorAll:()=>[]},createTreeWalker:()=>({nextNode:()=>null}),documentElement:{classList:{add(){}}},getElementById:element},navigator:{platform:'Win32',userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},performance:{now:()=>0},setTimeout,clearTimeout,requestAnimationFrame(fn){if(typeof fn==='function')fn();},MutationObserver:class{observe(){}},NodeFilter:{SHOW_TEXT:4},btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),encodeURIComponent,decodeURIComponent,escape,unescape});

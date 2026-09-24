@@ -101,7 +101,5 @@ async fn camping_real_llm_e2e() {
         final_doc.len(),
         final_doc.matches("moonviz:artboard").count()
     );
-    let ops_total = 0;
-    let _ = ops_total;
     assert!(!final_doc.is_empty(), "真实 LLM run 未产出任何文档");
 }

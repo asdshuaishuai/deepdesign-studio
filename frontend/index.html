@@ -1449,9 +1449,9 @@ function frameScale(sess){
   const availW=($('canvas-scroll').clientWidth-120)/Math.max(1,Object.keys(sessions).length);
   return Math.min(zoom, Math.max(0.18, Math.min(h/sess.h, availW/sess.w)));
 }
-let renderGeneration=0;
-async function renderStage(){
-  const generation=++renderGeneration;
+/* 纯同步渲染（无 await 突变点）：曾有一对 renderGeneration 计数器/async 标记，
+ * 是「异步作废守卫」的半成品——但判定逻辑从未存在，计数器只写不读（死存储），已删。 */
+function renderStage(){
   const stage=$('stage');
   bindFlowTargetCapture();
   const ids=Object.keys(sessions);

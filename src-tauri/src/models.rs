@@ -105,15 +105,6 @@ pub fn snapshot_document() -> &'static Value {
     })
 }
 
-/// 某模型的能力轴（reasoning_options 原样返回，None 表示快照未记录）。
-pub fn model_reasoning_options(provider: &str, model: &str) -> Option<&'static Value> {
-    providers()
-        .get(provider)
-        .and_then(|p| p.get("models"))
-        .and_then(|m| m.get(model))
-        .and_then(|m| m.get("reasoning_options"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
