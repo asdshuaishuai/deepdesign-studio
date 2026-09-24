@@ -184,6 +184,20 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   多一个它就会猜不存在的 id。模板尺寸以引擎实际产出为准——`pc_app` 是 1280×800，不是提示词里曾写的 1440×900。
 - `safe_base_url` 有 SSRF 防护：仅放行 https 与 localhost/私有网段 http（IP 段是精确判定，
   `172.20.x` 放行、`172.2.x`/`172.255.x` 拒绝，DNS 前缀伪装如 `10.evil.com` 拒绝）。改动时守住单测。
+- **实时轨迹（agent-event 事件流）**：run() 循环每步经 progress 回调 → `app.emit("agent-event")`
+  → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`tool_start`/`tool_end`
+  （op、✓/✗、耗时、门拒绝详情）、`done`/`failed`。run id 由 lib.rs 注入每个事件（前端按它过滤归属），
+  **丢 run id = 时间线 100% 失效**（历史事故）。长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
+  展开全文），与 gp-thread 面板、trackAgent 卡三处呈现同一事实，改呈现须同步折叠语义。
+- **澄清式多轮（CLARIFY-FIRST）**：用户提示词要求「先确认再生成」时，模型以纯文本回复提问
+  （不调工具）→ 前端挂入 `#gp-thread` 对话面板，`agentThread.pending` 记住提问；用户回答后，
+  前端把「原任务 + 提问 + 回答」拼成新指令重跑 agent。**设计取舍（当前为提示词级实现）**：
+  单槽 pending（启发式触发——任何无 ops 的文本回复都视为澄清，未验证模型意图）；失败路径清
+  pending（防旧问题污染下一条无关 prompt）；用户主动选过主题等偏好类标记不受影响。
+  演进方向：若需 ChatGPT 式连续对话，Rust 侧维护对话历史 + 前端对话视图，与轨迹时间线分离。
+- **轨迹文本呈现治理**：同一提示词不再于轨迹中重复全文——tl-user/续轮回答行/assistant 计划行
+  均折叠（`<details class="tl-fold">`，120/80 字截断 + 悬停全文）；trackAgent 汇总卡截 90 字。
+  画布 SVG 内的用户标签**不参与** kbd 本地化与轨迹折叠（显示文本与 mbt.md 源一致）。
 - 返回契约（与已删除的 JS 桥一致，前端依赖）：`{ok, mbt_b64, render, ops[], stopReason, text}`，
   失败时额外带 `partial_error` 且 **`ok` 仍为 true**（已提交的工作不得丢失）。
 
