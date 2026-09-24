@@ -799,9 +799,32 @@ fn supersede_stale_tool_results(messages: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// L2 预算：128K tokens 的保守字符近似（utf-8 字节/3——CJK 精确、英文高估即保守）。
-/// 逐模型窗口（models.json 有 context 长度）的贯通是演进方向；固定保守值先行。
-const CONTEXT_BUDGET_BYTES: usize = 128 * 1024 * 3;
+/// L2 预算回落值：128K tokens（模型未命中快照时的保守默认）。
+const DEFAULT_CONTEXT_TOKENS: usize = 128 * 1024;
+/// 逐模型上下文窗口（models.json 快照的 limit.context，tokens）。模型名可能带
+/// provider 前缀（"deepseek/xxx"），取末段做**精确**匹配——快照 id 是闭集，
+/// 包含匹配会撞错型号。查不到回落保守默认；查到则设 16K 下限防上游脏数据。
+fn model_context_window(model: &str) -> usize {
+    let bare = model.trim().rsplit('/').next().unwrap_or("").to_lowercase();
+    if bare.is_empty() {
+        return DEFAULT_CONTEXT_TOKENS;
+    }
+    let doc = crate::models::snapshot_document();
+    if let Some(providers) = doc.get("providers").and_then(|v| v.as_object()) {
+        for p in providers.values() {
+            if let Some(models) = p.get("models").and_then(|v| v.as_object()) {
+                for (id, m) in models {
+                    if id.to_lowercase() == bare {
+                        if let Some(ctx) = m.pointer("/limit/context").and_then(|v| v.as_u64()) {
+                            return (ctx as usize).max(16 * 1024);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    DEFAULT_CONTEXT_TOKENS
+}
 /// 触发激进裁剪的阈值比例（给摘要/回复留余量）。
 const CONTEXT_BUDGET_RATIO: f64 = 0.7;
 /// L2 激进裁剪时，最近 N 条 tool 结果保持原样（近期上下文最相关）。
@@ -1146,13 +1169,15 @@ pub async fn run(
     };
     let mut seq: usize = 0;
     let mut context_event_sent = false;
+    // L2 预算按模型窗口取（tokens → utf-8 字节近似 /3——CJK 精确、英文高估即保守）
+    let context_budget_bytes = model_context_window(model) * 3;
 
     for step in 0..MAX_STEPS {
         // 上下文管理（请求侧收缩；messages 本体完整保留作轨迹/journal）：
-        // L1 常态去supersede + L2 预算守卫
+        // L1 常态去supersede + L2 预算守卫（逐模型窗口，未命中回落 128K）
         let mut request_messages = supersede_stale_tool_results(&messages);
         let est = estimate_context_bytes(&request_messages);
-        if est > (CONTEXT_BUDGET_BYTES as f64 * CONTEXT_BUDGET_RATIO) as usize {
+        if est > (context_budget_bytes as f64 * CONTEXT_BUDGET_RATIO) as usize {
             let (shrunk, elided_bytes) = elide_stale_tool_contents(&request_messages);
             request_messages = shrunk;
             if !context_event_sent {
@@ -1161,14 +1186,14 @@ pub async fn run(
                     "[agent] context budget: est ~{} tokens over {:.0}% of {} — elided {} bytes of stale tool output",
                     est / 3,
                     CONTEXT_BUDGET_RATIO * 100.0,
-                    CONTEXT_BUDGET_BYTES / 3,
+                    context_budget_bytes / 3,
                     elided_bytes
                 );
                 emit(
                     "context_usage",
                     json!({
                         "est_tokens": est / 3,
-                        "budget_tokens": CONTEXT_BUDGET_BYTES / 3,
+                        "budget_tokens": context_budget_bytes / 3,
                         "elided_bytes": elided_bytes,
                         "action": "elide_stale_tool",
                     }),
@@ -1440,6 +1465,32 @@ pub(crate) mod tests {
         assert_eq!(body["tools"].as_array().expect("tools").len(), 3);
         // 未设置的 optional 字段不得出现在 wire 上（SDK skip_serializing_if 契约）
         assert!(body.get("stream").is_none());
+    }
+
+    /// L2：逐模型上下文窗口（models.json limit.context）；未命中/空名回落保守默认，
+    /// 带前缀形态（"provider/model"）取末段命中，16K 下限防上游脏数据。
+    #[test]
+    fn model_context_window_lookup_and_default() {
+        assert_eq!(model_context_window("zz-definitely-unknown-9"), DEFAULT_CONTEXT_TOKENS);
+        assert_eq!(model_context_window(""), DEFAULT_CONTEXT_TOKENS);
+        assert_eq!(model_context_window("   "), DEFAULT_CONTEXT_TOKENS);
+        let doc = crate::models::snapshot_document();
+        let any = doc
+            .get("providers")
+            .and_then(|v| v.as_object())
+            .and_then(|ps| ps.values().next())
+            .and_then(|p| p.get("models"))
+            .and_then(|m| m.as_object())
+            .and_then(|ms| ms.keys().next().cloned())
+            .expect("models.json 快照非空");
+        assert!(
+            model_context_window(&any) >= 16 * 1024,
+            "快照内模型 {any} 应查到窗口（含下限保护）"
+        );
+        assert!(
+            model_context_window(&format!("zz-prefix/{any}")) >= 16 * 1024,
+            "带 provider 前缀的模型名应取末段命中"
+        );
     }
 
     /// L0：剥 check 围栏块保 id（fixture 结构照真机 canonical：每画板一对

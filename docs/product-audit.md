@@ -50,11 +50,14 @@
 
 | 工具 | 状态 |
 |------|------|
-| `moonviz_op`（变更经 AgentGate + 只读经 session API 路由） | 闭环；READONLY_OPS 表 21 项 |
+| `moonviz_op`（变更经 AgentGate + 只读经 session API 路由） | 闭环；READONLY_OPS 表 22 项（0.1.6 增 `extract-design-system`） |
 | `read_mbt` | 闭环；L0 整形（剥 check 围栏，ids 全保留，真机 e2e 锚定） |
 | `list_components` | 闭环（components.json 快照） |
+| `extract-design-system <ab>`（0.1.6 新增） | 闭环；颜色/尺寸 token 用量+置信度，e2e 锚定 |
+| place 最终尺寸语法（0.1.6/#18） | 闭环；`[w] [h]` 位置参数 + 门评估最终 bbox，提示词已教，测试锚定 |
+| `constrain`（0.1.6/#17） | **待上游**：意图词表已文档化，但成功信封不回传 canonical（键控宿主取不回变更，[#19](https://github.com/asdshuaishuai/moonviz/issues/19) 未修）；提示词引导用 align/update/place[w h] |
 | `list-tools` / `doc-json`（op 形态） | **诚实降级**：`wasm_engine_export_unavailable`（无 wasm 导出，提示词同步禁用） |
-| 上下文管理 | L0/L1/L2 三层（docs/agent-context.md），38 测试锚定 |
+| 上下文管理 | L0/L1/L2 三层（docs/agent-context.md），L2 预算逐模型窗口（models.json limit.context）；测试锚定 |
 
 ## 5. 诚实降级项（保持现状，有明确文案）
 
@@ -85,6 +88,9 @@
 7. **[P3]** `model_reasoning_options` 零调用、e2e 死变量、空 bin/ 目录、系统提示词重复段 → 清理。
 8. **[P3]** fmAct/nativeMenuAction 字符串分发目标无锚 → 检查 G（变异验证）。
 9. **[P4]** 工具结果零截断（check 围栏 ~48% 冗余、export 全文入历史）→ 三层裁剪 + 设计文档。
+10. **[引擎 v0.1.6]** place 不接受 w/h（真实 run 111 次拒绝根因，#18）→ 升级引擎 + 提示词教最终尺寸语法 + 门语义测试锚定。
+11. **[引擎 v0.1.6]** 设计系统提取不可达 → `extract-design-system` 接入只读路由（session_extract_design_system）。
+12. **[本轮]** L2 预算固定 128K → 逐模型窗口（models.json `limit.context`，16K 下限）；camping e2e 断言从"文档非空"强化为结构断言（≥4 板、主色落盘、引擎校验通过）。
 
 ## 8. 结构性防线台账（test_studio.cjs）
 

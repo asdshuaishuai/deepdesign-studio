@@ -35,8 +35,9 @@
 ### L2 预算守卫（每次请求前）
 
 - 估算：消息序列化字节数（utf-8 字节/3 ≈ tokens，CJK 精确、英文高估即保守）。
-- 预算：128K tokens 固定保守值；超 70% 触发激进裁剪——最近 6 条 tool 结果之外的
-  tool 内容全部占位化（`[elided: stale tool output beyond context budget]`）。
+- 预算：**逐模型上下文窗口**（models.json 快照 `limit.context`，模型名取 `/` 末段精确
+  匹配，16K 下限；未命中回落保守 128K）；超 70% 触发激进裁剪——最近 6 条 tool 结果
+  之外的 tool 内容全部占位化（`[elided: stale tool output beyond context budget]`）。
 - 触发时发一次 `context_usage` 轨迹事件（est_tokens/budget_tokens/elided_bytes）+
   stderr `[agent] context budget` 行。
 
@@ -50,8 +51,6 @@
 
 - **LLM 摘要压缩**（把被裁剪的历史摘要成 digest 消息）：成本与复杂度换不来
   确定性收益，L1+L2 已覆盖线性膨胀的主项。
-- **逐模型上下文窗口**：models.json 有 per-model context 长度，贯通前端 →
-  run() 参数 → Rust 预算是接线工作，当前固定保守值先行。
 - Anthropic 侧 `to_anthropic_messages` 不裁剪：L1/L2 在其上游生效（收缩后的
   request_messages 才进协议转换）。
 

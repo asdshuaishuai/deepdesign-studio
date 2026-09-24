@@ -364,8 +364,9 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   交互缓解：在飞门（agentBusy）已拦截并发 run 与 run 中的新建/打开（新建/打开还会经原生确认框）；画布编辑仍建议等 run 结束。
 - **~~工具结果无截断~~（已解决，2026-09）**：三层确定性裁剪已落地（`docs/agent-context.md`）——
   L0 源头整形（read_mbt 剥 `mbt check` 围栏块、export-* 信封化、检视类 12KB 截断）、
-  L1 去supersede（旧 read_mbt/list_components 结果占位化）、L2 预算守卫（128K tokens 保守值
-  超 70% 激进裁剪，context_usage 轨迹事件）。硬边界：只缩 tool 消息 content 绝不删消息
+  L1 去supersede（旧 read_mbt/list_components 结果占位化）、L2 预算守卫（**逐模型窗口**：
+  models.json `limit.context`，`model_context_window` 按 `/` 末段精确匹配 + 16K 下限，
+  未命中回落 128K；超 70% 激进裁剪，context_usage 轨迹事件）。硬边界：只缩 tool 消息 content 绝不删消息
   （tool_call_id 配对是 wire 硬约束）；前端终态 mbt_b64 仍交付完整 canonical；id 可见性由
   真机 e2e（`agent_loop_read_mbt_shaping_keeps_ids`）锚定。LLM 摘要压缩与逐模型窗口贯通是演进方向。
 - **vendored DDP 长度门潜在不一致**：`vendor/moonviz-ddp` 全局门 `16MiB+16` 与 DDP1 专属门

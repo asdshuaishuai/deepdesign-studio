@@ -96,10 +96,20 @@ async fn camping_real_llm_e2e() {
         );
     }
     let final_doc = mbt.unwrap_or_default();
-    eprintln!(
-        "[e2e] 最终文档 {} bytes，画板数≈{}",
-        final_doc.len(),
-        final_doc.matches("moonviz:artboard").count()
-    );
+    let boards = final_doc.matches("moonviz:artboard").count();
+    eprintln!("[e2e] 最终文档 {} bytes，画板数 {}", final_doc.len(), boards);
     assert!(!final_doc.is_empty(), "真实 LLM run 未产出任何文档");
+    // 结构断言（提示词承诺的可验证面，不再只有"非空"）：
+    // 5 页需求 → ≥4 板；指定主色 #2F6B4F 落盘；终态经引擎 validate 通过。
+    assert!(boards >= 4, "露营需求要求 5 个页面，终态仅 {} 板", boards);
+    assert!(
+        final_doc.to_lowercase().contains("2f6b4f"),
+        "提示词指定主色 #2F6B4F 未落盘"
+    );
+    let v = host.call("validate_mbt", &final_doc, "").await.unwrap();
+    assert_eq!(
+        v.get("ok"),
+        Some(&serde_json::json!(true)),
+        "终态文档未过引擎校验：{v}"
+    );
 }
