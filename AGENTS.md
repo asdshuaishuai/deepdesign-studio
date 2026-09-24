@@ -173,9 +173,10 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   thinking 在 Anthropic 协议上表达为 `thinking{type:enabled,budget_tokens}`（仅 MiniMax 家族；
   off/auto 省略即关闭；budget 必须小于 max_tokens，按预算预留余量）。
   前端 13 个预设含 4 个 MiniMax（2 条 OpenAI 兼容 + 2 条 Anthropic 兼容，官方推荐路径）。
-- **`READONLY_OPS` 是只读路由表**（21 项：清点类 `list`/`list-templates`/`list-components`/`list-ops`/
+- **`READONLY_OPS` 是只读路由表**（22 项：清点类 `list`/`list-templates`/`list-components`/`list-ops`/
   `list-tools`/`list-tokens`/`list-themes`/`flows`/`benchmark`；检视类 `lint`/`critique`/`query`/`infer`/
-  `spec`/`missing`/`doc-json`/`states`/`interactions`/`export-svg`/`export-html`；模拟类 `tap`）：
+  `spec`/`missing`/`doc-json`/`states`/`interactions`/`export-svg`/`export-html`/`extract-design-system`
+  （0.1.6 新增，session_extract_design_system：颜色/尺寸 token 用量+置信度）；模拟类 `tap`）：
   engine-v0.1.1-fix 的 **session API 已导出检视面**——命中即走只读路由（session API 或直调导出），
   不进 apply 分发器。此前该表是「wasm 面不可达」拦截名单，现已转回路由白名单语义（注释处的预言成真）。
   **例外**：`list-tools` 与 `doc-json` 无对应 wasm 导出，命中返回 `wasm_engine_export_unavailable`
@@ -183,8 +184,15 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   注意：`list_components` 作为**工具**仍可用（agent.rs 经宿主取 components.json 快照），
   路由的是同名 **op**。
 - **`constrain` 和独立 `name` op 在 apply 门上不可达**：走 apply-human/apply-agent 均返回
-  `mbt_operation_unsupported`；但 **session API 已导出 `session_constrain`**（agent.rs 暂未接入，
-  需要时经 session 路由可达）。改节点名要用 `update <ab> <node> name=<id>`，不要教 Agent 用 `name`。
+  `mbt_operation_unsupported`。`session_constrain`（0.1.6/#17 起是**布局意图解析器**，14 种
+  意图词表，cannot_parse 就地返回全部词表）**仍不接入 agent**：成功信封不回传 canonical mbt
+  （实测 `{ok,id,x}`），键控会话宿主取不回变更——已提
+  [#19](https://github.com/asdshuaishuai/moonviz/issues/19) 请求对齐 session_apply_agent 信封，
+  补齐后经 session 路由接线。布局意图用 align/update/place[w h] 表达。改节点名要用
+  `update <ab> <node> name=<id>`，不要教 Agent 用 `name`。
+- **place 最终尺寸语法（0.1.6/#18）**：`place <ab> <comp> <id> [variant|-] [x] [y] [w] [h] [k=v ...]`
+  ——门在**最终 bbox** 评估；提示词已教「知道最终尺寸就随 place 传入」（真实 run 111 次
+  拒绝的根因整类消除，`place_final_size_gate_evaluates_final_bbox` 测试锚定）。
 - **`INSTRUCTIONS` 与 `ENGINE_TEMPLATES` 必须与引擎同步**（`template_ids_match_engine` 测试锚定 id 集合，
   `prompt_avoids_apply_rejected_ops` 锚定新语法在场）。提示词漏一个模板 Agent 就永远不选它，
   多一个它就会猜不存在的 id。模板尺寸以引擎实际产出为准——`pc_app` 是 1280×800，不是提示词里曾写的 1440×900。
@@ -235,7 +243,14 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 - 同时在本仓库做**登记性缓解**（提示词禁令/可用配方、登记性测试、诚实降级文案），
   并在代码注释或本文件引用 issue 编号——上游修复会让登记性测试变红，驱动本侧回收
   （例：`AGENT_GATE_DEBT` 清单对应 #14）；
-- 已提交的引擎 issue 台账（**0.1.5-fix-2 已修 #12/#13/#14/#15**）：#11（history——会话内
+- 已提交的引擎 issue 台账（**0.1.6 已修 #17/#18**；0.1.5-fix-2 已修 #12/#13/#14/#15）：
+  #18（place 不接受 w/h→已修：`[w] [h]` 位置参数 + 门评估最终 bbox，真实 LLM run 111 次
+  拒绝的根因整类消除，本侧提示词已教新语法）、#17（constrain 意图语法无文档→已修：
+  cannot_parse 就地返回 14 种意图词表、SKILL.md 词条重写；**信封仍缺 canonical，见
+  [#19](https://github.com/asdshuaishuai/moonviz/issues/19)（未修）**：
+  session_constrain 成功信封不回传 canonical mbt，键控缓存宿主取不回变更——修齐前不接入
+  agent，布局意图走 align/update/place[w h]）、
+  #11（history——会话内
   全链路可用，arg 槽 `<sub> [artboard]`、须先 `init`、place 不自动入史须显式 `commit`；
   曾误报「不跨会话存活」为引擎缺陷后撤回 [#16](https://github.com/asdshuaishuai/moonviz/issues/16)
   ——历史持久是**宿主职责**，已在 deepDesign 前端实现：编辑期常驻历史会话

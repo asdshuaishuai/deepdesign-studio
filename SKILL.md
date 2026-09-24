@@ -7,8 +7,8 @@
 > Releases 的**标准 classic wasm**（`moonviz-wasm-classic-<version>.wasm`，纯 WASM MVP、
 > 宿主中立、零 import；docs #wasm 的「标准 wasm」。**wasm-gc 变体**（npm
 > moonviz-engine-wasm，依赖 JS String Builtins 提案、仅 V8 类引擎）本仓库不用）。
-> 引擎 engine-v0.1.5-fix-2：经典消费面 37 = 7 经典 + 4 检视直调 + 26 session API（session_count 可测
-> 泄漏、session_open_project_json 支撑 save→open 回灌）；**另有 `_in` 字节契约面（issue #8）
+> 引擎 engine-v0.1.6：经典消费面 38 = 7 经典 + 4 检视直调 + 27 session API（session_count 可测
+> 泄漏、session_open_project_json 支撑 save→open 回灌、session_extract_design_system 新增）；**另有 `_in` 字节契约面（issue #8）
 > 是本仓库全部宿主的写路径**——wasmtime_host / 前端 engSlotLoad / sync 探针三处消费，
 > in/arg/arg2 三槽 UTF-8 分块压入（小端 4 字节+长度），`*_in()` 变体解码调经典入口；
 > 写方向的逆向字符串布局依赖已退役，返回方向仍是引擎字符串指针（读布局保留）。
@@ -29,7 +29,7 @@ MoonViz is a prototype design engine built entirely in MoonBit. It treats one Mo
 测试经 node 宿主驱动同一份产物）。op 以字符串形式传入 wasm 导出：
 
 ```bash
-# 同步工件（release 直链 wasm + 契约探针：7 经典/4 检视/26 session/模板/组件）——engine-v0.1.5-fix-2
+# 同步工件（release 直链 wasm + 契约探针：7 经典/4 检视/27 session/模板/组件）——engine-v0.1.6
 node scripts/sync-engine.mjs
 
 # 变更 op（两门，wasm 导出名）：
@@ -63,7 +63,8 @@ JSON（`op`/`usage`/`category`/`gates`/`description`，当前 25 op）——本�
 
 Structural:
 `create <name> [w] [h]` · `template <id> <name> [w] [h]` ·
-`place <ab> <component> <id> [variant|-] [x] [y] [k=v ...]` ·
+`place <ab> <component> <id> [variant|-] [x] [y] [w] [h] [k=v ...]`（final-size place，
+**门在最终 bbox 评估**——0.1.6/moonviz#18：默认尺寸相交的中间态仍拒，带最终尺寸一步过门）·
 `duplicate <ab> <new_name>` · `delete-artboard <ab>` ·
 `move <ab> <node> <x> <y>` · `copy <ab> <node> <new_id> [dx] [dy]` ·
 `delete <ab> <node>` · `reorder <ab> <node> front|back|up|down` ·
@@ -130,7 +131,7 @@ Interaction and state:
   render-time transform when activated
 - 先 `state` 定义、后 `set-state` 激活；未定义直接 `set-state` 得 `no_states`
 
-### Read-only ops（只读检视，20 个，走 `load-mbt-b64` 管道）
+### Read-only ops（只读检视，21 个，走 `load-mbt-b64` 管道）
 
 ```
 list                    画板清单
@@ -151,6 +152,8 @@ states <ab>             已注册状态清单
 interactions <ab>       已注册交互清单
 export-svg <ab>         SVG 导出
 export-html <ab>        自包含可交互 HTML 原型（节点级 tap 绑定 + 状态 CSS 变体）
+extract-design-system <ab>  设计系统提取：颜色/尺寸 token 用量+置信度（0.1.6，
+                        session_extract_design_system；agent.rs 已接只读路由）
 tap <ab> <x> <y>        模拟点击，返回状态变化
 benchmark               性能基准
 ```
@@ -158,10 +161,13 @@ benchmark               性能基准
 ### CLI-pipeline-only（两道门都不可达）
 
 `constrain <ab> <intent_text>` —— **两门 apply 均拒绝**（`mbt_operation_unsupported`）。
-session API 虽导出 `session_constrain`，但**不可用**：多词意图引擎侧 `cannot_parse`
-（实测 `constrain w make the title bigger` 失败），单词条虽可达但成功信封不回传
-canonical（新键不可知，会话缓存只能弃）。布局推理走 update 键。上游 SKILL.md 把它
-列在共享语法里是**错的**（共享的是 session 面，不是 apply 门；session 面也不完整）。
+它是 session 管道的**布局意图解析器**（非层级/z-order；0.1.6/#17 起 cannot_parse 就地返回
+全部意图词表：居中 | 垂直居中 | 垂直排列 | 水平排列 | 等宽 | 等高 | 等间距 | 网格 N |
+顶部 | 底部 | 放大 N | 缩小 N | 边距 N | 间距 N）。**deepDesign 侧仍未接入**：成功信封
+不回传 canonical mbt（实测 `{ok,id,x}`），键控会话宿主取不回变更——已提
+[#19](https://github.com/asdshuaishuai/moonviz/issues/19) 请求对齐 session_apply_agent
+信封；补齐后接线。布局意图用 align/update/place[w h] 表达；全屏背景+内容走全包含豁免
+（0.1.5-fix/#15）；z-order 用 `reorder <ab> <node> front|back|up|down`。
 改节点名用 `update <ab> <node> name=<id>`，不要教 Agent 用 `constrain` 或独立 `name` op。
 
 ## MCP Server
@@ -245,7 +251,7 @@ component-compile-b64 <b64>
 # 3. Discover & use exactly like builtins
 list-components        # merged view, source: user
 component-describe <id>  # params/variants/usage template
-place <artboard> <id> <inst> [variant] [x] [y] key=value...
+place <artboard> <id> <inst> [variant|-] [x] [y] [w] [h] key=value...
 
 # 4. Share — the ONLY outbound form is the proprietary MCF container
 component-export <id>   # → mcf_b64 (byte source never leaves the engine)
@@ -266,7 +272,7 @@ Rules: `.mbt.md` component source exists only inside the engine/local library; o
 # sync-engine 探针校验 ≥25；agent.rs 侧由 ENGINE_TEMPLATES 契约测试锚定模板）。
 readonly: list flows list-templates list-components list-tools list-tokens
   list-themes lint critique query infer spec missing doc-json states
-  interactions export-svg export-html tap benchmark
+  interactions export-svg export-html extract-design-system tap benchmark
 cli_only: constrain name save load export-mbt-human export-mbt-agent export-decl export-artifact
   render-mbt-b64 validate-mbt-b64 canonical-mbt-b64
   apply-agent-mbt-b64 apply-human-mbt-op-b64 apply-agent-mbt-op-b64

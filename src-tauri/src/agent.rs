@@ -88,8 +88,11 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 2. CREATE: one "template <id> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
    node ids are only discoverable there. Artboard id = sanitized name.
 3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.
-   "place <artboard> <component> <instance_id> [variant|-] [x] [y]" to add engine components
-   (discover ids via list_components; "-" as variant means default).
+   "place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]" to add engine
+   components (discover ids via list_components; "-" as variant means default). ALWAYS pass
+   the final [w] [h] when you know them — the gate evaluates the FINAL bbox (engine-v0.1.6,
+   issue #18): a place that collides at component-default size is rejected even if you meant
+   to resize right after; passing final w/h makes it one op instead of reject+update.
 4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
    Use "interact" for anything richer than navigation (show_toast, set_state, haptic, play_sound) —
    and define the target with "state" first if you want a pressed/selected visual.
@@ -105,7 +108,7 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 ## Operation grammar (one op per moonviz_op call, no newlines)
   template <template_id> <name> [w] [h] | create <name> [w] [h]
   | duplicate <artboard> <new_name> | delete-artboard <artboard>
-  | place <artboard> <component> <instance_id> [variant|-] [x] [y]
+  | place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]
   | move <artboard> <node> <x> <y> | update <artboard> <node> k=v [k=v ...]
   | delete <artboard> <node> | copy <artboard> <node> <new_id> [dx] [dy]
   | reorder <artboard> <node> front|back|up|down | flip <artboard> <node> h|v|both|none
@@ -133,6 +136,8 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   session API — they inspect but never commit): list | flows | list-templates | list-components
   | list-tokens | list-themes | lint <ab> | critique <ab> | query <ab> | infer <ab> | spec <ab>
   | missing <ab> | states <ab> | interactions <ab> | export-svg <ab> | export-html | tap <ab> <x> <y>
+  | extract-design-system <ab> (color/size token usage analysis with confidence — ground
+    theme/token decisions before restyling).
   | benchmark. Use them to ground decisions before mutating (lint catches contrast/touch-target
   debt, missing finds unwired CTAs, query lists nodes, states/interactions show what's wired).
   Exceptions with no wasm export — never call: list-tools, doc-json (use read_mbt / list-ops
@@ -150,6 +155,9 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 - duplicate is the cheapest way to spawn "a similar screen" before diverging with update.
 - The engine REJECTS unsupported ops with mbt_operation_unsupported. Notably "constrain" and a
   standalone "name" op are CLI-only surfaces, NOT reachable here — use "update ... name=<id>".
+  ("constrain" is a layout-intent parser on the session pipeline; it does NOT do layering, and
+  its success envelope carries no canonical mbt, so this face does not expose it — express
+  layout intents with align/update/place-with-final-w/h instead.)
 
 ## Ground truth and errors
 - NEVER guess node/component/template/theme ids. Templates: list above; components: list_components;
@@ -437,13 +445,13 @@ fn thinking_extra_body(model: &str, level: &str, protocol: Protocol) -> Option<V
 /// 现已转回路由白名单语义（本注释处的预言成真）。变更类 op 绝不能入表——
 /// 入表会被只读分支拦下而非提交。list-tools/doc-json 无对应 wasm 导出，
 /// 路由时保持诚实报错（见 moonviz_op 的 unavailable 分支）。
-const READONLY_OPS: [&str; 21] = [
+const READONLY_OPS: [&str; 22] = [
     // 无参清点类（list-ops：变更 op 注册表，与 SKILL/INSTRUCTIONS 推荐一致）
     "list", "list-templates", "list-components", "list-tools", "list-tokens", "list-themes",
     "list-ops", "flows", "benchmark",
     // 需 <artboard> 的检视类
     "lint", "critique", "query", "infer", "spec", "missing", "doc-json", "states",
-    "interactions", "export-svg", "export-html",
+    "interactions", "export-svg", "export-html", "extract-design-system",
     // 需 <artboard> <x> <y> 的模拟类
     "tap",
 ];
@@ -569,6 +577,8 @@ impl<'a> EngineState<'a> {
                 "interactions" => ("session_interactions", true),
                 "flows" => ("session_flows", true),
                 "export-svg" => ("session_export_svg", true),
+                // engine-v0.1.6 新增：设计系统提取（颜色/尺寸 token 用量+置信度）
+                "extract-design-system" => ("session_extract_design_system", true),
                 "tap" => ("session_tap", true),
                 "benchmark" => ("session_benchmark", true),
                 // 直调导出（无状态）
@@ -1740,6 +1750,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(is_readonly_op("interactions login"));
         assert!(is_readonly_op("export-svg login"));
         assert!(is_readonly_op("export-html login"));
+        // engine-v0.1.6：设计系统提取（颜色/尺寸 token 用量分析）
+        assert!(is_readonly_op("extract-design-system login"));
         // 变更类绝不入表：入表会导致走 load 管道而静默丢弃变更
         assert!(!is_readonly_op("fix login"));
         assert!(!is_readonly_op("update login btn fill=#fff"));
@@ -2245,6 +2257,82 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             !second.contains("unavailable"),
             "只读 op 仍被拦为不可用（session 路由未生效）：{}",
             &second[..second.len().min(400)]
+        );
+    }
+
+    /// engine-v0.1.6 / 上游 #18：place 支持 [w] [h] 位置参数且门在**最终 bbox** 评估——
+    /// 「默认尺寸撞兄弟 + 马上 update 修正」的中间态拒绝形态（真实 run 111 次拒绝的
+    /// 根因）整类消除。锚定：默认尺寸相交被拒、带最终尺寸一次过门。
+    #[tokio::test]
+    async fn place_final_size_gate_evaluates_final_bbox() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let base = seed_doc("ps", 390, 844);
+        let r1 = ENGINE.call("apply_agent_op", &base, "place ps button b1 - 150 20").await.unwrap();
+        assert_eq!(r1.get("ok"), Some(&json!(true)), "首个 place 应通过：{r1}");
+        let doc1 = r1.get("mbt").and_then(|v| v.as_str()).expect("canonical 回传");
+        // 同位置默认尺寸（rect 默认 200×100）与 b1 相交 → AgentGate 拒绝（中间态拒绝语义不变）
+        let r2 = ENGINE.call("apply_agent_op", doc1, "place ps rect bg2 - 120 50").await.unwrap();
+        assert!(
+            r2.get("ok") == Some(&json!(false))
+                && r2.get("error").map(|e| e.to_string().contains("mbt_gate_block")).unwrap_or(false),
+            "默认尺寸相交必须仍被拒（门语义不变）：{r2}"
+        );
+        // 带最终尺寸 [w] [h] → 一步过门（不再需要 reject+update 两次往返）
+        let r3 = ENGINE.call("apply_agent_op", doc1, "place ps rect bg2 - 120 80 150 30").await.unwrap();
+        assert_eq!(r3.get("ok"), Some(&json!(true)), "最终尺寸应一次过门：{r3}");
+        let doc3 = r3.get("mbt").and_then(|v| v.as_str()).expect("canonical 回传");
+        // 几何精确落盘：bg2 的 w/h 是 fixed(150)/fixed(30) 而非组件默认
+        assert!(doc3.contains("id=\"bg2\""), "节点落盘");
+        let bg2_line = doc3.lines().find(|l| l.contains("id=\"bg2\"")).expect("bg2 声明行");
+        assert!(bg2_line.contains("width=@decl.fixed(150)") && bg2_line.contains("height=@decl.fixed(30)"),
+            "最终尺寸必须精确落盘：{bg2_line}");
+    }
+
+    /// engine-v0.1.6：extract-design-system 经 agent 只读路由（session API）可达——
+    /// 结果含 token 用量分析（summary/color_tokens），第二轮请求历史里可验证。
+    #[tokio::test]
+    async fn extract_design_system_via_session_route() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let (port, mock, bodies) = spawn_mock_llm(vec![
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "moonviz_op",
+                     "arguments": "{\"op\": \"template login ds\"}"}},
+                    {"id": "c2", "type": "function", "function": {"name": "moonviz_op",
+                     "arguments": "{\"op\": \"extract-design-system ds\"}"}}
+                ]}}]
+            }),
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": "已提取设计系统。"}}]
+            }),
+        ])
+        .await;
+        let out = run(
+            &ENGINE,
+            "建登录页并提取设计系统",
+            None,
+            "sk-test",
+            "mock-model",
+            &format!("http://127.0.0.1:{port}"),
+            "auto",
+            None,
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(
+            out["ops"],
+            json!(["template login ds", "extract-design-system ds"]),
+            "只读新 op 应被记录并执行"
+        );
+        let bs = bodies.lock().unwrap();
+        assert!(bs.len() >= 2, "应有 2 轮请求");
+        let second = &bs[1];
+        assert!(
+            second.contains("color_tokens") && second.contains("total_colors"),
+            "第二轮请求应含 extract-design-system 的 token 用量分析结果"
         );
     }
 
