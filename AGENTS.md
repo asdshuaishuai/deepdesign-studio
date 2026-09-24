@@ -8,7 +8,7 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 
 ```
 frontend/index.html        纯静态单文件前端（无打包器、无 HTTP 层）+ 画布侧 wasm 引擎实例
-src-tauri/src/lib.rs       Tauri 命令层：invoke_fx_sdk / save_ddp（支持原地保存）/ open_ddp / save_text_file / confirm_discard / set_project_dirty / app_exit / model_registry + EngineHost
+src-tauri/src/lib.rs       Tauri 命令层：invoke_fx_sdk / save_ddp（支持原地保存）/ open_ddp（支持 path 免对话框）/ list_ddp_projects（多项目数据源）/ save_text_file / confirm_discard / set_project_dirty / app_exit / model_registry + EngineHost
 src-tauri/src/wasmtime_host.rs  wasmtime 进程内引擎宿主（纯 Rust 运行时，agent 循环与 cargo test 共用）
 src-tauri/src/agent.rs     进程内 Agent 循环（OpenAI/Anthropic 工具调用 × wasmtime 引擎宿主）
 scripts/sync-engine.mjs    引擎产物同步：GitHub Releases 拉标准 classic wasm → sha512 校验 → 真机契约探针 → frontend/vendor/
@@ -142,12 +142,18 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   sha256 hash，所以 `frontend/index.html` 里那一大坨内联脚本没问题；新增内联脚本同样会被自动
   hash，但**不要**改成外部 module script。
 - **capabilities 最小集**（`src-tauri/capabilities/default.json`，Windows 标题栏合并后新增）：
-  只放行自绘标题栏的窗口面（dragging/minimize/maximize/close）+ `core:event:allow-listen`
+  只放行自绘标题栏的窗口面（dragging/minimize/maximize/close/set-title——标题随项目名同步）+ `core:event:allow-listen`
   （agent 实时轨迹的 agent-event 监听）。自定义命令不经 ACL。别为"以防万一"加 capability。
-- 依赖刻意保持精简。引入类型化 chat 客户端（如 async-openai）已被评估否决：thinking 家族等非标字段
-  必须在序列化后注入，类型层反而被绕过。Rusty V8（进程内 JS 引擎宿主）已被评估并**否决**：
-  +30~80MB 安装包税 + 依赖链脆弱（temporal_rs/icu_calendar 编译断裂实证）；**wasmtime 为最终
-  形态**（classic wasm 宿主中立使然，见 `docs/upstream-engine-ask.md`）。
+- 依赖刻意保持精简。**async-openai 以【纯类型层】采用**（`chat-completion-types` feature：仅
+  derive_builder+bytes，无 HTTP client）：请求骨架与 tools schema 用 SDK 类型构造，序列化后
+  合并 provider 回显的原始 messages 与 thinking 家族等非标字段再经自有 reqwest 发送；
+  响应侧保持 raw Value（SDK issue #498/#503：严格响应枚举在兼容网关上会碎，非标字段
+  typed 往返会丢）。tools 必须用 `ChatCompletionTools::Function` 包装——裸
+  `ChatCompletionTool` 序列化不带 `"type":"function"` 判别字段（wire 契约测试锚定）。
+  byot/full-client 路线已评估并拒绝（byot=零类型收益+SDK 的 HTTP 栈）。Rusty V8
+  （进程内 JS 引擎宿主）已被评估并**否决**：+30~80MB 安装包税 + 依赖链脆弱
+  （temporal_rs/icu_calendar 编译断裂实证）；**wasmtime 为最终形态**
+  （classic wasm 宿主中立使然，见 `docs/upstream-engine-ask.md`）。
 
 ## Agent 基座约定（`agent.rs`）
 
@@ -260,8 +266,10 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 
 - `test_studio.cjs` 有**两道防线**，改测试前先分清：
   - **静态防线（4 道断言）**：内联 HTML 处理器引用的函数必须有定义；`INTERACTIVE_SURFACE`
-    清单（35 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
-    `lib.rs` 的原生菜单 id 必须全部被 `nativeMenuAction` 映射。这几道是**为历史事故专门加的**（见下）。
+    清单（39 个交互层函数）必须全部在场；测试自身的 stub 名单不得掩盖不存在的定义；
+    `lib.rs` 的原生菜单 id 必须全部被 `nativeMenuAction` 映射；检查 F 守卫启动期自动执行
+    （引用 runGlobalPrompt 的 setTimeout/setInterval 只允许在 dd-dev-autorun 开关门内）；
+    检查 G 锚定 fmAct/nativeMenuAction 的字符串分发目标必须真实在场。这几道是**为历史事故专门加的**（见下）。
   - **动态防线**：靠字符串切片取真实状态机——`indexOf("const APP_VER")` 到
     `indexOf('function mbtResult(')` 划区段，再 `indexOf('function NAME(')` 逐函数抽。
     动这些标记、改函数名、或把签名写成非 `function name(` 形式，都会让它**静默取到错东西**。
@@ -273,7 +281,7 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`、
   `session_count_zero_after_close`（会话泄漏契约）、`agent_session_cache_reuse`（会话缓存命中，
   经行协议宿主的 session_cache_stats 断言，变异验证过必红）。
-  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数（当前 30）。
+  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数（当前 38）。
 
 ## 删前端代码前必读（真实事故，勿重演）
 
@@ -298,9 +306,30 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 5. **不要为了"清理"而把 parity 断言改成自己比自己。** `9f48220` 把 `test_studio.cjs` 的读取目标
    从根 `index.html` 改成 `frontend/index.html`，于是 `assert.equal(readFileSync(...), html)` 变成恒真式。
    该恒真断言已删除，改为断言 `tauri.conf.json` 的 `frontendDist === "../frontend"`。
-6. **CI 现状**（windows-build.yml，2026-09 起）：tag `v*` / 手动触发时跑
+6. **调试用的自动执行代码不许提交为无条件形态。** 72e942d 提交了露营 e2e 的前端残留
+   （`setTimeout(…,1500)` 无条件 `runGlobalPrompt()`，注释自承"测试完删除此块"），每次启动
+   都自动跑一次真实 LLM run。它能逃过全部防线的原因：vm 动态切片**不执行脚本尾部**。
+   已删（露营链路由 `src-tauri/tests/agent_llm_e2e.rs` 的 CAMPING_E2E 环境门覆盖）；前端侧
+   启动期自动执行只允许走 `dd-dev-autorun` 开关门（一次性用后即焚），检查 F 静态锚定
+   （变异验证过）。新教训：**外部驱动的端到端测试用 localStorage 传指令 + 开关门，不写死代码**。
+7. **CI 现状**（windows-build.yml，2026-09 起）：tag `v*` / 手动触发时跑
    `test_studio.cjs` + `cargo test --release` + `tauri build`——**普通 push/PR 不跑任何 CI**。
    本地改动前端后务必手动 `node test_studio.cjs`。
+
+## 多项目（已落地，2026-09）
+
+- **数据流**：最近项目注册表存 localStorage `dd-recent-projects`（path/name/ts，容量 10）；
+  启动与渲染前经 `list_ddp_projects` 按父目录批量对账（剔除已删文件、刷 mtime）。
+  呈现位两处：欢迎空态「最近项目」区 + 文件菜单顶部动态区；原生菜单 `open-recent` 打开同一列表。
+- **免对话框切换**：`openProject(path)` 先静默试 per-path 会话口令映射与空口令（DDP2 免密），
+  解密失败才弹密码框——口令映射是内存态，不持久化明文。⌘O 对话框流程保持「先密码后选文件」。
+- **导出 vs 保存的边界（防错文件事故）**：`exportDdpNow` 仅在 `filePath` 为空（项目从未保存，
+  导出即首次保存）时接管 `filePath`/会话口令；已绑定项目的导出是纯副本，不改绑 ⌘S 目标。
+- **标题同步**：`syncProjName` 统一更新 `#proj-name` / `document.title` / 原生窗口标题
+  （capabilities 增了单条 `core:window:allow-set-title`）。注意它位于 vm 动态切片区间内
+  （newProject 会调），移位需同步 test_studio.cjs。
+- **边界（有意不做）**：agent 在飞时切换/新建仍硬拦截（丢更新风险）；切换重置撤销栈是引擎
+  history 边界；多窗口不在范围。
 
 ## 已知缺口
 
@@ -318,9 +347,12 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   （Rust 侧 EngineState 每请求重建），秒级窗口内人类提交的 op 会被 agent 终态整体
   覆盖。修法需要 rebase/合并机制（把 agent 的 op 流重放到最新 canonical），属设计决策；
   交互缓解：在飞门（agentBusy）已拦截并发 run 与 run 中的新建/打开（新建/打开还会经原生确认框）；画布编辑仍建议等 run 结束。
-- **工具结果无截断**：`read_mbt`/export 类结果全量入 LLM 历史（引擎 canonical 的
-  `mbt check` 块把节点声明重复第二遍，有效载荷约 2 倍），多屏任务 token 成本随轮次
-  线性膨胀。截断会伤模型对文档 id 的可见性——分层裁剪方案未决。
+- **~~工具结果无截断~~（已解决，2026-09）**：三层确定性裁剪已落地（`docs/agent-context.md`）——
+  L0 源头整形（read_mbt 剥 `mbt check` 围栏块、export-* 信封化、检视类 12KB 截断）、
+  L1 去supersede（旧 read_mbt/list_components 结果占位化）、L2 预算守卫（128K tokens 保守值
+  超 70% 激进裁剪，context_usage 轨迹事件）。硬边界：只缩 tool 消息 content 绝不删消息
+  （tool_call_id 配对是 wire 硬约束）；前端终态 mbt_b64 仍交付完整 canonical；id 可见性由
+  真机 e2e（`agent_loop_read_mbt_shaping_keeps_ids`）锚定。LLM 摘要压缩与逐模型窗口贯通是演进方向。
 - **vendored DDP 长度门潜在不一致**：`vendor/moonviz-ddp` 全局门 `16MiB+16` 与 DDP1 专属门
   `16MiB+45` 不一致（当前不可达——8MiB 明文压缩后到不了 16MiB；上调明文上限时会先撞全局门）。
   **不改**：vendored 副本与上游 `../moonviz` 按 md5 对账（README 记录基线 commit），改它破坏同步保真——应上游修。
