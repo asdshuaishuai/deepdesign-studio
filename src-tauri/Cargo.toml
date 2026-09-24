@@ -23,6 +23,7 @@ zeroize = "1.8"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["time", "net", "sync"] }
 wasmtime = "49.0.0"
+async-openai = "0.42.0"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
