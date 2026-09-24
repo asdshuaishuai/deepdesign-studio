@@ -2115,7 +2115,7 @@ function trackAgent(instruction,cmds){
   const d=document.createElement('div');d.className='trk';
   const time=new Date().toTimeString().slice(0,5);
   d.innerHTML=`<div class="trk-h"><span class="who">⚡ AGENT · ${escHtml(selected||active)}</span><span class="tm">${time}</span></div>
-    <div class="trk-msg">“${escHtml(instruction)}”</div>
+    <div class="trk-msg">${escHtml(instruction.length>90?instruction.slice(0,90)+'…':instruction)}</div>
     ${cmds.length?`<div class="trk-cmds">${cmds.map((c,i)=>`<div class="pi"><span class="num">${i+1}</span><span>${escHtml(c)}</span></div>`).join('')}</div>`:''}`;
   body.prepend(d);
 }

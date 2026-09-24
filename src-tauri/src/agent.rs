@@ -56,6 +56,7 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   (e.g. "先列出你要确认的关键问题，我回答后再开始生成"), reply with those questions as plain
   text — do NOT call tools and do NOT build yet. Your reply is shown to the user verbatim;
   their answers arrive appended to their next instruction, and you then build directly.
+  Ask ONLY the unanswered questions — never restate the task background back at them.
 - Think in flows: a prototype is screens + navigation. An unconnected screen is unfinished.
 - Write real product copy (realistic labels, names, numbers), never lorem ipsum.
 - Full-bleed backgrounds are fine: place a background rect and grow it with
@@ -838,6 +839,34 @@ fn is_transient_llm_error(e: &str) -> bool {
         || e.contains("overloaded")
 }
 
+/// LLM 调用 + 瞬时错误指数退避重试（3 次：0.8s/2.5s/5s）——
+/// 本机网络对部分端点存在间歇性 TLS/连接阻断，单发失败不代表性故障
+async fn chat_once_with_retry(
+    client: &reqwest::Client,
+    base: &str,
+    api_key: &str,
+    model: &str,
+    thinking: &str,
+    messages: &[Value],
+) -> Result<Value, String> {
+    let mut last = String::new();
+    for wait in [0u64, 800, 2500, 5000] {
+        if wait > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+        }
+        match chat_once(client, base, api_key, model, thinking, messages).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                last = e;
+                if !is_transient_llm_error(&last) {
+                    return Err(last); // 4xx 语义错误不重试
+                }
+            }
+        }
+    }
+    Err(last)
+}
+
 /// 主循环：chat → tool_calls → 引擎执行 → 回填 → 直至 assistant 总结或 maxSteps。
 pub async fn run(
     host: &EngineHost,
@@ -900,14 +929,9 @@ pub async fn run(
     let mut seq: usize = 0;
 
     for step in 0..MAX_STEPS {
-        let mut resp = chat_once(&client, &base, api_key, model, thinking, &messages).await;
-        if let Err(e) = &resp {
-            // 瞬时错误（限流/过载/网络抖动）重试一次；4xx 语义错误不重试
-            if is_transient_llm_error(e) {
-                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                resp = chat_once(&client, &base, api_key, model, thinking, &messages).await;
-            }
-        }
+        // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
+        // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够
+        let mut resp = chat_once_with_retry(&client, &base, api_key, model, thinking, &messages).await;
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
