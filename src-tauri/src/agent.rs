@@ -7,14 +7,21 @@
 //! 宿主按 mbt 键控复用会话），空项目起步 → 种子文档 + apply_human_op 引导。
 //! 只读检视面（lint/critique/query/...）经 wasm session API 路由可达
 //! （导出 26 个 session_*；仅 list-tools/doc-json 无对应导出）。
-//! 请求体为 OpenAI chat wire format 或 Anthropic Messages wire
-//! （协议按 base_url 探测，json! 字面量），thinking 家族等非标字段在构造时
-//! 直接注入。返回契约与原 JS 桥一致：{ok, mbt_b64, render, ops[], stopReason, text}。
+//! 请求体为 OpenAI chat wire format 或 Anthropic Messages wire（协议按 base_url 探测）。
+//! OpenAI 侧经 async-openai【纯类型层】（chat-completion-types，无 HTTP client）构造
+//! 请求骨架与 tools schema，序列化后与 provider 回显的原始 messages 合并、注入
+//! thinking 家族等非标字段，再经自有 reqwest 发送；响应侧保持 raw Value
+//! （typed 往返会丢 reasoning_content 等非标字段，严格枚举在兼容网关上会碎——
+//! SDK 自家 issue #498/#503）。返回契约与原 JS 桥一致：
+//! {ok, mbt_b64, render, ops[], stopReason, text}。
 
 use serde_json::{json, Value};
 use std::time::Duration;
 
 use crate::EngineHost;
+use async_openai::types::chat::{
+    CreateChatCompletionRequest, ChatCompletionTool, ChatCompletionTools, FunctionObject,
+};
 use base64::engine::general_purpose::STANDARD as BASE64;
 
 const MAX_STEPS: usize = 200;
@@ -663,38 +670,68 @@ fn artboard_index(a: &Value) -> Value {
     }
 }
 
-/// OpenAI chat tools 定义（json! 字面量，schema 由契约测试锚定）。
+/// OpenAI chat tools 定义：async-openai 类型层构造（wire schema 的权威形态）。
+/// 必须用 ChatCompletionTools::Function 包装——裸 ChatCompletionTool 序列化
+/// 不带 "type":"function" 判别字段，会改变 wire 格式（兼容网关会拒收）。
+fn tools_typed() -> Vec<ChatCompletionTools> {
+    let tool = |name: &str, description: &str, parameters: Value| {
+        ChatCompletionTools::Function(ChatCompletionTool {
+            function: FunctionObject {
+                name: name.to_string(),
+                description: Some(description.to_string()),
+                parameters: Some(parameters),
+                ..Default::default()
+            },
+        })
+    };
+    vec![
+        tool(
+            "moonviz_op",
+            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
+            json!({
+                "type": "object",
+                "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
+                "required": ["op"]
+            }),
+        ),
+        tool(
+            "read_mbt",
+            "Read the current canonical .mbt.md source of truth (node ids, flows, all screens).",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "list_components",
+            "List all engine UI component presets (id, category, variants).",
+            json!({"type": "object", "properties": {}}),
+        ),
+    ]
+}
+
+/// tools 的序列化形态（anthropic_tools 转换与契约测试消费）。
 fn tools_schema() -> Value {
-    json!([
-        {
-            "type": "function",
-            "function": {
-                "name": "moonviz_op",
-                "description": "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
-                    "required": ["op"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "read_mbt",
-                "description": "Read the current canonical .mbt.md source of truth (node ids, flows, all screens).",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "list_components",
-                "description": "List all engine UI component presets (id, category, variants).",
-                "parameters": {"type": "object", "properties": {}}
+    serde_json::to_value(tools_typed()).expect("tools schema 序列化不可失败（纯数据结构）")
+}
+
+/// OpenAI 请求体：SDK 类型骨架 + 原始 messages 逐字合并 + thinking 方言注入。
+/// 拆成独立函数是为了 wire 契约测试——typed 骨架不得吞掉 messages 里的非标字段
+/// （MiniMax 多轮要求 assistant 消息（含 reasoning_content）完整回传）。
+fn openai_request_body(model: &str, thinking: &str, messages: &[Value]) -> Value {
+    let typed = CreateChatCompletionRequest {
+        model: model.to_string(),
+        tools: Some(tools_typed()),
+        ..Default::default()
+    };
+    let mut body =
+        serde_json::to_value(&typed).expect("chat 请求骨架序列化不可失败（纯数据结构）");
+    body["messages"] = Value::Array(messages.to_vec());
+    if let Some(extra) = thinking_extra_body(model, thinking, Protocol::OpenAi) {
+        if let (Some(obj), Some(extra_obj)) = (body.as_object_mut(), extra.as_object()) {
+            for (k, v) in extra_obj {
+                obj.insert(k.clone(), v.clone());
             }
         }
-    ])
+    }
+    body
 }
 
 /// 模型端点校验：https 任意主机；http 仅放行本机/内网（本地 LLM 如 Ollama/vLLM）。
@@ -741,14 +778,7 @@ async fn chat_once(
     let protocol = protocol_for(base_url);
     let req = match protocol {
         Protocol::OpenAi => {
-            let mut body = json!({"model": model, "messages": messages, "tools": tools_schema()});
-            if let Some(extra) = thinking_extra_body(model, thinking, Protocol::OpenAi) {
-                if let (Some(obj), Some(extra_obj)) = (body.as_object_mut(), extra.as_object()) {
-                    for (k, v) in extra_obj {
-                        obj.insert(k.clone(), v.clone());
-                    }
-                }
-            }
+            let body = openai_request_body(model, thinking, messages);
             let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
             client.post(&url).bearer_auth(api_key).json(&body)
         }
@@ -1167,6 +1197,46 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Value {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// wire 契约：类型层 tools 序列化必须保留 "type":"function" 判别字段
+    /// （裸 ChatCompletionTool 不带 tag；SDK 升级若改变 wire 形状，此处必红）。
+    #[test]
+    fn tools_schema_wire_shape_anchor() {
+        let arr = tools_schema().as_array().expect("tools 必须是数组").clone();
+        assert_eq!(arr.len(), 3, "工具数量变了：{arr:?}");
+        let names: Vec<&str> = arr
+            .iter()
+            .map(|t| t["function"]["name"].as_str().expect("name"))
+            .collect();
+        assert_eq!(names, vec!["moonviz_op", "read_mbt", "list_components"]);
+        for t in &arr {
+            assert_eq!(t["type"], "function", "wire 判别字段缺失：{t}");
+            assert!(t["function"]["description"].is_string());
+            assert!(t["function"]["parameters"].is_object());
+        }
+        assert_eq!(arr[0]["function"]["parameters"]["required"], json!(["op"]));
+    }
+
+    /// wire 契约：typed 骨架不得吞掉 messages 的非标字段——MiniMax 多轮要求
+    /// assistant 消息（含 reasoning_content）逐字回传，typed 往返会静默丢字段。
+    #[test]
+    fn openai_request_body_preserves_raw_messages() {
+        let messages = vec![
+            json!({"role": "assistant", "content": "plan", "reasoning_content": "chain-of-thought",
+                   "tool_calls": [{"id": "c1", "type": "function",
+                                   "function": {"name": "moonviz_op", "arguments": "{\"op\":\"list\"}"}}]}),
+            json!({"role": "tool", "tool_call_id": "c1", "content": "{\"ok\":true}"}),
+        ];
+        let body = openai_request_body("MiniMax-M2", "high", &messages);
+        assert_eq!(body["model"], "MiniMax-M2");
+        let msgs = body["messages"].as_array().expect("messages 数组").clone();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["reasoning_content"], "chain-of-thought");
+        assert_eq!(msgs[1]["tool_call_id"], "c1");
+        assert_eq!(body["tools"].as_array().expect("tools").len(), 3);
+        // 未设置的 optional 字段不得出现在 wire 上（SDK skip_serializing_if 契约）
+        assert!(body.get("stream").is_none());
+    }
 
     #[test]
     fn thinking_family_table() {

@@ -16,14 +16,17 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 base64 = "0.22"
 zeroize = "1.8"
-# Agent 基座（进程内，无 JS 运行时）：reqwest 直发 OpenAI chat-completions
-# wire format（schema 由 agent.rs 的 json! 字面量 + cargo test 契约测试锚定）。
-# 不引入类型化 chat 客户端：thinking 家族等非标字段需在序列化后注入，
-# 类型层反而被绕过（评估阶段已验证 async-openai 0.42 无 extra-fields 口子）。
+# Agent 基座（进程内，无 JS 运行时）：自有 reqwest 直发 OpenAI chat-completions /
+# Anthropic Messages wire format。async-openai 以【纯类型层】采用（chat-completion-types：
+# 仅 derive_builder+bytes，不带 HTTP client 与 aws-lc/quinn 等传递重量链）：请求骨架与
+# tools schema 用 SDK 类型构造，序列化后合并 provider 回显的原始 messages 与 thinking
+# 家族等非标字段再发送；响应侧保持 raw Value（SDK 自家 issue #498/#503：严格响应枚举
+# 在兼容网关上会碎，reasoning_content 等非标字段过 typed 往返会丢）。byot/full-client
+# 路线已评估并拒绝：byot 只是把任意 Value 发出去（零类型收益）且引入 SDK 的 HTTP 栈。
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["time", "net", "sync"] }
 wasmtime = "49.0.0"
-async-openai = "0.42.0"
+async-openai = { version = "0.42.0", default-features = false, features = ["chat-completion-types"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
