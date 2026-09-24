@@ -181,6 +181,46 @@ fn set_project_dirty(dirty: bool) {
     PROJECT_DIRTY.store(dirty, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// ---------- Agent 运行日志（JSONL，宿主侧可诊断性） ----------
+/// 每次 agent run 落一个文件：run_start 头 + 每个事件一行 + run_end 尾。
+/// 引擎事件（工具调用/失败/澄清）原样入档；保留最近 50 个文件。
+fn now_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+fn journal_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    let dir = app.path().app_data_dir().ok()?.join("logs");
+    std::fs::create_dir_all(&dir).ok()?;
+    // 保留最近 50 个：文件名以 epoch 前缀，字典序即时间序
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let mut files: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map(|x| x == "jsonl").unwrap_or(false))
+            .collect();
+        files.sort_by_key(|e| e.file_name());
+        while files.len() > 50 {
+            if std::fs::remove_file(files.remove(0).path()).is_err() {
+                break;
+            }
+        }
+    }
+    Some(dir)
+}
+
+fn journal_append(dir: &std::path::Path, file: &str, line: &serde_json::Value) {
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(file))
+    {
+        let _ = f.write_all(format!("{line}\n").as_bytes());
+    }
+}
+
 /// 退出应用（⌘Q 自定义菜单项的终点）。直接 exit 是有意的：调用前置条件是脏拦截
 /// 已确认放弃（脏已清）——绕过 CloseRequested 不构成绕过保护。
 #[tauri::command]
@@ -295,18 +335,57 @@ async fn invoke_fx_sdk(
     let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
     let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
-    // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线
+    // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线；
+    // 同一事件流落 JSONL 运行日志（app_data/logs/，保留 50 个），供事后诊断
     let run_id = p.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
     let emitter = app.clone();
+    let journal = journal_dir(&app);
+    let journal_file = journal
+        .as_ref()
+        .map(|_| format!("agent-{}-{run_id}.jsonl", now_ms()));
+    if let (Some(dir), Some(file)) = (&journal, &journal_file) {
+        journal_append(
+            dir,
+            file,
+            &serde_json::json!({
+                "ts": now_ms(), "type": "run_start", "run": run_id,
+                "instruction": instruction.chars().take(200).collect::<String>(),
+                "model": model, "thinking": thinking,
+                "mbt_bytes": mbt_b64.map(|b| b.len()).unwrap_or(0),
+            }),
+        );
+    }
+    let cb_journal = journal.clone();
+    let cb_file = journal_file.clone();
     let progress = move |mut v: serde_json::Value| {
         use tauri::Emitter as _;
         // run id 必须注入每个事件（前端按它过滤归属自己那次 run）
         if let Some(obj) = v.as_object_mut() {
             obj.insert("run".into(), serde_json::json!(run_id));
+            obj.insert("ts".into(), serde_json::json!(now_ms()));
         }
         let _ = emitter.emit("agent-event", &v);
+        if let (Some(dir), Some(file)) = (&cb_journal, &cb_file) {
+            journal_append(dir, file, &v);
+        }
     };
-    Ok(agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress)).await)
+    let result =
+        agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress))
+            .await;
+    if let (Some(dir), Some(file)) = (&journal, &journal_file) {
+        journal_append(
+            dir,
+            file,
+            &serde_json::json!({
+                "ts": now_ms(), "type": "run_end", "run": run_id,
+                "ok": result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false),
+                "stopReason": result.get("stopReason").cloned().unwrap_or(serde_json::json!(null)),
+                "ops": result.get("ops").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+                "error": result.get("error").cloned().unwrap_or(serde_json::json!(null)),
+            }),
+        );
+    }
+    Ok(result)
 }
 
 /// 模型元数据注册表（vendored models.dev 快照）下发给前端：

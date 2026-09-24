@@ -309,6 +309,11 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   改菜单时**同时**更新 `lib.rs`、前端映射表与 `docs/menus.md`（链路：`lib.rs::on_menu_event`
   经 `win.eval("nativeMenuAction(id)")` 直调前端全局函数；`event.listen` 曾因 Tauri ACL
   未放行而弃用——menus.md 已按此修正）。
+- **Agent 运行日志（宿主侧可诊断性）**：每次 agent run 落一个 JSONL——
+  `app_data/logs/agent-<epoch>-<runid>.jsonl`（macOS 为
+  `~/Library/Application Support/com.deepcode.deepdesign/logs/`），run_start 头 + 每个事件
+  （工具调用/结果/错误，含 ts 与 run id）+ run_end 尾；保留最近 50 个。排障时直接读最新
+  文件，stderr 的 `[agent]` 行是同一事件流的控制台镜像。
 - **Agent 长任务与人类编辑的丢失更新**：agent run 以请求起点的 `mbtText` 快照驱动
   （Rust 侧 EngineState 每请求重建），秒级窗口内人类提交的 op 会被 agent 终态整体
   覆盖。修法需要 rebase/合并机制（把 agent 的 op 流重放到最新 canonical），属设计决策；
