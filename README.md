@@ -60,7 +60,7 @@ node test_studio.cjs          # 前端状态机冒烟 + wasm 产物契约
 
 ## 开源感谢
 
-本项目的地基是自家引擎 **[MoonViz](https://github.com/asdshuaishuai/moonviz)**——100% MoonBit
+感谢 **[MoonViz](https://github.com/asdshuaishuai/moonviz)** 引擎——100% MoonBit
 编写的原型设计引擎：`.mbt.md` 唯一事实源、HumanGate / AgentGate 双门、47 个 Agent 工具、
 六条集成路线（CLI / MCP / Node SDK / WASM SDK / SKILL / DDP）。标准 classic WASM 产物让同一份
 引擎在 WebView 画布与 wasmtime 宿主中逐字节一致地运行——没有它就没有 deepDesign。MIT 开源。
