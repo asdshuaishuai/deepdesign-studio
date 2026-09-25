@@ -471,7 +471,8 @@ body.mode-play .promptbar,body.mode-play .canvas-hint{display:none!important}
 .play-bar .pb-exit{color:#e05252;border-color:color-mix(in srgb,#e05252 35%,transparent);background:color-mix(in srgb,#e05252 8%,transparent)}
 .play-bar .pb-exit:hover{background:color-mix(in srgb,#e05252 16%,transparent);border-color:color-mix(in srgb,#e05252 55%,transparent)}
 .ink-layer{position:fixed;inset:0;z-index:85;pointer-events:none;touch-action:none;display:none;cursor:crosshair}
-body.play-ink-mode .ink-layer{display:block;pointer-events:auto}
+body.mode-play .ink-layer{display:block}
+body.play-ink-mode .ink-layer{pointer-events:auto}
 body.play-ink-mode .pm-hot{pointer-events:none}
 .play-bar .pb-toggle.on{color:var(--acc-tx);border-color:color-mix(in srgb,var(--acc) 55%,transparent);background:color-mix(in srgb,var(--acc) 10%,transparent)}
 .pm-hot{position:absolute;z-index:6;cursor:pointer;border-radius:10px;outline:2px dashed rgba(40,167,69,.85);outline-offset:2px}
@@ -1181,6 +1182,46 @@ function syncProjName(pathOrName){
   if(IS_TAURI&&window.__TAURI__.window&&window.__TAURI__.window.getCurrentWindow)
     window.__TAURI__.window.getCurrentWindow().setTitle(name+' — deepDesign Studio').catch(()=>{ });
 }
+let inkPaths=[],inkCur=null,inkCv=null,inkCtx=null;
+/* ── 批注持久化（moonviz#20 通道补齐前的注入层）──
+ * 引擎 canonical 往返会丢弃未知注释/键（真机实证），批注以「引擎 canonical + 前端批注块」
+ * 合成：mbtText 恒为 inject(canonical)——引擎每次回写后 applyMbtResult 重新注入，
+ * DDP 落盘/打开自然带批注；批注块是合法 markdown，引擎工具链忽略它（accept 已验证）。 */
+const INK_MARK='deepdesign:ink';
+function inkSerialize(){
+  if(!inkPaths.length)return null;
+  const pts=inkPaths.filter(p=>p.length>1).map(p=>p.map(q=>[Math.round(q.x*10000)/10000,Math.round(q.y*10000)/10000]));
+  return pts.length?JSON.stringify({v:1,strokes:pts}):null;
+}
+function inkExtract(mbt){
+  const m=String(mbt||'').match(/<!-- deepdesign:ink ([\s\S]*?) -->/);
+  return m?m[1].trim():null;
+}
+function inkInject(mbt){
+  const payload=inkSerialize();
+  // remove 吃净前后换行、insert 定死单换行格式——同路径二次注入严格幂等（测试锚定）
+  let out=String(mbt||'');
+  const had=/\n?<!-- deepdesign:ink [\s\S]*? -->\n?/.test(out);
+  if(had)out=out.replace(/\n?<!-- deepdesign:ink [\s\S]*? -->\n?/, '\n');
+  if(!payload)return had?out.replace(/\n{3,}/g,'\n\n'):out;
+  const block=`<!-- deepdesign:ink ${payload} -->`;
+  // 注入位：frontmatter 结束（第二个 ---）所在行之后——文档顶部注释区，远离引擎围栏块
+  const i=out.indexOf('---',out.indexOf('---')+3);
+  if(i<0)return block+'\n\n'+out;
+  const j=out.indexOf('\n',i);
+  return out.slice(0,j+1)+block+'\n'+out.slice(j+1);
+}
+function inkRestore(mbt){
+  const raw=inkExtract(mbt);
+  inkPaths=[];
+  if(!raw)return false;
+  try{
+    const d=JSON.parse(raw);
+    (d.strokes||[]).forEach(st=>inkPaths.push(st.map(q=>({x:q[0],y:q[1]}))));
+    return inkPaths.length>0;
+  }catch(_){return false;}
+}
+
 function syncDirtyRemote(){if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_project_dirty',{dirty:projectDirty||declDraftDirty}).catch(()=>{});}
 let projectQueue=Promise.resolve();
 function serializeProject(task){const pending=projectQueue.then(task);projectQueue=pending.catch(()=>{});return pending;}
@@ -1439,8 +1480,9 @@ function mbtResult(result){
 function applyMbtResult(result,{reset=false,acceptDraft=false}={}){
   if(!result||result.ok!==true||!result.mbt)throw new Error('引擎未返回 canonical .mbt.md');
   if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;placeMode=null;playStack=[];}
-  const changed=mbtText!==result.mbt;
-  mbtText=result.mbt;mbtRevision=Number(result.revision)||0;
+  const canonical=inkInject(result.mbt);
+  const changed=mbtText!==canonical;
+  mbtText=canonical;mbtRevision=Number(result.revision)||0;
   // 会话化写入（runOpNow/撤销）已把会话 doc 推进到 result.mbt（histSynced=true）；
   // 外部写入（agent 终态/打开/校验渲染）后 histEnsure 依 histDoc 漂移判定重开并重建基线
   if(changed){
@@ -2184,7 +2226,7 @@ async function sendAgent(){
     }else if(r.mbt_b64){
       const src=b64ToUtf8(r.mbt_b64);
       // 直写 mbtText 绕过 applyMbtResult 的脏逻辑——agent 已提交的工作必须显式置脏
-      await serializeProject(async()=>{mbtText=src;projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();});
+      await serializeProject(async()=>{mbtText=inkInject(src);projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();});
     }
     res.style.display='block';res.className='ap-result ok';
     const cut=r.stopReason==='max_turns'?'（已达步数上限）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
@@ -2430,7 +2472,7 @@ async function runGlobalPrompt(){
           applyMbtResult({ok:true,mbt:src,entry:render.entry,artboards:render.artboards,flows:render.flows,revision:render.revision});
         }else{
           // 桥异常未带 render（或 rebase 后 render 作废）：直接从 canonical 源重渲染兜底
-          mbtText=src;projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
+          mbtText=inkInject(src);projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
         }
       });
     }
@@ -2479,6 +2521,7 @@ function setMode(m){
   if(m==='play'){if(!playStack.length||playStack[playStack.length-1]!==active)playStack=[active];renderStage();
     // interact 绑定异步预热：就绪后热区补挂（flows 热区已在 renderStage 同步挂好）；
     // 非 tap 触发器演示不支持——如实计数提示，不做静默隐身
+    if(inkPaths.length)mountInkLayer(); // 批注随文档恢复：进演示即重放（moonviz#20 注入层）
     prefetchPlayIx().then(()=>{
       if(mode!=='play')return;
       attachPlayHotZones();
@@ -2928,7 +2971,7 @@ function togglePlay(on){
     setMode('play');
   } else exitPlay();
 }
-function exitPlay(){toggleInk();inkPaths=[];playClearHot();setMode(playReturnMode||'wireframe');}
+function exitPlay(){toggleInk();document.querySelectorAll('.ink-layer').forEach(cv=>cv.remove());inkCv=null;inkCtx=null;playClearHot();setMode(playReturnMode||'wireframe');inkPersist();}
 function playClearHot(){document.querySelectorAll('.pm-hot').forEach(el=>el.remove());}
 function attachPlayHotZones(){
   playClearHot();
@@ -2972,15 +3015,15 @@ function toggleHotZones(){
 }
 /* 标注（批注）模式：活动画板上自由圈画，墨迹按画板存内存（归一化坐标，缩放不糊）。
  * 开启时暂停热区点击（标注优先），Esc / 再点 ✏ 退出。退出演示清空。 */
-let inkMode=false,inkPaths=[],inkCur=null,inkCv=null,inkCtx=null;
+let inkMode=false;
 function toggleInk(){
   inkMode=!inkMode;
   document.body.classList.toggle('play-ink-mode',inkMode);
   const t=$('play-ink-toggle'),c=$('play-ink-clear');
   if(t)t.classList.toggle('on',inkMode);
   if(c)c.style.display=inkMode?'':'none';
-  if(inkMode){mountInkLayer();toast('标注模式：按住拖动圈画 · Esc 结束标注');}
-  else if(inkCv){inkCv.remove();inkCv=null;inkCtx=null;}
+  mountInkLayer(); // play 下层恒挂（显示既有批注）；可否绘制由 play-ink-mode 的 pointer-events 决定
+  if(inkMode)toast('标注模式：按住拖动圈画 · Esc 结束标注');
 }
 /* 全屏手绘墨迹层：覆盖整个演示视口，中点二次贝塞尔平滑（手绘笔感）。
  * 墨迹为视口像素坐标，切画板保留；退出演示清空。 */
@@ -2991,22 +3034,23 @@ function mountInkLayer(){
   const fit=()=>{inkCv.width=innerWidth;inkCv.height=innerHeight;redrawInk();};
   fit();
   window.addEventListener('resize',fit);
-  const pos=e=>({x:e.clientX,y:e.clientY});
+  const pos=e=>({x:e.clientX/innerWidth,y:e.clientY/innerHeight});
   const strokeSetup=()=>{inkCtx.strokeStyle='#E67E22';inkCtx.lineWidth=2.6;inkCtx.lineCap='round';inkCtx.lineJoin='round';};
   inkCv.addEventListener('pointerdown',e=>{
     e.preventDefault();
     try{inkCv.setPointerCapture(e.pointerId);}catch(_){ }
     inkCur=[pos(e)];inkPaths.push(inkCur);
     strokeSetup();
-    const p0=inkCur[0];inkCtx.beginPath();inkCtx.arc(p0.x,p0.y,1.2,0,7);inkCtx.fillStyle=inkCtx.strokeStyle;inkCtx.fill();
+    const p0=inkCur[0];inkCtx.beginPath();inkCtx.arc(p0.x*inkCv.width,p0.y*inkCv.height,1.2,0,7);inkCtx.fillStyle=inkCtx.strokeStyle;inkCtx.fill();
   });
   inkCv.addEventListener('pointermove',e=>{
     if(!inkCur)return;
     const n=inkCur.length,p=pos(e),last=inkCur[n-1];
-    // 中点平滑：从上一中点经当前点画到新中点（手绘圆头）
-    const midPrev={x:(inkCur[Math.max(0,n-2)].x+last.x)/2,y:(inkCur[Math.max(0,n-2)].y+last.y)/2};
-    const midCur={x:(last.x+p.x)/2,y:(last.y+p.y)/2};
-    inkCtx.beginPath();inkCtx.moveTo(midPrev.x,midPrev.y);inkCtx.quadraticCurveTo(last.x,last.y,midCur.x,midCur.y);inkCtx.stroke();
+    // 中点平滑：从上一中点经当前点画到新中点（手绘圆头）；坐标归一化（持久化尺寸无关）
+    const W=inkCv.width,H=inkCv.height;
+    const midPrev={x:(inkCur[Math.max(0,n-2)].x+last.x)/2*W,y:(inkCur[Math.max(0,n-2)].y+last.y)/2*H};
+    const midCur={x:(last.x+p.x)/2*W,y:(last.y+p.y)/2*H};
+    inkCtx.beginPath();inkCtx.moveTo(midPrev.x,midPrev.y);inkCtx.quadraticCurveTo(last.x*W,last.y*H,midCur.x,midCur.y);inkCtx.stroke();
     inkCur.push(p);
   });
   const end=()=>{inkCur=null;};
@@ -3017,19 +3061,26 @@ function mountInkLayer(){
 function redrawInk(){
   if(!inkCtx)return;
   inkCtx.strokeStyle='#E67E22';inkCtx.lineWidth=2.6;inkCtx.lineCap='round';inkCtx.lineJoin='round';
+  const W=inkCv.width,H=inkCv.height;
   inkPaths.forEach(path=>{
     if(path.length<2)return;
     inkCtx.beginPath();
-    inkCtx.moveTo(path[0].x,path[0].y);
+    inkCtx.moveTo(path[0].x*W,path[0].y*H);
     for(let i=1;i<path.length-1;i++){
-      const mx=(path[i].x+path[i+1].x)/2,my=(path[i].y+path[i+1].y)/2;
-      inkCtx.quadraticCurveTo(path[i].x,path[i].y,mx,my);
+      const mx=(path[i].x+path[i+1].x)/2*W,my=(path[i].y+path[i+1].y)/2*H;
+      inkCtx.quadraticCurveTo(path[i].x*W,path[i].y*H,mx,my);
     }
-    inkCtx.lineTo(path[path.length-1].x,path[path.length-1].y);
+    inkCtx.lineTo(path[path.length-1].x*W,path[path.length-1].y*H);
     inkCtx.stroke();
   });
 }
 function clearInk(){inkPaths=[];inkCur=null;if(inkCtx)inkCtx.clearRect(0,0,inkCv.width,inkCv.height);}
+/* 退出演示：批注重注入 mbtText（幂等：替换旧块）+ 置脏——用户 ⌘S 落盘进 DDP */
+function inkPersist(){
+  if(mode==='play')return;
+  const next=inkInject(mbtText);
+  if(next!==mbtText){mbtText=next;projectDirty=true;syncFileLabel();syncDirtyRemote();}
+}
 function playApplySession(id){
   const s=sessions[id];if(!s)return;
   baseCmd=s.baseCmd;currentW=s.w;currentH=s.h;
@@ -3315,6 +3366,7 @@ async function openProject(path){
     // 口令只在「渲染校验通过且 filePath 真正切换」时才成为会话口令——校验失败提前
     // return 时旧文件 + 新口令的组合会让 ⌘S 用错口令重加密旧文件
     ddpSessionPassword=password;ddpPasswordByPath[r.path]=password;
+    inkRestore(b64ToUtf8(r.mbt_b64)); // 批注随文档恢复（注入层见 inkPersist 注释）
     applyMbtResult(result,{reset:true});filePath=r.path;projectDirty=false;syncDirtyRemote();
     setFileLabel(r.path.split(/[\\/]/).pop());syncProjName(r.path);rememberProject(r.path);
     toast('已打开 DDP，并从 MBT 重新渲染');});
@@ -3329,7 +3381,7 @@ async function newProject(){
   }
   agentThread.pending=null;const th=$('gp-thread');if(th)th.classList.remove('open');
   serializeProject(async()=>{
-    mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];
+    mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];inkPaths=[];
     opCmds=[];filePath='';placing=0;linkSource=null;placeMode=null;playStack=[];
     // 残留即复活通道:nodes/studioFlows 让空项目进 play;declDraftDirty 让
     // 旧文档全文留在源码编辑器(校验并渲染会把旧项目带回新项目)——全部归零

@@ -196,6 +196,24 @@ applyMbtResult({ok:true,mbt:'canonical',entry:'a',revision:1,artboards:[{id:'a',
  await vm.runInContext('createBlank()',context);
  assert.match(vm.runInContext('history.at(-1)',context),/^h:create /);
  assert(html.includes("['p-op','opacity',n.style.opacity??1]"));
+ // 批注持久化注入层（moonviz#20 过渡）：合成/提取/幂等往返——引擎 canonical 丢注释，
+ // 前端 inject 层必须保持批注块随 mbtText 存活（丢锚 = DDP 批注静默丢失）
+ const canonSample='---\nmoonviz:\n  format: visual-document\n  revision: 1\n  entry: a\n---\n\n# a\n';
+ const vset=expr=>vm.runInContext(expr,context);
+ Object.assign(context,{canonSample});
+ vset('inkPaths=[[{x:.1,y:.2},{x:.5,y:.6}]]');
+ const withInk=vset('inkInject(canonSample)');
+ assert(withInk.includes('<!-- deepdesign:ink '),'批注块未注入');
+ Object.assign(context,{withInk});
+ assert(vset('inkInject(withInk)===withInk')===true,'同路径重复注入应幂等（字节不变）');
+ vset('inkPaths=[[{x:.3,y:.4},{x:.7,y:.8}]]');
+ const reInk=vset('inkInject(withInk)');
+ assert((reInk.match(/deepdesign:ink/g)||[]).length===1,'旧块应被替换而非叠加');
+ Object.assign(context,{reInk});
+ assert(vset('inkRestore(reInk)')===true,'提取恢复');
+ assert(vset('inkPaths[0][0].x')===.3,'恢复坐标正确');
+ vset('inkPaths=[]');
+ assert(!vset('inkInject(reInk)').includes('deepdesign:ink'),'清空批注后注入应移除块');
  // 跨文件契约：tauri.conf.json 的 frontendDist 必须指向本文件所在目录。
  // （不要写成读同一路径跟自身比较——9f48220 就是这么把真 parity 检查变成恒真式的）
  const conf=JSON.parse(fs.readFileSync(path.join(__dirname,'src-tauri','tauri.conf.json'),'utf8'));
