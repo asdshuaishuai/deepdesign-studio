@@ -449,7 +449,8 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .settings-sec:first-of-type{margin-top:2px}
 .prov-chip[data-theme-chip].on{background:var(--acc);color:#fff;border-color:var(--acc-tx)}
 .settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
-#decl-hl{position:absolute;inset:0;overflow:auto;white-space:pre-wrap;word-break:break-word;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;pointer-events:none;background:var(--code-bg);color:var(--code-tx);border-radius:0 0 12px 12px;display:none;z-index:1}
+#decl-hl{position:absolute;inset:0;overflow:auto;scrollbar-width:none;white-space:pre-wrap;word-break:break-word;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;pointer-events:none;background:var(--code-bg);color:var(--code-tx);border-radius:0 0 12px 12px;display:none;z-index:1}
+#decl-hl::-webkit-scrollbar{display:none}
 .tok-comment{color:var(--tok-comment);font-style:italic}
 .tok-string{color:var(--tok-string)}
 .tok-number{color:var(--tok-number)}
