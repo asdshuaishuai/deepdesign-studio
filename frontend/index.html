@@ -120,6 +120,13 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 #lt-flow.on{color:var(--ok);border-bottom-color:var(--ok);background:rgba(40,167,69,.05)}
 .ltab .ic{width:13px;height:13px}
 .lpanel{flex:1;overflow-y:auto;padding:10px}
+.proj-card{padding:9px 10px 8px;border-bottom:var(--bd);background:rgba(0,0,0,.015)}
+.proj-card .pc-head{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.proj-card .pc-head b{font-size:12.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj-card .pc-actions{display:flex;gap:6px}
+.proj-card .pc-actions .tbtn{flex:1;font-size:11px;padding:5px 6px}
+.proj-card .sec{margin:9px 2px 5px}
+.recent-row.side{padding:6px 9px;font-size:11.5px;border-radius:8px;margin-bottom:5px}
 .sec{display:flex;align-items:center;justify-content:space-between;font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin:10px 4px 7px}
 .sec:first-child{margin-top:2px}
 .lfoot{padding:8px 12px;border-top:var(--bd);display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--tx3);background:rgba(0,0,0,.02);font-family:ui-monospace}
@@ -745,6 +752,15 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 <div class="main">
   <!-- ================= 左栏 ================= -->
   <div class="left">
+    <div class="proj-card">
+      <div class="pc-head"><b id="side-proj-name">未命名项目</b></div>
+      <div class="pc-actions">
+        <button class="tbtn" onclick="newProject()" title="新建项目（⌘N）">＋ 新建</button>
+        <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）">打开…</button>
+      </div>
+      <div class="sec"><span>最近项目</span></div>
+      <div id="side-recent-list"></div>
+    </div>
     <div class="ltabs">
       <button class="ltab on" id="lt-layer" onclick="switchLeft('layer')"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>图层</button>
       <button class="ltab" id="lt-comp" onclick="switchLeft('comp')"><svg class="ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>AI 组件</button>
@@ -1128,6 +1144,7 @@ function setFileLabel(name){fileLabelName=name;syncFileLabel();}
 function syncProjName(pathOrName){
   const name=(pathOrName||'').split(/[\\/]/).pop().replace(/\.ddp$/i,'')||'未命名项目';
   $('proj-name').textContent=name;document.title=name;
+  const sp=$('side-proj-name');if(sp)sp.textContent=name;
   if(IS_TAURI&&window.__TAURI__.window&&window.__TAURI__.window.getCurrentWindow)
     window.__TAURI__.window.getCurrentWindow().setTitle(name+' — deepDesign Studio').catch(()=>{ });
 }
@@ -2894,21 +2911,21 @@ function rememberProject(path){
   if(!path)return;
   saveRecents([{path,name:path.split(/[\\/]/).pop().replace(/\.ddp$/i,''),ts:Date.now()},
     ...recentProjects().filter(p=>p.path!==path)]);
-  renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();
+  renderAllRecents();
 }
-function forgetProject(path){saveRecents(recentProjects().filter(p=>p.path!==path));renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();}
+function forgetProject(path){saveRecents(recentProjects().filter(p=>p.path!==path));renderAllRecents();}
 /* 对账：按父目录批量扫描（Rust list_ddp_projects），文件已删除的条目剔除、mtime 刷新。
  * 位置在 vm 动态切片外——仅在运行时（启动/用户操作）被调用。 */
 async function refreshRecents(){
   if(!IS_TAURI)return;
-  const list=recentProjects();if(!list.length){updateWelcomeRecents();return;}
+  const list=recentProjects();if(!list.length){renderAllRecents();return;}
   const found=new Map();
   for(const dir of [...new Set(list.map(p=>p.path.replace(/[\\/][^\\/]+$/,'')))]){
     try{const r=await window.__TAURI__.core.invoke('list_ddp_projects',{dir});for(const it of(r&&r.projects)||[])found.set(it.path,it);}catch(_){ }
   }
   const next=list.filter(p=>found.has(p.path)).map(p=>({path:p.path,name:p.name,ts:Math.max(p.ts||0,(found.get(p.path).modified||0)*1000)}));
   if(next.length!==list.length)saveRecents(next);
-  renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();
+  renderAllRecents();
 }
 function relTime(ts){
   if(!ts)return'';
@@ -2916,10 +2933,18 @@ function relTime(ts){
   if(s<60)return'刚刚';if(s<3600)return Math.floor(s/60)+' 分钟前';
   if(s<86400)return Math.floor(s/3600)+' 小时前';return Math.floor(s/86400)+' 天前';
 }
-/* 两个呈现位（文件菜单 fm-recents / 欢迎面板 recent-list）共用一份注册表渲染 */
+/* 三个呈现位（侧栏项目区 side-recent-list / 欢迎面板 recent-list / 文件菜单 fm-recents）
+ * 共用一份注册表；侧栏常驻显示（空态给引导文案），欢迎区/文件菜单空时隐藏 */
+function renderAllRecents(){renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));renderRecentRows($('side-recent-list'));updateWelcomeRecents();}
 function renderRecentRows(box){
   if(!box)return;
   const list=recentProjects().slice(0,6);
+  if(box.id==='side-recent-list'){
+    if(!list.length){box.innerHTML='<div class="hintbox">暂无最近项目——保存或打开 DDP 后出现在这里</div>';return;}
+    box.innerHTML=list.map(p=>
+      `<div class="recent-row side" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}</span><span class="rc-meta">${escHtml(relTime(p.ts))}</span></div>`).join('');
+    return;
+  }
   if(box.id==='fm-recents'){
     box.style.display=list.length?'block':'none';
     box.innerHTML=list.map(p=>
@@ -3378,6 +3403,7 @@ window.__state=()=>({baseCmd,opCmds,nodes,selected,flows,active,sessions,mode});
 loadComponents();
 if(IS_TAURI)loadModelRegistry();   // 模型注册表快照（离线；失败不影响主流程）
 if(IS_TAURI)refreshRecents();      // 最近项目磁盘对账（剔除已删除文件；失败不影响主流程）
+renderAllRecents();                // 侧栏项目区首次渲染（含空态文案）
 loadEngine().then(()=>{           // wasm 引擎预加载（画布首帧 op 前就绪）
   if(engineFailed)console.warn('引擎 wasm 加载失败：',engineFailed);
   else if(typeof setStatus==='function')setStatus('','',true,'引擎 wasm 就绪');
