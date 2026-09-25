@@ -183,13 +183,11 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   （诚实报错，不假装可用）。变更类 op 绝不能进表——会被只读分支拦下而非提交。
   注意：`list_components` 作为**工具**仍可用（agent.rs 经宿主取 components.json 快照），
   路由的是同名 **op**。
-- **`constrain` 和独立 `name` op 在 apply 门上不可达**：走 apply-human/apply-agent 均返回
-  `mbt_operation_unsupported`。`session_constrain`（0.1.6/#17 起是**布局意图解析器**，14 种
-  意图词表，cannot_parse 就地返回全部词表）**仍不接入 agent**：成功信封不回传 canonical mbt
-  （实测 `{ok,id,x}`），键控会话宿主取不回变更——已提
-  [#19](https://github.com/asdshuaishuai/moonviz/issues/19) 请求对齐 session_apply_agent 信封，
-  补齐后经 session 路由接线。布局意图用 align/update/place[w h] 表达。改节点名要用
-  `update <ab> <node> name=<id>`，不要教 Agent 用 `name`。
+- **`constrain` 自 0.1.6-fix/#19 起经 session 路由接入**（`session_constrain` 特判路由，
+  **变更 op，绝不进 READONLY_OPS**）：14 种布局意图词表，cannot_parse 就地返回词表
+  （错误即文档）；成功信封带 canonical（#19 修复），与变更路径同构键前移。它是布局意图
+  解析器，**不做层级/z-order**——全屏背景+内容走全包含豁免（#15）、z-order 用 `reorder`。
+  独立 `name` op 仍不可达，改节点名用 `update <ab> <node> name=<id>`。
 - **place 最终尺寸语法（0.1.6/#18）**：`place <ab> <comp> <id> [variant|-] [x] [y] [w] [h] [k=v ...]`
   ——门在**最终 bbox** 评估；提示词已教「知道最终尺寸就随 place 传入」（真实 run 111 次
   拒绝的根因整类消除，`place_final_size_gate_evaluates_final_bbox` 测试锚定）。
@@ -243,13 +241,13 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 - 同时在本仓库做**登记性缓解**（提示词禁令/可用配方、登记性测试、诚实降级文案），
   并在代码注释或本文件引用 issue 编号——上游修复会让登记性测试变红，驱动本侧回收
   （例：`AGENT_GATE_DEBT` 清单对应 #14）；
-- 已提交的引擎 issue 台账（**0.1.6 已修 #17/#18**；0.1.5-fix-2 已修 #12/#13/#14/#15）：
+- 已提交的引擎 issue 台账（**0.1.6-fix 已修 #19；0.1.6 已修 #17/#18；0.1.5-fix-2 已修 #12/#13/#14/#15**）：
+  #19（session_constrain 成功信封不回传 canonical，键控缓存宿主取不回变更→已修：constrain/
+  auto_fix/tap/generate_responsive/component_compile 全部改文档面信封带 canonical，本侧
+  SESSION_EVICT 机制整体移除、constrain 已接线）、
   #18（place 不接受 w/h→已修：`[w] [h]` 位置参数 + 门评估最终 bbox，真实 LLM run 111 次
   拒绝的根因整类消除，本侧提示词已教新语法）、#17（constrain 意图语法无文档→已修：
-  cannot_parse 就地返回 14 种意图词表、SKILL.md 词条重写；**信封仍缺 canonical，见
-  [#19](https://github.com/asdshuaishuai/moonviz/issues/19)（未修）**：
-  session_constrain 成功信封不回传 canonical mbt，键控缓存宿主取不回变更——修齐前不接入
-  agent，布局意图走 align/update/place[w h]）、
+  cannot_parse 就地返回 14 种意图词表、SKILL.md 词条重写；本侧已接 session 路由）、
   #11（history——会话内
   全链路可用，arg 槽 `<sub> [artboard]`、须先 `init`、place 不自动入史须显式 `commit`；
   曾误报「不跨会话存活」为引擎缺陷后撤回 [#16](https://github.com/asdshuaishuai/moonviz/issues/16)
@@ -296,7 +294,7 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   `mid_run_llm_failure_preserves_committed_work`、`readonly_session_gets_render_fallback`、
   `session_count_zero_after_close`（会话泄漏契约）、`agent_session_cache_reuse`（会话缓存命中，
   经行协议宿主的 session_cache_stats 断言，变异验证过必红）。
-  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数（当前 38）。
+  判断方法：`cargo test -- --nocapture` 看跳过输出（默认输出会吞掉通过测试的 stderr），或数条数（当前 43）。
 
 ## 删前端代码前必读（真实事故，勿重演）
 
@@ -358,14 +356,11 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   `~/Library/Application Support/com.deepcode.deepdesign/logs/`），run_start 头 + 每个事件
   （工具调用/结果/错误，含 ts 与 run id）+ run_end 尾；保留最近 50 个。排障时直接读最新
   文件，stderr 的 `[agent]` 行是同一事件流的控制台镜像。
-- **Agent 长任务与人类编辑的丢失更新**：agent run 以请求起点的 `mbtText` 快照驱动
-  （Rust 侧 EngineState 每请求重建），秒级窗口内人类提交的 op 会被 agent 终态整体
-  覆盖。**修法已决策为终态 rebase**（方案 C：快照起点不变，终态时把 run 的变更 op 流
-  重放到最新 canonical，门拒绝即跳过并报告）——决策记录与实施清单见
-  `docs/agent-rebase.md`，**待上游 [#19](https://github.com/asdshuaishuai/moonviz/issues/19)
-  （变更信封带 canonical，引擎升级中）落地后实施**。
-  现行交互缓解：在飞门（agentBusy）已拦截并发 run 与 run 中的新建/打开（新建/打开还会经
-  原生确认框）；rebase 落地后画布编辑安全，新建/打开拦截保留（整文档替换超出 rebase 范围）。
+- **~~Agent 长任务与人类编辑的丢失更新~~（已解决，2026-09）**：run 起点快照语义保留，
+  终态应用前前端比对起点快照——画布被人类编辑推进时把 run 的变更 op 流重放到最新
+  canonical（`rebase_agent_ops` 命令，AgentGate 逐条重校验、拒绝即跳过并报告，只读 op
+  过滤）。设计决策记录与事实基础见 `docs/agent-rebase.md`。run 中画布编辑现在是安全操作；
+  **在飞门（agentBusy）对 run 中新建/打开的拦截保留**（整文档替换超出 rebase 范围）。
 - **~~工具结果无截断~~（已解决，2026-09）**：三层确定性裁剪已落地（`docs/agent-context.md`）——
   L0 源头整形（read_mbt 剥 `mbt check` 围栏块、export-* 信封化、检视类 12KB 截断）、
   L1 去supersede（旧 read_mbt/list_components 结果占位化）、L2 预算守卫（**逐模型窗口**：

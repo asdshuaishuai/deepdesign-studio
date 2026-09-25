@@ -86,11 +86,16 @@ const SESSION_WHOLE_ARG = new Set([
   'session_apply_agent', 'session_apply_human', 'session_component_compile_b64',
 ]);
 // 变更类导出（信封回传 canonical）：成功后缓存键前移到新 canonical
-const SESSION_MUTATING = new Set(['session_apply_agent', 'session_apply_human']);
-// 会改会话文档但信封**不回传 canonical** 的导出（auto_fix/constrain 的新键不可
-// 知，且多词意图在引擎侧 cannot_parse）——唯一安全语义是调用后弃缓存，避免
-// 后续 op 命中「文档已漂移」的旧键脏缓存（审查实证过该污染链）
-const SESSION_EVICT = new Set(['session_auto_fix', 'session_constrain']);
+// 变更类导出（成功信封回传 canonical：缓存键前移）。0.1.6-fix/#19 起**全部**
+// 改文档面（apply 双门/auto_fix/constrain/tap/generate_responsive/component_compile）
+// 信封都带 canonical——与 wasmtime_host.rs 的 SESSION_MUTATING 同步维护。
+const SESSION_MUTATING = new Set([
+  'session_apply_agent', 'session_apply_human', 'session_auto_fix',
+  'session_constrain', 'session_tap', 'session_generate_responsive',
+  'session_component_compile_b64',
+]);
+// （SESSION_EVICT 已随 0.1.6-fix/#19 移除：此前 auto_fix/constrain 改文档但信封
+// 不回传 canonical，只能弃缓存防脏键；信封补齐后统一走上方键前移。）
 
 // mbt 键控会话缓存：命中即复用句柄；失配即关旧开新（缓存至多持有一个活会话，
 // 不会泄漏）。与 frontend/index.html 桥的 agentSession 同构。hits/misses 计数
@@ -217,9 +222,6 @@ function handle(req) {
             sessCache = null;
           }
         }
-      } else if (SESSION_EVICT.has(fn)) {
-        try { ex.session_close(handle); } catch (_) { /* 实例已不可用 */ }
-        sessCache = null;
       }
       return { id, ok: true, json: outStr };
     }

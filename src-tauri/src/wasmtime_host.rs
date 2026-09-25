@@ -71,10 +71,19 @@ fn arity(fn_name: &str) -> Option<usize> {
         _ => return None,
     })
 }
-/// 变更类导出（信封回传 canonical：缓存键前移 + 补画板索引）
-const SESSION_MUTATING: [&str; 2] = ["session_apply_agent", "session_apply_human"];
-/// 改会话文档但信封不回传 canonical 的导出（调用后弃缓存防脏键）
-const SESSION_EVICT: [&str; 2] = ["session_auto_fix", "session_constrain"];
+/// 变更类导出（成功信封回传 canonical：缓存键前移 + 补画板索引）。
+/// 0.1.6-fix/#19 起全部"改文档面"信封都带 canonical——apply 双门之外，
+/// auto_fix/constrain（此前改而不报，只能弃缓存）/tap（交互可改文档状态）/
+/// generate_responsive/component_compile_b64 一并纳入。
+const SESSION_MUTATING: [&str; 7] = [
+    "session_apply_agent",
+    "session_apply_human",
+    "session_auto_fix",
+    "session_constrain",
+    "session_tap",
+    "session_generate_responsive",
+    "session_component_compile_b64",
+];
 /// session_tap 需要的最小 op 参数（artboard + x + y）
 const SESSION_TAP_MIN_ARGS: usize = 3;
 
@@ -503,8 +512,6 @@ fn finish_session_call(
             },
             Err(_) => evict_session(e),
         }
-    } else if SESSION_EVICT.contains(&fn_name) {
-        evict_session(e);
     }
     envelope(&out)
 }

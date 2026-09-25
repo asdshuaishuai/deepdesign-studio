@@ -1,7 +1,26 @@
 # Agent 终态 Rebase（run 中人类编辑不再丢失）
 
-状态：**已决策（方案 C），待上游 [#19](https://github.com/asdshuaishuai/moonviz/issues/19)
-落地后实施**（引擎升级中，2026-09）。本文档是决策记录 + 实施清单——#19 发布后按清单直接开工，不再重新评估。
+状态：**已实施（2026-09，engine-v0.1.6-fix / 上游 [#19](https://github.com/asdshuaishuai/moonviz/issues/19) 修复后按本清单落地）**。
+本文档保留决策记录（防重新评估）与实施回执。
+
+## 实施回执（与原清单的差异点）
+
+- 信封修复面比 #19 原请求更宽：constrain/auto_fix 之外，**tap/generate_responsive/
+  component_compile_b64 一并闭环**——宿主 `SESSION_MUTATING` 扩为 7 项，
+  `SESSION_EVICT` 机制整体移除（wasmtime_host.rs 与 engine-host.mjs 两侧同步）。
+- tap 是只读形态 op 但可改文档状态：agent.rs 只读分支对信封 canonical **推进自持文档
+  并从历史结果剥除 mbt**（宿主同句柄键前移，两侧一致；否则下一个变更 op 按旧键重开会
+  丢掉 tap 的状态变更）。
+- rebase 落地为 Tauri 命令 `rebase_agent_ops(latest_mbt_b64, ops)`（12MB 传输门）；
+  前端在 serializeProject 队列内比对 run 起点快照，命中才调用；**`r.render` 与 run 终态
+  配对，rebase 后作废**、从 rebased canonical 走 renderMbtSource 重渲染。
+- 测试锚（实际落地名单）：`constrain_session_route_and_key_advance`（含 cannot_parse
+  词表透传与 session_cache_stats 键前移断言）、`rebase_ops_replays_onto_latest_and_skips_conflicts`
+  （重放/跳过/只读过滤/人类编辑保留；注意**完全同框触发全包含豁免反而过门**，跳过样本
+  必须取部分相交）、`readonly_routing` 增 constrain 非只读断言、test_studio 检查 H
+  （Tauri 命令↔前端 invoke 双向 parity）。
+
+## 决策记录（评估结论，勿重开）
 
 ## 问题
 

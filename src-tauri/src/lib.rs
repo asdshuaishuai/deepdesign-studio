@@ -278,6 +278,7 @@ pub fn run() {
             set_project_dirty,
             app_exit,
             list_ddp_projects,
+            rebase_agent_ops,
             model_registry
         ])
         .on_window_event(|window, event| {
@@ -335,6 +336,28 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 终态 rebase（docs/agent-rebase.md 方案 C）：agent run 是秒级长调用，期间人类
+/// 画布 op 可能已推进前端 canonical——整体回灌 run 终态会覆盖丢失人类编辑。
+/// 前端在终态应用前比对起点快照，检测到推进时把 run 的变更 op 流交到这里重放到
+/// 最新 canonical（AgentGate 逐条重校验，拒绝即跳过并报告；只读 op 由 Rust 侧过滤）。
+#[tauri::command]
+async fn rebase_agent_ops(
+    latest_mbt_b64: String,
+    ops: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    // 传输门（对齐 invoke_fx_sdk 的 12MB）：异常输入不得直通引擎内存增长
+    if latest_mbt_b64.len() > 12 * 1024 * 1024 {
+        return Err("rebase_payload_too_large".into());
+    }
+    let latest = String::from_utf8(
+        BASE64
+            .decode(latest_mbt_b64.as_bytes())
+            .map_err(|e| format!("rebase_b64_invalid:{e}"))?,
+    )
+    .map_err(|e| format!("rebase_utf8_invalid:{e}"))?;
+    Ok(agent::rebase_ops(&EngineHost, &latest, &ops).await)
 }
 
 /// Agent 基座入口（进程内，无 JS 运行时）：

@@ -2323,6 +2323,7 @@ async function runGlobalPrompt(){
     const instruction=agentThread.pending
       ? `${agentThread.pending}\n\n[用户对上述问题的回答]: ${t}\n\n请基于回答继续执行任务（直接生成，不要再次追问）。`
       : t;
+    const startMbt=mbtText; // run 起点快照：终态 rebase 的比对基准（见下方 serializeProject 内）
     const r=await askFxSdk(instruction,runId);
     if((!r.ops||!r.ops.length)&&r.text&&r.text.trim()){
       // agent 的文本回复（澄清问题/确认/说明）——展示给用户，不再丢弃
@@ -2340,14 +2341,27 @@ async function runGlobalPrompt(){
       return true;
     }
     if(r.mbt_b64){
-      const src=b64ToUtf8(r.mbt_b64);
       // 必须经 serializeProject 进 projectQueue:askFxSdk 是队列外的秒级长调用,
       // 期间排队的人类 op 会与这里交错——裸 applyMbtResult 会覆盖丢更新
       await serializeProject(async()=>{
-        if(r.render){
-          applyMbtResult({ok:true,mbt:src,entry:r.render.entry,artboards:r.render.artboards,flows:r.render.flows,revision:r.render.revision});
+        // 终态 rebase（docs/agent-rebase.md 方案 C）：队列时点的一致快照里发现画布
+        // 已被人类编辑推进（mbtText≠run 起点）→ 把 run 的变更 op 流重放到最新
+        // canonical（门拒绝即跳过），保住人类编辑；未推进走原快路径。
+        // r.render 与 run 终态文档配对——rebase 后必须作废，从 rebased 源重渲染。
+        let src=b64ToUtf8(r.mbt_b64),render=r.render;
+        if(IS_TAURI&&mbtText!==startMbt&&r.ops&&r.ops.length){
+          try{
+            const rb=await window.__TAURI__.core.invoke('rebase_agent_ops',{latestMbtB64:utf8ToB64(mbtText),ops:r.ops});
+            if(rb&&rb.ok&&rb.mbt_b64){
+              src=b64ToUtf8(rb.mbt_b64);render=null;
+              if(rb.skipped&&rb.skipped.length)toast(`Rebase：${rb.skipped.length} 条 agent 操作因画布已被编辑而跳过`);
+            }
+          }catch(err){toast('Rebase 失败，回退整体回灌：'+String(err).slice(0,60));}
+        }
+        if(render){
+          applyMbtResult({ok:true,mbt:src,entry:render.entry,artboards:render.artboards,flows:render.flows,revision:render.revision});
         }else{
-          // 桥异常未带 render 时，直接从 canonical 源重渲染兜底
+          // 桥异常未带 render（或 rebase 后 render 作废）：直接从 canonical 源重渲染兜底
           mbtText=src;projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
         }
       });

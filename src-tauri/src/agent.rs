@@ -114,6 +114,11 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   | reorder <artboard> <node> front|back|up|down | flip <artboard> <node> h|v|both|none
   | group <artboard> <group_id> <n1> <n2> ... | ungroup <artboard> <group_id>
   | align <artboard> left|right|top|bottom|hcenter|vcenter <n1> <n2> ...
+  | constrain <artboard> <intent_text>   (layout-intent parser, ONE artboard per op; intents:
+      居中 | 垂直居中 | 垂直排列 | 水平排列 | 等宽 | 等高 | 等间距 | 网格 N | 顶部 | 底部 |
+      放大 N | 缩小 N | 边距 N | 间距 N — an invalid intent error returns the full vocabulary.
+      LAYOUT INTENT ONLY, never layering/z-order: fully-contained siblings are already
+      gate-legal; z-order via "reorder".)
   | restyle <artboard> <component_id> k=v ...   (propagate to that component's instances)
   | resize-canvas <artboard> <w> <h> | responsive <artboard>  (adds _tablet/_desktop variants)
   | interact <artboard> <node> <trigger> <action>  | uninteract <artboard> <node>
@@ -153,11 +158,9 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   Quote values with spaces: text="Sign in".
   Unquoted words after a space are silently dropped — always quote multi-word text.
 - duplicate is the cheapest way to spawn "a similar screen" before diverging with update.
-- The engine REJECTS unsupported ops with mbt_operation_unsupported. Notably "constrain" and a
-  standalone "name" op are CLI-only surfaces, NOT reachable here — use "update ... name=<id>".
-  ("constrain" is a layout-intent parser on the session pipeline; it does NOT do layering, and
-  its success envelope carries no canonical mbt, so this face does not expose it — express
-  layout intents with align/update/place-with-final-w/h instead.)
+- The engine REJECTS unsupported ops with mbt_operation_unsupported. A standalone "name" op is
+  CLI-only, NOT reachable here — use "update ... name=<id>". "constrain" IS available on this
+  face as a mutating op (layout-intent parser; LAYOUT ONLY, never layering/z-order).
 
 ## Ground truth and errors
 - NEVER guess node/component/template/theme ids. Templates: list above; components: list_components;
@@ -605,9 +608,44 @@ impl<'a> EngineState<'a> {
             if r.get("ok") == Some(&json!(false)) {
                 return json!({"ok": false, "op": op, "error": r.get("error").cloned().unwrap_or(json!("readonly_failed"))});
             }
+            // 0.1.6-fix/#19：改文档面的只读形态 op（tap 的交互可改文档状态）成功信封
+            // 带 canonical——推进自持文档（宿主同句柄已键前移，两侧必须一致，否则下一个
+            // 变更 op 会按旧键重开丢掉 tap 的状态变更），并从历史结果剥除 mbt
+            // （LLM 不消费全量 canonical；终态经 mbt_b64 统一交付）
+            let mut r = r;
+            if let Some(m) = r.get("mbt").and_then(|v| v.as_str()).map(String::from) {
+                self.mbt = Some(m);
+                if let Some(obj) = r.as_object_mut() {
+                    obj.remove("mbt");
+                }
+            }
             self.ops.push(op.to_string());
             // L0 整形：export-* 信封化 / 检视类超限截断（失败信封已在内部原样放行）
             return shape_readonly_result(op, r);
+        }
+
+        // constrain：布局意图解析器，session 管道专属——apply 门不认
+        // （mbt_operation_unsupported），走 session_constrain（宿主 Arg2 槽：
+        // artboard + 意图串）。0.1.6-fix/#19 起成功信封带 canonical → 与变更路径
+        // 同构（键前移 + 记 ops）；命中信息（节点/坐标）随信封回传，mbt 剥除。
+        // cannot_parse 就地返回意图词表（#17「错误即文档」），模型可据此自纠。
+        if op.split_whitespace().next() == Some("constrain") {
+            let args = op["constrain".len()..].trim();
+            let r = self.call("session_constrain", &mbt, args).await;
+            if !(r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some()) {
+                return r;
+            }
+            self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
+            self.ops.push(op.to_string());
+            let mut out = json!({"ok": true, "op": op});
+            if let (Some(o), Some(src)) = (out.as_object_mut(), r.as_object()) {
+                for (k, v) in src {
+                    if k != "mbt" {
+                        o.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            return out;
         }
 
         // 变更操作：session_apply_agent（AgentGate——engine-v0.1.1-session 修复
@@ -886,7 +924,7 @@ fn tools_typed() -> Vec<ChatCompletionTools> {
     vec![
         tool(
             "moonviz_op",
-            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
+            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, extract-design-system <ab>, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
             json!({
                 "type": "object",
                 "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -1344,6 +1382,44 @@ async fn finish_partial(state: &mut EngineState<'_>, error: &str) -> Value {
         "ops": state.ops,
         "stopReason": "error",
         "text": "",
+    })
+}
+
+/// 终态 rebase（docs/agent-rebase.md 方案 C）：agent run 是秒级长任务，期间人类
+/// 画布 op 可能已推进前端 canonical——整体回灌 run 终态文档会覆盖丢失人类编辑。
+/// 把 run 的变更 op 流按执行序重放到**最新 canonical** 上：会话复用使命重放
+/// 0.37ms/op；AgentGate 逐条重校验，「拒绝即跳过并报告」（op 在新基底上合法失效
+/// 不是错误，宁缺勿债绝不留 gate debt）；只读 op 过滤（无副作用）。
+/// 失败信封保留引擎错误原文（skipped[].error），供前端轨迹呈现与模型可见性。
+pub async fn rebase_ops(host: &EngineHost, latest_mbt: &str, ops: &[String]) -> Value {
+    let mut cur = latest_mbt.to_string();
+    let mut applied: Vec<Value> = Vec::new();
+    let mut skipped: Vec<Value> = Vec::new();
+    for op in ops.iter().filter(|o| !is_readonly_op(o)) {
+        // host 级失败（trap/腐坏读等 Err）与门拒绝同语义：跳过并保留错误原文，
+        // 不中断整个 rebase（宿主随后自会弃缓存，下次按权威 canonical 重开）
+        let r = match host.call("session_apply_agent", &cur, op).await {
+            Ok(r) => r,
+            Err(e) => {
+                skipped.push(json!({"op": op, "error": e}));
+                continue;
+            }
+        };
+        if r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some() {
+            cur = r.get("mbt").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            applied.push(json!(op));
+        } else {
+            skipped.push(json!({
+                "op": op,
+                "error": r.get("error").cloned().unwrap_or(json!("rebase_op_failed")),
+            }));
+        }
+    }
+    json!({
+        "ok": true,
+        "mbt_b64": b64_encode(&cur),
+        "applied": applied,
+        "skipped": skipped,
     })
 }
 
@@ -1805,6 +1881,9 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(is_readonly_op("extract-design-system login"));
         // 变更类绝不入表：入表会导致走 load 管道而静默丢弃变更
         assert!(!is_readonly_op("fix login"));
+        // constrain 是变更 op（0.1.6-fix/#19 起走 session_constrain 特判路由）——
+        // 误入表会被只读分支拦下、canonical 变更被静默丢弃
+        assert!(!is_readonly_op("constrain cs 居中"));
         assert!(!is_readonly_op("update login btn fill=#fff"));
         assert!(!is_readonly_op("state login btn pressed fill=#000"));
         assert!(!is_readonly_op("interact login btn tap navigate_to:lg"));
@@ -1935,16 +2014,20 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
     /// 提示词不得再教 Agent 使用引擎 apply 路径会拒绝的 op。
     #[test]
     fn prompt_avoids_apply_rejected_ops() {
-        // constrain 与独立 name op 仅存在于 CLI 直连面，apply-agent 路径返回
-        // mbt_operation_unsupported，提示词必须把它们标为不可达而非教 Agent 使用。
+        // 独立 name op 仅存在于 CLI 直连面，apply 路径返回 mbt_operation_unsupported，
+        // 提示词必须点名其替代用法；constrain 自 0.1.6-fix/#19 起经 session 路由
+        // **可达**，提示词必须作为变更 op 教（含意图词表锚点——漏一个模型就永远不用）。
         assert!(
             INSTRUCTIONS.contains("mbt_operation_unsupported"),
             "提示词必须告知 Agent 存在被引擎拒绝的 op"
         );
         assert!(
-            INSTRUCTIONS.contains("constrain"),
-            "提示词必须点名 constrain 不可达"
+            INSTRUCTIONS.contains("update ... name=<id>"),
+            "提示词必须点名 name op 的替代用法"
         );
+        for token in ["constrain", "居中", "网格", "等间距", "LAYOUT INTENT ONLY"] {
+            assert!(INSTRUCTIONS.contains(token), "提示词必须教 constrain 意图词表：{token}");
+        }
         // 新语法必须在场
         for token in ["group", "align", "restyle", "interact", "state", "missing", "spec", "token", "export-html"] {
             assert!(INSTRUCTIONS.contains(token), "提示词缺少引擎能力：{token}");
@@ -2385,6 +2468,97 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             second.contains("color_tokens") && second.contains("total_colors"),
             "第二轮请求应含 extract-design-system 的 token 用量分析结果"
         );
+    }
+
+    /// 0.1.6-fix/#19：constrain 经 session 路由可达，成功信封带 canonical；
+    /// 键前移实证（constrain 后同 canonical 的变更 op 必须命中暖会话，而非弃缓存
+    /// 重开）；cannot_parse 错误信封自带意图词表（#17 错误即文档）原样透传。
+    #[tokio::test]
+    async fn constrain_session_route_and_key_advance() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let d0 = ENGINE
+            .call("apply_agent_op", &seed_doc("cs", 390, 844), "template login cs")
+            .await
+            .unwrap();
+        let doc0 = d0.get("mbt").and_then(|v| v.as_str()).expect("canonical 回传");
+        let r = ENGINE.call("session_constrain", doc0, "cs 居中").await.unwrap();
+        assert_eq!(r.get("ok"), Some(&json!(true)), "{r}");
+        let doc1 = r
+            .get("mbt")
+            .and_then(|v| v.as_str())
+            .expect("0.1.6-fix/#19：constrain 成功信封必须带 canonical（键前移原料）");
+        let stats0 = ENGINE.call("session_cache_stats", "", "").await.unwrap();
+        let upd = ENGINE
+            .call("session_apply_agent", doc1, "update cs welcome_title text=\"AfterConstrain\"")
+            .await
+            .unwrap();
+        assert_eq!(upd.get("ok"), Some(&json!(true)), "{upd}");
+        let stats1 = ENGINE.call("session_cache_stats", "", "").await.unwrap();
+        assert!(
+            stats1.get("hits").and_then(|v| v.as_u64()).unwrap_or(0)
+                > stats0.get("hits").and_then(|v| v.as_u64()).unwrap_or(0),
+            "constrain 后同 canonical 的变更 op 应命中暖会话（若仍弃缓存则此断言红）：{stats0} → {stats1}"
+        );
+        let bad = ENGINE.call("session_constrain", doc1, "cs 乱写的意图").await.unwrap();
+        let err = bad.get("error").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            bad.get("ok") == Some(&json!(false)) && err.contains("cannot_parse") && err.contains("居中"),
+            "cannot_parse 错误必须带意图词表：{bad}"
+        );
+    }
+
+    /// 终态 rebase（docs/agent-rebase.md 方案 C）：人类编辑推进文档后，run 的变更
+    /// op 流重放到最新 canonical——保住人类编辑；无冲突 op 应用；与新布局冲突的 op
+    /// 被门拒跳过并保留错误原文；只读 op 过滤不进重放流。
+    #[tokio::test]
+    async fn rebase_ops_replays_onto_latest_and_skips_conflicts() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let d0 = ENGINE
+            .call("apply_agent_op", &seed_doc("rb", 390, 844), "template login rb")
+            .await
+            .unwrap();
+        let doc0 = d0.get("mbt").and_then(|v| v.as_str()).expect("canonical 回传");
+        // 「人类」在 run 期间推进了文档：把 welcome_title 挪到画布下方空白区
+        // （run 终态不知道这件事；坐标避开 logo/email_input 等既有节点）
+        let dh = ENGINE
+            .call("apply_agent_op", doc0, "move rb welcome_title 20 700")
+            .await
+            .unwrap();
+        let latest = dh.get("mbt").and_then(|v| v.as_str()).expect("canonical 回传");
+        let ops = vec![
+            "update rb welcome_title text=\"Rebased\"".to_string(),
+            // 干净落点（welcome_title 已被人类挪到 y700-736，其余节点 ≤y660）
+            "place rb rect rb_extra - 20 760 150 30".to_string(),
+            // 与 email_input 部分相交 → no_sibling_overlap 拒绝 → 跳过。
+            // 注意：**完全同框**会触发全包含豁免反而过门（#15 语义），样本必须取部分相交
+            "place rb rect ov - 30 350 342 52".to_string(),
+            "lint rb".to_string(),
+        ];
+        let out = rebase_ops(&ENGINE, latest, &ops).await;
+        assert_eq!(out["ok"], json!(true), "{out}");
+        let applied = out["applied"].as_array().expect("applied 数组");
+        let skipped = out["skipped"].as_array().expect("skipped 数组");
+        assert_eq!(applied.len(), 2, "文本更新与无冲突放置应重放：{out}");
+        assert_eq!(skipped.len(), 1, "重叠放置应被门拒跳过：{out}");
+        assert!(
+            skipped[0]["error"].as_str().unwrap_or("").contains("mbt_gate_block"),
+            "skipped 必须保留引擎错误原文：{out}"
+        );
+        assert!(
+            !out.to_string().contains("\"lint rb\""),
+            "只读 op 不得进重放流（applied/skipped 均不应出现）：{out}"
+        );
+        let rebased = b64_decode(out["mbt_b64"].as_str().expect("mbt_b64")).unwrap();
+        assert!(rebased.contains("text=\"Rebased\""), "agent 变更应落盘");
+        assert!(rebased.contains("id=\"rb_extra\""), "无冲突放置应落盘");
+        // 人类编辑保留：welcome_title 的 x=20（move 的结果，未被整体回灌冲掉）
+        let title = rebased
+            .lines()
+            .find(|l| l.contains("id=\"welcome_title\""))
+            .expect("welcome_title 在场");
+        assert!(title.contains("x=20"), "人类 move 编辑必须保留：{title}");
     }
 
     /// L0 上下文整形端到端（真机引擎）：模板建板 + read_mbt 后，第二轮请求的

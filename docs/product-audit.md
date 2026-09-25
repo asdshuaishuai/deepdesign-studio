@@ -55,7 +55,8 @@
 | `list_components` | 闭环（components.json 快照） |
 | `extract-design-system <ab>`（0.1.6 新增） | 闭环；颜色/尺寸 token 用量+置信度，e2e 锚定 |
 | place 最终尺寸语法（0.1.6/#18） | 闭环；`[w] [h]` 位置参数 + 门评估最终 bbox，提示词已教，测试锚定 |
-| `constrain`（0.1.6/#17） | **待上游**：意图词表已文档化，但成功信封不回传 canonical（键控宿主取不回变更，[#19](https://github.com/asdshuaishuai/moonviz/issues/19) 未修）；提示词引导用 align/update/place[w h] |
+| `constrain <ab> <intent_text>`（0.1.6-fix/#17+#19） | 闭环；session_constrain 特判路由（变更 op），信封带 canonical 键前移，cannot_parse 回意图词表；真机门测试锚定 |
+| 终态 rebase（run 中人类编辑保护） | 闭环；前端比对起点快照 → `rebase_agent_ops` 重放变更 op 流（拒绝即跳过并报告）；真机 e2e 锚定 |
 | `list-tools` / `doc-json`（op 形态） | **诚实降级**：`wasm_engine_export_unavailable`（无 wasm 导出，提示词同步禁用） |
 | 上下文管理 | L0/L1/L2 三层（docs/agent-context.md），L2 预算逐模型窗口（models.json limit.context）；测试锚定 |
 
@@ -71,7 +72,7 @@
 
 | 项 | 边界 | 备注 |
 |----|------|------|
-| Agent 在飞时切换/新建/撤销 | 硬拦截 + toast | 编辑覆盖已决策终态 rebase（`docs/agent-rebase.md`，待上游 [#19](https://github.com/asdshuaishuai/moonviz/issues/19) 后实施）；切换/新建拦截保留（整文档替换超出 rebase 范围） |
+| Agent 在飞时切换/新建/撤销 | 硬拦截 + toast | ~~编辑覆盖~~已由终态 rebase 解决（保留 run 中画布编辑）；切换/新建拦截保留（整文档替换超出 rebase 范围） |
 | 切换项目重置撤销栈 | 引擎 history 按画板分栈、宿主边界 | 多板全局线性撤销待上游 history 持久化方向 |
 | 多窗口/并排项目 | 单窗口模型 | 本期范围外；多项目 = 换文档 |
 | 跨 run 对话记忆 | 每次 run 全新 payload | ChatGPT 式连续对话是演进方向（Rust 侧历史 + 对话视图） |
@@ -91,6 +92,8 @@
 10. **[引擎 v0.1.6]** place 不接受 w/h（真实 run 111 次拒绝根因，#18）→ 升级引擎 + 提示词教最终尺寸语法 + 门语义测试锚定。
 11. **[引擎 v0.1.6]** 设计系统提取不可达 → `extract-design-system` 接入只读路由（session_extract_design_system）。
 12. **[本轮]** L2 预算固定 128K → 逐模型窗口（models.json `limit.context`，16K 下限）；camping e2e 断言从"文档非空"强化为结构断言（≥4 板、主色落盘、引擎校验通过）。
+13. **[引擎 v0.1.6-fix]** constrain/auto_fix 等改文档面信封不回传 canonical（#19）→ 升级引擎、SESSION_EVICT 机制整体移除（7 个改文档面统一键前移）、constrain 接入变更路由 + 提示词教意图词表。
+14. **[本轮]** run 中人类编辑被 agent 终态覆盖 → 终态 rebase 落地（`rebase_agent_ops` + 前端起点比对，拒绝即跳过并报告）；新增 test_studio 检查 H（Tauri 命令↔前端 invoke 双向 parity，堵死"零消费者死命令"盲区）。
 
 ## 8. 结构性防线台账（test_studio.cjs）
 

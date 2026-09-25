@@ -151,6 +151,20 @@ assert(mapCalls.length>0,'未能提取 nativeMenuAction 映射体调用目标（
 const missingMap=mapCalls.filter(n=>!defined.has(n)&&!bound.has(n)&&!GLOBALS.has(n)&&!KEYWORDS.has(n));
 assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函数：${missingMap}`);
 
+/* 检查 H：Tauri 命令 ↔ 前端 invoke 双向 parity。
+ * 正向：lib.rs 注册但前端零调用的命令 = 死命令（list_ddp_projects 曾作为
+ * "多项目地基"裸奔无消费者）；反向：前端 invoke 未注册命令 = 运行时必炸
+ * （自定义命令不经 ACL，无编译期保护，全靠这条对账）。 */
+const handlerList=(libRs.match(/generate_handler!\s*\[([\s\S]*?)\]/)||[])[1]||'';
+const rustCmds=new Set([...handlerList.matchAll(/([a-z_][a-z0-9_]*)/g)].map(m=>m[1]));
+const feCmds=new Set([...script.matchAll(/\binvoke\('([a-z_][a-z0-9_]*)'/g)].map(m=>m[1]));
+assert(rustCmds.size>0,'未能从 lib.rs 提取命令注册表（提取逻辑失效，请同步更新检查 H）');
+assert(feCmds.size>0,'未能从前端提取 invoke 调用（提取逻辑失效，请同步更新检查 H）');
+const unreferenced=[...rustCmds].filter(c=>!feCmds.has(c));
+const unregistered=[...feCmds].filter(c=>!rustCmds.has(c));
+assert.deepEqual(unreferenced,[],`Rust 命令无前端消费者（死命令）：${unreferenced}`);
+assert.deepEqual(unregistered,[],`前端 invoke 了未注册命令（运行时必炸）：${unregistered}`);
+
 /* ---------- 动态检查：真实状态机 ---------- */
 function fn(name){const start=script.indexOf('function '+name+'(');assert(start>=0,name);const brace=script.indexOf('){',start)+1;let depth=1,i=brace+1;for(;depth;i++){if(script[i]==='{')depth++;if(script[i]==='}')depth--;}return (script.slice(start-6,start)==='async '?'async ':'')+script.slice(start,i)}
 const context=vm.createContext({console,window:{addEventListener(){}},document:{addEventListener(){},querySelectorAll:()=>[],body:{nodeType:1,querySelectorAll:()=>[]},createTreeWalker:()=>({nextNode:()=>null}),documentElement:{classList:{add(){}}},getElementById:element},navigator:{platform:'Win32',userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},performance:{now:()=>0},setTimeout,clearTimeout,requestAnimationFrame(fn){if(typeof fn==='function')fn();},MutationObserver:class{observe(){}},NodeFilter:{SHOW_TEXT:4},btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),encodeURIComponent,decodeURIComponent,escape,unescape});
