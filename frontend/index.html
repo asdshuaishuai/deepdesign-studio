@@ -481,6 +481,11 @@ body.play-hide-hot .frame-wrap svg g[data-flow-trigger]>text{fill:transparent}
 .frame-wrap svg g[data-flow-trigger]>rect{stroke:#22C55E;stroke-width:3;stroke-dasharray:6 3}
 .frame-wrap svg g[data-flow-trigger]>text{fill:#1F7A38}
 .pm-hot:hover{background:rgba(40,167,69,.12)}
+/* 演示切页过渡：前进左滑入 / 返回右滑入（仅 play 模式，编辑渲染不受影响） */
+body.mode-play .stage.nav-fwd .frame-wrap.active{animation:playInFwd .22s cubic-bezier(.22,.61,.36,1)}
+body.mode-play .stage.nav-back .frame-wrap.active{animation:playInBack .22s cubic-bezier(.22,.61,.36,1)}
+@keyframes playInFwd{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:none}}
+@keyframes playInBack{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:none}}
 body.mode-play .left,body.mode-play .right,body.mode-play .ctools,body.mode-play .czoom,
 body.mode-play .canvas-dock,body.mode-play .flow-wires,
 body.mode-play .ghost-new,body.mode-play #agent-pop{display:none!important}
@@ -2928,6 +2933,11 @@ function attachPlayHotZones(){
   const graph=studioFlows.length?studioFlows:flows;
   const linked=new Set(graph.filter(f=>f.from===active).map(f=>(f.trigger||'').replace('tap:','')));
   (playIx[active]||[]).forEach(n=>linked.add(n));
+  // 强制返回（2026-09 用户反馈）：形似返回的元素即使未接 flow/interact 也挂热区——
+  // 点击走 playTap 的 playBack 兜底，演示绝不因漏接而只能靠操作栏返回
+  (sess&&Array.isArray(sess.nodes)?sess.nodes:[]).forEach(n=>{
+    if(isBackish(n.id,n.text))linked.add(n.id);
+  });
   const s=parseFloat(wrap.dataset.displayScale)||1;
   (sess&&Array.isArray(sess.nodes)?sess.nodes:[]).forEach(n=>{
     if(!linked.has(n.id)||!n.rect||!n.rect.w)return;
@@ -2963,7 +2973,7 @@ function playApplySession(id){
 async function playTap(fromAb,nodeId){
   const graph=studioFlows.length?studioFlows:flows;
   const f=graph.find(x=>x.from===fromAb&&x.trigger==='tap:'+nodeId);
-  if(f){playStack.push(f.to);active=f.to;playApplySession(f.to);await renderStage();setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');return;}
+  if(f){playNavAnim('fwd');playStack.push(f.to);active=f.to;playApplySession(f.to);await renderStage();setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');return;}
   // flows 未命中 → 回退 interact 标记（引擎 tap 解析顺序 flow → marker）
   const hit=(playIxHits[fromAb]||[]).find(x=>x.node===nodeId&&x.trigger==='tap');
   if(hit){
@@ -2971,7 +2981,7 @@ async function playTap(fromAb,nodeId){
     if(act==='back'){playBack();return;}
     if(act.startsWith('navigate_to:')){
       const to=act.slice('navigate_to:'.length);
-      if(sessions[to]){playStack.push(to);active=to;playApplySession(to);await renderStage();setStatus('human',`▶ ${nodeId} → ${to}`,true,'播放导航（interact）');}
+      if(sessions[to]){playNavAnim('fwd');playStack.push(to);active=to;playApplySession(to);await renderStage();setStatus('human',`▶ ${nodeId} → ${to}`,true,'播放导航（interact）');}
       else toast(`目标画板「${to}」不存在`);
       return;
     }
@@ -2992,11 +3002,36 @@ async function playTap(fromAb,nodeId){
     toast(`动作 ${act} 暂不支持演示播放`);
     return;
   }
+  // 强制返回能力（2026-09 用户反馈）：形似返回的元素（id/文案含 back/prev/返回/← 等）
+  // 即使模型漏接 flow/interact，热区已在挂载层补齐；此处兜底执行 playBack。
+  // 词边界匹配防误判：'background' 含 'back' 但不是返回钮。
+  const tnode=(sessions[fromAb]&&Array.isArray(sessions[fromAb].nodes)?sessions[fromAb].nodes:[]).find(x=>x.id===nodeId);
+  if(isBackish(nodeId,tnode&&tnode.text)){setStatus('human',`▶ ${nodeId} → 返回（强制）`,true,'播放导航');playNavAnim('back');playBack();return;}
   toast(`「${nodeId}」未链接交互流`);
 }
+/* back 形元素判定：id 词边界 back/prev/return，或文案 = 返回/后退/上一步/back/箭头。
+ * 'background' 这类 id 不会误判（要求 back 两侧是词边界）。 */
+function isBackish(id,text){
+  const idl=String(id||'').toLowerCase();
+  const t=String(text||'').trim().toLowerCase();
+  return /(^|[_-])(back|prev|return)([_-]|$)/.test(idl)
+    ||['返回','后退','上一步','back','←','‹','«'].includes(t)
+    ||t.startsWith('返回')
+    ||(t.length<=3&&/[←‹«]/.test(t));
+}
 function playBack(){
+  const stage=$('stage');
+  if(stage&&playStack.length>1)playNavAnim('back');
   if(playStack.length>1){playStack.pop();active=playStack[playStack.length-1];playApplySession(active);renderStage();}
   else exitPlay();
+}
+/* 演示切页方向动画：renderStage 重建 DOM 前 给 stage 挂方向类，
+ * CSS 只在 body.mode-play 下对 active 画板播放（编辑视图不受影响） */
+function playNavAnim(dir){
+  const st=$('stage');if(!st)return;
+  st.classList.remove('nav-fwd','nav-back');
+  void st.offsetWidth;
+  st.classList.add(dir==='back'?'nav-back':'nav-fwd');
 }
 
 /* ---------- DDP 文件：DDP = 加密后的单一 .mbt.md ---------- */
