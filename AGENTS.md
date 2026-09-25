@@ -141,6 +141,14 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   是前端实例化引擎 wasm 的硬前提，别删。Tauri codegen 在构建期为非空内联 `<script>` 自动注入
   sha256 hash，所以 `frontend/index.html` 里那一大坨内联脚本没问题；新增内联脚本同样会被自动
   hash，但**不要**改成外部 module script。
+  **hash 注入有连锁代价（2026-09-25 release 首包实证，三症状同根因）**：按 CSP 规范，某指令一旦
+  含 hash/nonce，其中的 `'unsafe-inline'` 即被忽略——因此必须显式保留
+  `script-src-attr 'unsafe-inline'`（内联 onclick/onkeydown 属性不受 script-src 的 hash 保护，
+  缺它 = 打包后全部按钮/回车静默变死，应用成"渲染正常的死壳"）和
+  `style-src-attr 'unsafe-inline'`（缺它 = HTML 所有静态 `style="…"` 属性被剥：welcome 模板
+  全铺开、左栏三 panel 堆叠、topbar spacer 失去 flex 挤向中间）。dev 模式日常可用掩盖了这两条，
+  **只有打 release 包才会暴露**；test_studio 检查源码结构，看不到 CSP 执行面。改 CSP 前先想清楚
+  hash↔unsafe-inline 的互斥语义。
 - **capabilities 最小集**（`src-tauri/capabilities/default.json`，Windows 标题栏合并后新增）：
   只放行自绘标题栏的窗口面（dragging/minimize/maximize/close/set-title——标题随项目名同步）+ `core:event:allow-listen`
   （agent 实时轨迹的 agent-event 监听）。自定义命令不经 ACL。别为"以防万一"加 capability。
