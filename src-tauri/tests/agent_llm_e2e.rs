@@ -31,7 +31,6 @@ async fn camping_real_llm_e2e() {
     let model = std::env::var("DD_MODEL").unwrap_or_else(|_| "MiniMax-M3".into());
 
     let host = EngineHost;
-    let started = std::time::Instant::now();
     let journal = std::sync::Mutex::new(std::io::BufWriter::new(
         std::fs::File::create("/tmp/camping-journal.jsonl").unwrap(),
     ));

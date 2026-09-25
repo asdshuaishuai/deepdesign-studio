@@ -94,12 +94,12 @@ html.win .fmenu-wrap{display:block}
 .fmenu-item{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;padding:7px 12px;border:none;background:transparent;border-radius:7px;font-size:12.5px;color:var(--tx);cursor:pointer;text-align:left}
 .fm-recents{max-height:176px;overflow:auto;margin:2px 0 4px;border-bottom:1px solid var(--bd);padding-bottom:4px}
 .recent-block{margin-top:18px;text-align:left}
-.recent-block h3{font-size:11.5px;margin:0 0 8px;color:rgba(0,0,0,.5);letter-spacing:.06em}
+.recent-block h3{font-size:11.5px;margin:0 0 8px;color:var(--tx3);letter-spacing:.06em}
 .recent-list{display:flex;flex-direction:column;gap:6px}
-.recent-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid rgba(0,0,0,.09);border-radius:10px;background:rgba(255,255,255,.55);cursor:pointer;font-size:12.5px}
-.recent-row:hover{border-color:rgba(47,107,79,.5)}
+.recent-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--panel-input,var(--panel,rgba(255,255,255,.55)));cursor:pointer;font-size:12.5px}
+.recent-row:hover{border-color:var(--acc-tx)}
 .recent-row .rc-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.recent-row .rc-meta{color:rgba(0,0,0,.45);font-size:11px;white-space:nowrap}
+.recent-row .rc-meta{color:var(--tx3);font-size:11px;white-space:nowrap}
 .fmenu-item:hover{background:rgba(0,122,255,.09);color:var(--acc-tx)}
 .fmenu-item .kbd{font-size:10px;color:var(--tx3);font-family:ui-monospace}
 .fmenu-sep{height:1px;background:rgba(0,0,0,.08);margin:4px 8px}
@@ -1483,32 +1483,46 @@ function mbtResult(result){
   // wasm 引擎直接返回结果对象（不再是 CLI 行数组的形态）；保留函数名为调用点共用
   return result&&result.ok===true&&result.mbt?result:null;
 }
-function applyMbtResult(result,{reset=false,acceptDraft=false}={}){
+function applyMbtResult(result,{reset=false,acceptDraft=false,preview=false}={}){
   if(!result||result.ok!==true||!result.mbt)throw new Error('引擎未返回 canonical .mbt.md');
   if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;placeMode=null;playStack=[];}
-  const canonical=inkInject(result.mbt);
+  // preview=true（Agent 运行中同步渲染预览）：只更新画布渲染——
+  // 不写 mbtText/不置脏/不进撤销/不注批注（事实源与 rebase 基线由终态回灌收口）
+  const canonical=preview?result.mbt:inkInject(result.mbt);
   const changed=mbtText!==canonical;
-  mbtText=canonical;mbtRevision=Number(result.revision)||0;
-  // 会话化写入（runOpNow/撤销）已把会话 doc 推进到 result.mbt（histSynced=true）；
-  // 外部写入（agent 终态/打开/校验渲染）后 histEnsure 依 histDoc 漂移判定重开并重建基线
-  if(changed){
+  if(!preview){mbtText=canonical;mbtRevision=Number(result.revision)||0;}
+  if(changed&&!preview){
     projectDirty=true;syncFileLabel();syncDirtyRemote();
     if(!histApplying)histCommit(active);
   }
-  const decl=$('decl-text');if(reset||acceptDraft){declDraftDirty=false;syncDirtyRemote();}if(decl&&!declDraftDirty)decl.value=mbtText;if(typeof renderDeclHighlight==='function')renderDeclHighlight();
+  const decl=$('decl-text');if(reset||acceptDraft){declDraftDirty=false;syncDirtyRemote();}if(decl&&!declDraftDirty&&!preview)decl.value=mbtText;if(typeof renderDeclHighlight==='function')renderDeclHighlight();
   const next={};
   for(const art of result.artboards||[]){
     next[art.id]={baseCmd:'__mbt__',w:Math.round(art.width||390),h:Math.round(art.height||844),ops:[],svg:art.svg||'',nodes:art.nodes||[]};
   }
-  sessions=next;flows=Array.isArray(result.flows)?result.flows:[];studioFlows=flows.slice();
+  sessions=next;if(!preview)flows=Array.isArray(result.flows)?result.flows:[];studioFlows=flows.slice();
   active=(!reset&&sessions[active])?active:((result.entry&&sessions[result.entry])?result.entry:(Object.keys(sessions)[0]||''));
   const current=sessions[active];
   baseCmd=current?'__mbt__':'';opCmds=[];currentW=current?current.w:390;currentH=current?current.h:844;
   currentSvg=current?current.svg:'';nodes=current?current.nodes:[];selected=(!reset&&nodes.some(n=>n.id===selected))?selected:null;
-  renderStage();renderAbs();renderFlows();renderInspector();renderLayersIfOpen();requestAnimationFrame(updateSel);
+  renderStage();renderAbs();if(!preview)renderFlows();renderInspector();renderLayersIfOpen();requestAnimationFrame(updateSel);
   $('tail-artboard').textContent=active||'未打开画板';
   $('tail-info').textContent=current?`${current.w} × ${current.h}`:'';
-  setStatus('', '', true, '');
+  if(!preview)setStatus('', '', true, '');
+}
+/* Agent 运行中同步渲染预览：节流 900ms，防高频 wasm 渲染卡顿 */
+let previewTimer=0,pendingPreviewB64=null;
+function schedulePreview(b64){
+  pendingPreviewB64=b64;
+  if(previewTimer)return;
+  previewTimer=setTimeout(()=>{previewTimer=0;const b=pendingPreviewB64;pendingPreviewB64=null;if(b)paintPreview(b);},900);
+}
+async function paintPreview(b64){
+  try{
+    const r=await engRender(b64ToUtf8(b64));
+    if(!mbtResult(r))return;
+    applyMbtResult(r,{preview:true});
+  }catch(_){ }
 }
 async function renderMbtSource(){
   if(!mbtText)return false;
@@ -2350,6 +2364,8 @@ function traceOpen(runId,label,continuation){
     }
     if(p.type==='done'){appendTraceLine(box,`■ 完成（${p.ops} ops · ${p.stopReason}）`,'tl-done');return;}
     if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
+    if(p.type==='review'){appendTraceLine(box,'🔎 收尾审查：需求完整度 · 连线完整度 · 综合修复','tl-assist');return;}
+    if(p.type==='preview'){schedulePreview(p.mbt_b64);return;}
   }).then(u=>{TRACE.un=u;}).catch(()=>{});
 }
 function appendTraceLine(box,text,cls,id){

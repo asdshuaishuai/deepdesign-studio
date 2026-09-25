@@ -1150,6 +1150,27 @@ async fn chat_once_with_retry(
     Err(last)
 }
 
+/// 收尾审查指令：三段审查（需求完整度/操作逻辑连线/综合修复）——
+/// 附原始需求摘要（截 600 字符），LLM 在审查预算内用工具自查并直接补齐。
+fn review_prompt(goal: &str) -> String {
+    let goal: String = goal.chars().take(600).collect();
+    format!(
+        "[收尾审查] 设计实现已完成。现在执行强制收尾审查——不得提问，直接用工具修复：\n\
+1) 需求完整度：对照最初需求「{goal}」逐画板自查——缺失页面、缺失内容区块、明显未完成的部分，立即用 ops 补齐。\n\
+2) 操作逻辑连线：逐画板运行 missing <ab> 检出未接线 CTA；为每个可交互元素补 flow（跳转）或 interact（行内动作）；确属纯展示的元素不接线。发现画板 id 为 __ 等占位名的，重建为语义命名画板。\n\
+3) 综合修复：逐画板运行 fix <ab> 清偿视觉债，最后 lint <ab> 确认清零。\n\
+全部完成后运行 read_mbt 复核，并输出不超过 5 行的审查报告（发现的问题与处置结果）。"
+    )
+}
+/// 从 canonical 提取画板 id 清单（<!-- moonviz:artboard <id> --> 注释行）
+fn artboard_ids(mbt: &str) -> Vec<String> {
+    mbt.lines()
+        .filter_map(|l| l.trim().strip_prefix("<!-- moonviz:artboard "))
+        .filter_map(|r| r.strip_suffix(" -->"))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
 /// 主循环：chat → tool_calls → 引擎执行 → 回填 → 直至 assistant 总结或 maxSteps。
 pub async fn run(
     host: &EngineHost,
@@ -1213,8 +1234,19 @@ pub async fn run(
     let mut context_event_sent = false;
     // L2 预算按模型窗口取（tokens → utf-8 字节近似 /3——CJK 精确、英文高估即保守）
     let context_budget_bytes = model_context_window(model) * 3;
+    // ── 收尾审查层（moonviz#20 注入层配套；用户要求的三段审查）──
+    // 主实现 done 后进入：确定性 fix 各画板 → LLM 自查（需求完整度/连线完整度）→ 综合修复。
+    // 审查阶段独占 REVIEW_STEPS 步预算；只进一次；零产出项目不触发。
+    const REVIEW_STEPS: usize = 48;
+    let mut step: usize = 0;
+    let mut review_done = false;
+    let mut last_preview = std::time::Instant::now();
 
-    for step in 0..MAX_STEPS {
+    loop {
+        if step >= MAX_STEPS {
+            break;
+        }
+        step += 1;
         // 上下文管理（请求侧收缩；messages 本体完整保留作轨迹/journal）：
         // L1 常态去supersede + L2 预算守卫（逐模型窗口，未命中回落 128K）
         let mut request_messages = supersede_stale_tool_results(&messages);
@@ -1244,7 +1276,7 @@ pub async fn run(
         }
         // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
         // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够
-        let mut resp = chat_once_with_retry(&client, &base, api_key, model, thinking, &request_messages).await;
+        let resp = chat_once_with_retry(&client, &base, api_key, model, thinking, &request_messages).await;
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
@@ -1276,6 +1308,25 @@ pub async fn run(
 
         if tool_calls.is_empty() {
             // 终态：assistant 总结
+            // ── 收尾审查层：主实现 done 后进入一次（moonviz#20 注入层配套）──
+            // 确定性综合修复（逐画板 fix，幂等）→ 审查指令回注（需求完整度/连线完整度，
+            // 由 LLM 在剩余预算内用工具自查补齐）→ continue 回主循环；审查后再次
+            // done（文本=审查报告）走正常返回。预算不足/零产出/已审查均不触发。
+            let review_start = MAX_STEPS.saturating_sub(REVIEW_STEPS);
+            if !review_done && state.mbt.is_some() && !state.ops.is_empty() && step < review_start {
+                review_done = true;
+                emit("review", json!({}));
+                for ab in artboard_ids(state.mbt.as_deref().unwrap_or("")) {
+                    let _ = state.moonviz_op(&format!("fix {ab}")).await;
+                }
+                step = review_start;
+                emit(
+                    "assistant_text",
+                    json!({"text": "[收尾审查] 需求完整度 · 操作逻辑连线 · 综合修复——开始自查与补齐"}),
+                );
+                messages.push(json!({"role": "user", "content": review_prompt(instruction)}));
+                continue;
+            }
             let text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if state.mbt.is_none() && state.ops.is_empty() {
                 // 澄清式回复（CLARIFY-FIRST）：文本即 agent 的提问——照常推送轨迹
@@ -1350,6 +1401,14 @@ pub async fn run(
                 ev["error"] = json!(e);
             }
             emit("tool_end", ev);
+            // 同步渲染预览：moonviz_op 成功提交后节流推送最新 canonical（≥1.5s 一次），
+            // 前端 wasm 渲染为画布预览——不落事实源（终态回灌收口）；实现层能力，引擎无感
+            if name == "moonviz_op" && ok && last_preview.elapsed() >= std::time::Duration::from_millis(1500) {
+                last_preview = std::time::Instant::now();
+                if let Some(m) = state.mbt.clone() {
+                    emit("preview", json!({"mbt_b64": b64_encode(&m)}));
+                }
+            }
             messages.push(json!({
                 "role": "tool",
                 "tool_call_id": id,
@@ -2087,8 +2146,12 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let mock = tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            for _ in 0..2 {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            // 无限 accept：审查层（REVIEW_STEPS）会在总结轮后再发审查请求，
+            // 固定轮数的 mock 会在第三轮断连（llm_request_failed 假失败）。
+            // 首轮返回 tool_call，其后一律返回纯文本总结——审查轮自然收尾。
+            let mut served = false;
+            loop {
             let (mut sock, _) = listener.accept().await.unwrap();
             // 读完整 HTTP 请求（header + body）
             let mut raw = Vec::new();
@@ -2112,8 +2175,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             let req = String::from_utf8_lossy(&raw).into_owned();
             assert!(req.contains("/chat/completions"), "请求路径错误");
             assert!(req.contains("\"tools\""), "请求缺少工具定义");
-            let first_round = !req.contains("\"role\":\"tool\"");
-            let body = if first_round {
+            let body = if !served {
+                served = true;
                 serde_json::json!({
                     "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
                         {"id": "call_1", "type": "function", "function": {"name": "moonviz_op",
@@ -2131,11 +2194,9 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
                 body.len(),
                 body
             );
-            use tokio::io::AsyncWriteExt;
             sock.write_all(resp.as_bytes()).await.unwrap();
             }
         });
-
         let out = run(
             &ENGINE,
             "建一个登录页",
@@ -2147,11 +2208,17 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             None,
         )
         .await;
-        mock.await.unwrap();
+        // mock 是无限 accept 循环（审查层会在总结后追加请求），abort 收尾
+        mock.abort();
+        let _ = mock.await;
 
         assert_eq!(out["ok"], json!(true), "agent 应成功: {out}");
         assert_eq!(out["stopReason"], json!("done"));
-        assert_eq!(out["ops"], json!(["template login lg"]));
+        assert_eq!(
+            out["ops"],
+            json!(["template login lg", "fix lg"]),
+            "ops 应含 template + 收尾审查的确定性 fix"
+        );
         assert_eq!(out["text"], json!("已创建登录页 lg（390×844）。"));
         let mbt = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
         assert!(mbt.contains("lg"), "canonical mbt 应含画板 lg");
@@ -2174,8 +2241,10 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let bodies_w = bodies.clone();
         let handle = tokio::spawn(async move {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            for body in rounds {
-                let Ok((mut sock, _)) = listener.accept().await else { break };
+            let mut rounds = rounds.into_iter();
+            let mut poisoned = false;
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else { eprintln!("[mock] accept ended"); break };
                 let mut raw = Vec::new();
                 let mut chunk = [0u8; 16384];
                 loop {
@@ -2209,6 +2278,40 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
                         .unwrap()
                         .push(format!("{req_line}\n{}", &s[pos + 4..]));
                 }
+                // 队列耗尽后的额外请求（收尾审查轮）：返回兜底纯文本响应——
+                // 模拟"模型回答但不再调工具"，让审查轮自然收尾而非断连报错。
+                // 按请求行分协议（Anthropic 测试与 OpenAI 共用此 mock）：
+                // OpenAI 形状过 Anthropic 归一化会碎（无 content 块数组）。
+                let anthropic = req_line.contains("/v1/messages");
+                // 毒丸轮（Value::Null）：断连并**保持失联**——chat_once_with_retry
+                // 会重试 4 次，一次性毒丸会被第 2 次重试的兜底响应洗成成功
+                let body = if poisoned {
+                    drop(sock);
+                    continue;
+                } else {
+                    match rounds.next() {
+                        Some(b) if b.is_null() => {
+                            poisoned = true;
+                            drop(sock);
+                            continue;
+                        }
+                        Some(b) => b,
+                        None => {
+                            if anthropic {
+                                serde_json::json!({
+                                    "content": [{"type": "text",
+                                        "text": "[收尾审查] 已复核需求实现、交互连线与视觉债，无补充修改。"}],
+                                    "stop_reason": "end_turn"
+                                })
+                            } else {
+                                serde_json::json!({
+                                    "choices": [{"message": {"role": "assistant",
+                                        "content": "[收尾审查] 已复核需求实现、交互连线与视觉债，无补充修改。"}}]
+                                })
+                            }
+                        }
+                    }
+                };
                 let body_str = serde_json::to_string(&body).unwrap();
                 let resp = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -2270,17 +2373,21 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(
             out["ops"],
-            json!(["template login rt", "theme dark"]),
-            "两个 tool_use 应都被归一化并执行"
+            json!(["template login rt", "theme dark", "fix rt"]),
+            "两个 tool_use 归一化执行 + 收尾审查的确定性 fix"
         );
         assert_eq!(out["stopReason"], json!("done"));
-        assert_eq!(out["text"], json!("已建好登录页 rt。"));
+        assert_eq!(
+            out["text"],
+            json!("[收尾审查] 已复核需求实现、交互连线与视觉债，无补充修改。"),
+            "总结轮后进入审查，末轮文本是 mock 的审查兜底响应"
+        );
         let mbt = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
         assert!(mbt.contains("rt"), "canonical mbt 应含画板 rt");
 
         // ---- 线上形态断言（mock 捕获的真实请求）----
         let bs = bodies.lock().unwrap();
-        assert_eq!(bs.len(), 3, "应发生 3 轮请求，实际 {}", bs.len());
+        assert_eq!(bs.len(), 4, "3 轮脚本 + 1 轮收尾审查，实际 {}", bs.len());
 
         // 1) URL：POST /anthropic/v1/messages——恰好一个 /v1（双 /v1 拼装回归锁）
         assert!(
@@ -2375,8 +2482,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(
             out["ops"],
-            json!(["template login wl", "lint wl"]),
-            "只读 op 应被记录并执行"
+            json!(["template login wl", "lint wl", "fix wl"]),
+            "只读 op 应被记录并执行（末位是收尾审查的确定性 fix）"
         );
         assert_eq!(out["stopReason"], json!("done"));
         // 第二轮请求的历史里必须带着 lint 的 tool 结果（session 面真被打通：
@@ -2462,8 +2569,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(
             out["ops"],
-            json!(["template login ds", "extract-design-system ds"]),
-            "只读新 op 应被记录并执行"
+            json!(["template login ds", "extract-design-system ds", "fix ds"]),
+            "只读新 op 应被记录并执行（末位是收尾审查的确定性 fix）"
         );
         let bs = bodies.lock().unwrap();
         assert!(bs.len() >= 2, "应有 2 轮请求");
@@ -2643,13 +2750,14 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
     async fn mid_run_llm_failure_preserves_committed_work() {
         engine_ready().await;
         let _engine_gate = engine_test_gate();
-        // mock 只服务第一轮（bootstrap tool_call），之后 listener 关闭 → 第二轮连接被拒
+        // mock 第 1 轮返回 bootstrap tool_call；第 2 轮毒丸（null = 接受后直接断连）
+        // → 模拟 LLM 中途失联。兜底响应不能用于此测试——它会把失败路径洗成正常收尾。
         let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
             "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
                 {"id": "c1", "type": "function", "function": {"name": "moonviz_op",
                  "arguments": "{\"op\": \"template login lg\"}"}}
             ]}}]
-        })]).await;
+        }), serde_json::Value::Null]).await;
         let out = run(&ENGINE, "建一个登录页", None, "sk-test", "mock-model", &format!("http://127.0.0.1:{port}"), "auto", None).await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "部分成功应 ok:true: {out}");
