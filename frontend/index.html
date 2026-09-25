@@ -1226,6 +1226,9 @@ function syncDirtyRemote(){if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.c
 let projectQueue=Promise.resolve();
 function serializeProject(task){const pending=projectQueue.then(task);projectQueue=pending.catch(()=>{});return pending;}
 let toolMode='select',mode='wireframe',playStack=[],currentSvg='';
+/* 画板拖拽移位：视图层能力（引擎不感知画板摆放，不影响 .mbt.md）——
+ * id → {dx,dy} 相对流式位置的偏移；会话内存，重开项目重排 */
+let boardOffsets={},boardDrag=null,boardClickShieldUntil=0;
 let linkSource=null;
 let inlineTarget=null;
 let ctxTarget=null;
@@ -1563,14 +1566,39 @@ function renderStage(){
     stage.appendChild(wrap);
     const chrome=wrap.querySelector('.frame-chrome');
     chrome.addEventListener('contextmenu',ev=>{ev.preventDefault();ev.stopPropagation();artboardMenu(ev.clientX,ev.clientY,id);});
+    const off=boardOffsets[id];
+    if(off)wrap.style.transform=`translate(${off.dx}px,${off.dy}px)`;
     chrome.addEventListener('pointerdown',ev=>{
       if(mode==='play')return;
+      if(ev.button!==0)return;
       if(toolMode==='link'&&linkSource&&linkSource.from!==id){
         ev.preventDefault();ev.stopPropagation();
         createFlow(linkSource.from,id,linkSource.node);
+        return;
       }
+      // 标题栏拖拽移动画板（视图偏移；移动超阈值后抑制本次 click 切换画板）
+      boardDrag={id,x:ev.clientX,y:ev.clientY,dx:off?off.dx:0,dy:off?off.dy:0,moved:false};
+      try{chrome.setPointerCapture(ev.pointerId);}catch(_){ }
     });
+    chrome.addEventListener('pointermove',ev=>{
+      if(!boardDrag||boardDrag.id!==id||mode==='play')return;
+      const ndx=ev.clientX-boardDrag.x,ndy=ev.clientY-boardDrag.y;
+      if(!boardDrag.moved&&Math.abs(ndx)+Math.abs(ndy)<4)return;
+      boardDrag.moved=true;
+      boardOffsets[id]={dx:boardDrag.dx+ndx,dy:boardDrag.dy+ndy};
+      wrap.style.transform=`translate(${boardOffsets[id].dx}px,${boardOffsets[id].dy}px)`;
+    });
+    const endBoardDrag=()=>{
+      if(boardDrag&&boardDrag.id===id&&boardDrag.moved){
+        boardClickShieldUntil=Date.now()+250; // 拖后 250ms 内拦截 click，防误切换
+        renderFlowWires(stage); // 连线端点随画板位置重绘
+      }
+      boardDrag=null;
+    };
+    chrome.addEventListener('pointerup',endBoardDrag);
+    chrome.addEventListener('pointercancel',endBoardDrag);
     chrome.onclick=()=>{
+      if(Date.now()<boardClickShieldUntil)return;
       if(mode==='play')return;
       if(toolMode==='link'&&linkSource&&linkSource.from!==id)return;
       if(!isActive)switchSession(id);
@@ -1590,7 +1618,7 @@ function renderStage(){
       if(isActive)bindStageSvg(svg);
     }else body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#a1a1aa;font-size:11px">MBT 渲染结果缺失</div>';
     if(!isActive){
-      wrap.onclick=()=>switchSession(id);
+      wrap.onclick=()=>{if(Date.now()<boardClickShieldUntil)return;switchSession(id);};
     }
   }
   renderFlowWires(stage);
