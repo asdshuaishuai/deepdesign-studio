@@ -470,6 +470,9 @@ body.mode-play .promptbar,body.mode-play .canvas-hint{display:none!important}
 .play-bar .pb-back:disabled{opacity:.35;cursor:default;background:transparent;border-color:var(--bd)}
 .play-bar .pb-exit{color:#e05252;border-color:color-mix(in srgb,#e05252 35%,transparent);background:color-mix(in srgb,#e05252 8%,transparent)}
 .play-bar .pb-exit:hover{background:color-mix(in srgb,#e05252 16%,transparent);border-color:color-mix(in srgb,#e05252 55%,transparent)}
+.ink-layer{position:fixed;inset:0;z-index:85;pointer-events:none;touch-action:none;display:none;cursor:crosshair}
+body.play-ink-mode .ink-layer{display:block;pointer-events:auto}
+body.play-ink-mode .pm-hot{pointer-events:none}
 .play-bar .pb-toggle.on{color:var(--acc-tx);border-color:color-mix(in srgb,var(--acc) 55%,transparent);background:color-mix(in srgb,var(--acc) 10%,transparent)}
 .pm-hot{position:absolute;z-index:6;cursor:pointer;border-radius:10px;outline:2px dashed rgba(40,167,69,.85);outline-offset:2px}
 /* 演示「隐藏热区」开关：热区层保持可点，仅隐藏绿虚线视觉（真实成品观感） */
@@ -1105,6 +1108,8 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   <span class="pb-crumb" id="play-crumb"></span>
   <span class="pb-hint">绿框 = 可点击交互 · Esc 返回上一页</span>
   <span style="flex:1"></span>
+  <button class="pb-toggle" id="play-ink-toggle" onclick="toggleInk()" title="标注模式：在原型上自由圈画（开启时暂停交互点击，Esc 退出标注）">✏ 标注</button>
+  <button class="pb-toggle" id="play-ink-clear" onclick="clearInk()" title="清除当前画板的标注" style="display:none">🧹 清除</button>
   <button class="pb-toggle" id="play-hot-toggle" onclick="toggleHotZones()" title="隐藏/显示可点击热区的绿色标注（点击交互不受影响）">隐藏热区</button>
   <button class="pb-exit" onclick="exitPlay()" title="结束演示，回到编辑模式">退出演示 ✕</button>
 </div>
@@ -2081,7 +2086,7 @@ document.getElementById('decl-text').addEventListener('scroll',function(){const 
 document.addEventListener('keydown',async e=>{
   if($('export-choice').style.display==='flex'){if(e.key==='Escape')closeExportChoice('cancel');return;}
   if($('shortcuts-modal').style.display==='flex'){if(e.key==='Escape')closeShortcuts();return;}
-  if(mode==='play'){if(e.key==='Escape')playBack();return;}
+  if(mode==='play'){if(e.key==='Escape'){if(inkMode)toggleInk();else playBack();}return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();$('gp-input').focus();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveProject();return;}
   /* Windows 快捷键分发：原为 macOS 原生菜单加速键（CmdOrCtrl+*），标题栏合并后
@@ -2923,7 +2928,7 @@ function togglePlay(on){
     setMode('play');
   } else exitPlay();
 }
-function exitPlay(){playClearHot();setMode(playReturnMode||'wireframe');}
+function exitPlay(){toggleInk();inkPaths=[];playClearHot();setMode(playReturnMode||'wireframe');}
 function playClearHot(){document.querySelectorAll('.pm-hot').forEach(el=>el.remove());}
 function attachPlayHotZones(){
   playClearHot();
@@ -2965,6 +2970,66 @@ function toggleHotZones(){
   const b=$('play-hot-toggle');
   if(b){b.textContent=playHotHidden?'显示热区':'隐藏热区';b.classList.toggle('on',playHotHidden);}
 }
+/* 标注（批注）模式：活动画板上自由圈画，墨迹按画板存内存（归一化坐标，缩放不糊）。
+ * 开启时暂停热区点击（标注优先），Esc / 再点 ✏ 退出。退出演示清空。 */
+let inkMode=false,inkPaths=[],inkCur=null,inkCv=null,inkCtx=null;
+function toggleInk(){
+  inkMode=!inkMode;
+  document.body.classList.toggle('play-ink-mode',inkMode);
+  const t=$('play-ink-toggle'),c=$('play-ink-clear');
+  if(t)t.classList.toggle('on',inkMode);
+  if(c)c.style.display=inkMode?'':'none';
+  if(inkMode){mountInkLayer();toast('标注模式：按住拖动圈画 · Esc 结束标注');}
+  else if(inkCv){inkCv.remove();inkCv=null;inkCtx=null;}
+}
+/* 全屏手绘墨迹层：覆盖整个演示视口，中点二次贝塞尔平滑（手绘笔感）。
+ * 墨迹为视口像素坐标，切画板保留；退出演示清空。 */
+function mountInkLayer(){
+  if(inkCv)return;
+  inkCv=document.createElement('canvas');
+  inkCv.className='ink-layer';inkCv.id='ink-layer';
+  const fit=()=>{inkCv.width=innerWidth;inkCv.height=innerHeight;redrawInk();};
+  fit();
+  window.addEventListener('resize',fit);
+  const pos=e=>({x:e.clientX,y:e.clientY});
+  const strokeSetup=()=>{inkCtx.strokeStyle='#E67E22';inkCtx.lineWidth=2.6;inkCtx.lineCap='round';inkCtx.lineJoin='round';};
+  inkCv.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    try{inkCv.setPointerCapture(e.pointerId);}catch(_){ }
+    inkCur=[pos(e)];inkPaths.push(inkCur);
+    strokeSetup();
+    const p0=inkCur[0];inkCtx.beginPath();inkCtx.arc(p0.x,p0.y,1.2,0,7);inkCtx.fillStyle=inkCtx.strokeStyle;inkCtx.fill();
+  });
+  inkCv.addEventListener('pointermove',e=>{
+    if(!inkCur)return;
+    const n=inkCur.length,p=pos(e),last=inkCur[n-1];
+    // 中点平滑：从上一中点经当前点画到新中点（手绘圆头）
+    const midPrev={x:(inkCur[Math.max(0,n-2)].x+last.x)/2,y:(inkCur[Math.max(0,n-2)].y+last.y)/2};
+    const midCur={x:(last.x+p.x)/2,y:(last.y+p.y)/2};
+    inkCtx.beginPath();inkCtx.moveTo(midPrev.x,midPrev.y);inkCtx.quadraticCurveTo(last.x,last.y,midCur.x,midCur.y);inkCtx.stroke();
+    inkCur.push(p);
+  });
+  const end=()=>{inkCur=null;};
+  inkCv.addEventListener('pointerup',end);inkCv.addEventListener('pointercancel',end);
+  document.body.appendChild(inkCv);
+  inkCtx=inkCv.getContext('2d');strokeSetup();
+}
+function redrawInk(){
+  if(!inkCtx)return;
+  inkCtx.strokeStyle='#E67E22';inkCtx.lineWidth=2.6;inkCtx.lineCap='round';inkCtx.lineJoin='round';
+  inkPaths.forEach(path=>{
+    if(path.length<2)return;
+    inkCtx.beginPath();
+    inkCtx.moveTo(path[0].x,path[0].y);
+    for(let i=1;i<path.length-1;i++){
+      const mx=(path[i].x+path[i+1].x)/2,my=(path[i].y+path[i+1].y)/2;
+      inkCtx.quadraticCurveTo(path[i].x,path[i].y,mx,my);
+    }
+    inkCtx.lineTo(path[path.length-1].x,path[path.length-1].y);
+    inkCtx.stroke();
+  });
+}
+function clearInk(){inkPaths=[];inkCur=null;if(inkCtx)inkCtx.clearRect(0,0,inkCv.width,inkCv.height);}
 function playApplySession(id){
   const s=sessions[id];if(!s)return;
   baseCmd=s.baseCmd;currentW=s.w;currentH=s.h;
