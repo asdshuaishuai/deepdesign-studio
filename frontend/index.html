@@ -120,13 +120,19 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 #lt-flow.on{color:var(--ok);border-bottom-color:var(--ok);background:rgba(40,167,69,.05)}
 .ltab .ic{width:13px;height:13px}
 .lpanel{flex:1;overflow-y:auto;padding:10px}
-.proj-card{padding:9px 10px 8px;border-bottom:var(--bd);background:rgba(0,0,0,.015)}
-.proj-card .pc-head{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.proj-card{padding:9px 10px 8px;border-bottom:var(--bd);background:rgba(0,0,0,.015);position:relative}
+.proj-card .pc-head{display:flex;align-items:center;gap:7px;margin-bottom:7px;cursor:pointer;border-radius:7px;padding:3px 5px;margin:-1px -5px 4px}
+.proj-card .pc-head:hover{background:rgba(0,0,0,.05)}
 .proj-card .pc-head b{font-size:12.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj-card .pc-caret{color:var(--tx3);font-size:10px}
 .proj-card .pc-actions{display:flex;gap:6px}
 .proj-card .pc-actions .tbtn{flex:1;font-size:11px;padding:5px 6px}
 .proj-card .sec{margin:9px 2px 5px}
 .recent-row.side{padding:6px 9px;font-size:11.5px;border-radius:8px;margin-bottom:5px}
+.proj-switch{display:none;position:absolute;left:8px;right:8px;top:calc(100% - 4px);z-index:75;flex-direction:column;background:var(--panel,#fff);border:var(--bd);border-radius:11px;box-shadow:var(--sh-pop);padding:5px;max-height:250px;overflow:auto}
+.proj-switch .recent-row.on{border-color:rgba(47,107,79,.55);background:rgba(47,107,79,.08)}
+.rc-win{border:none;background:transparent;color:var(--tx3);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:5px}
+.rc-win:hover{color:var(--acc-tx);background:rgba(0,0,0,.06)}
 .sec{display:flex;align-items:center;justify-content:space-between;font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin:10px 4px 7px}
 .sec:first-child{margin-top:2px}
 .lfoot{padding:8px 12px;border-top:var(--bd);display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--tx3);background:rgba(0,0,0,.02);font-family:ui-monospace}
@@ -452,17 +458,22 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .tok-yaml-val{color:var(--tok-yaml-val)}
 /* 演示模式 = 工作区内禁编辑、只保留演示：不再是独立全屏页 */
 .frame-body{position:relative}
-.play-chip{display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:90;align-items:center;gap:12px;background:rgba(17,20,28,.88);color:#E5E9F2;padding:8px 10px 8px 18px;border-radius:99px;font-size:12px;box-shadow:var(--sh-pop);backdrop-filter:blur(10px)}
-.play-chip .pc-crumb{font-family:ui-monospace;font-size:11px;color:#9aa3b2;max-width:440px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.play-chip button{display:flex;align-items:center;gap:6px;border:none;background:#2A2E37;color:#E5E9F2;padding:6px 14px;border-radius:99px;cursor:pointer;font-size:12px}
-.play-chip button:hover{background:#343945}
+.play-bar{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:90;align-items:center;gap:14px;min-width:560px;max-width:min(880px,94vw);background:var(--panel);color:var(--tx);border:var(--bd);padding:10px 12px;border-radius:14px;box-shadow:var(--sh-pop);backdrop-filter:blur(10px);font-size:12px}
+body.mode-play .play-bar{display:flex}
+body.mode-play .promptbar,body.mode-play .canvas-hint{display:none!important}
+.play-bar .pb-crumb{font-family:ui-monospace;font-size:11.5px;color:var(--tx2);flex:1;min-width:0;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.play-bar .pb-hint{color:var(--tx3);font-size:10.5px;white-space:nowrap}
+.play-bar button{display:flex;align-items:center;gap:6px;border:1px solid var(--bd);background:transparent;color:var(--tx);padding:7px 16px;border-radius:9px;cursor:pointer;font-size:12px;white-space:nowrap}
+.play-bar button:hover{background:color-mix(in srgb,var(--acc) 8%,transparent);border-color:color-mix(in srgb,var(--acc) 35%,transparent)}
+.play-bar .pb-back:disabled{opacity:.35;cursor:default;background:transparent;border-color:var(--bd)}
+.play-bar .pb-exit{color:#e05252;border-color:color-mix(in srgb,#e05252 35%,transparent);background:color-mix(in srgb,#e05252 8%,transparent)}
+.play-bar .pb-exit:hover{background:color-mix(in srgb,#e05252 16%,transparent);border-color:color-mix(in srgb,#e05252 55%,transparent)}
 .pm-hot{position:absolute;z-index:6;cursor:pointer;border-radius:10px;outline:2px dashed rgba(40,167,69,.85);outline-offset:2px}
 /* 交互逻辑标注：带 flow 触发的按钮在编辑视图常显绿色虚线描边 */
 .frame-wrap svg g[data-flow-trigger]{cursor:pointer}
 .frame-wrap svg g[data-flow-trigger]>rect{stroke:#22C55E;stroke-width:3;stroke-dasharray:6 3}
 .frame-wrap svg g[data-flow-trigger]>text{fill:#1F7A38}
 .pm-hot:hover{background:rgba(40,167,69,.12)}
-body.mode-play .play-chip{display:flex}
 body.mode-play .left,body.mode-play .right,body.mode-play .ctools,body.mode-play .czoom,
 body.mode-play .canvas-dock,body.mode-play .flow-wires,
 body.mode-play .ghost-new,body.mode-play #agent-pop{display:none!important}
@@ -753,12 +764,15 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   <!-- ================= 左栏 ================= -->
   <div class="left">
     <div class="proj-card">
-      <div class="pc-head"><b id="side-proj-name">未命名项目</b></div>
+      <div class="pc-head" onclick="toggleProjSwitch(event)" title="切换项目（热切换，不重启应用）">
+        <b id="side-proj-name">未命名项目</b><span class="pc-caret">▾</span>
+      </div>
+      <div class="proj-switch" id="proj-switch" style="display:none"></div>
       <div class="pc-actions">
         <button class="tbtn" onclick="newProject()" title="新建项目（⌘N）">＋ 新建</button>
         <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）">打开…</button>
       </div>
-      <div class="sec"><span>最近项目</span></div>
+      <div class="sec"><span>最近项目</span><span style="letter-spacing:0;font-weight:400">⧉ = 新窗口</span></div>
       <div id="side-recent-list"></div>
     </div>
     <div class="ltabs">
@@ -1074,11 +1088,13 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div class="settings-actions"><button title="closeSettings" class="tbtn" onclick="closeSettings()">取消</button><button class="tbtn pri" onclick="saveSettings()">保存设置</button></div>
   </div>
 </div>
-<!-- 演示模式浮层（工作区内：隐藏编辑面板，仅保留交互演示） -->
-<div class="play-chip" id="play-chip">
-  <span class="pc-crumb" id="play-crumb"></span>
-  <span style="color:var(--tx3);font-size:10.5px">绿框 = 可点击交互（跳转 / 文字与状态变更） · Esc 返回上一页</span>
-  <button onclick="exitPlay()"><svg class="ic" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>退出演示</button>
+<!-- 演示模式底部操作栏（隐藏编辑面板与 Prompt 条，仅保留交互演示控制） -->
+<div class="play-bar" id="play-bar">
+  <button class="pb-back" id="play-back" onclick="playBack()" title="返回上一页（Esc）；起始页时不可用">◀ 返回</button>
+  <span class="pb-crumb" id="play-crumb"></span>
+  <span class="pb-hint">绿框 = 可点击交互 · Esc 返回上一页</span>
+  <span style="flex:1"></span>
+  <button class="pb-exit" onclick="exitPlay()" title="结束演示，回到编辑模式">退出演示 ✕</button>
 </div>
 
 <script>
@@ -2833,6 +2849,11 @@ function attachPlayHotZones(){
   });
   const crumb=$('play-crumb');
   if(crumb)crumb.textContent=playStack.join('  ›  ');
+  updatePlayHud();
+}
+function updatePlayHud(){
+  const back=$('play-back');
+  if(back)back.disabled=playStack.length<=1;
 }
 function playApplySession(id){
   const s=sessions[id];if(!s)return;
@@ -2942,7 +2963,7 @@ function renderRecentRows(box){
   if(box.id==='side-recent-list'){
     if(!list.length){box.innerHTML='<div class="hintbox">暂无最近项目——保存或打开 DDP 后出现在这里</div>';return;}
     box.innerHTML=list.map(p=>
-      `<div class="recent-row side" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}</span><span class="rc-meta">${escHtml(relTime(p.ts))}</span></div>`).join('');
+      `<div class="recent-row side" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}</span><span style="display:flex;align-items:center;gap:4px"><button class="rc-win" title="在新窗口打开（多项目并行）" onclick="event.stopPropagation();openProjectWindow(this.closest('[data-path]').dataset.path)">⧉</button><span class="rc-meta">${escHtml(relTime(p.ts))}</span></span></div>`).join('');
     return;
   }
   if(box.id==='fm-recents'){
@@ -2953,6 +2974,31 @@ function renderRecentRows(box){
     box.innerHTML=list.map(p=>
       `<div class="recent-row" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}</span><span class="rc-meta">${escHtml(relTime(p.ts))}</span></div>`).join('');
   }
+}
+/* 项目下拉切换（项目名点击）：列出最近项目，点击就地热切换（openProject 不重启应用） */
+function toggleProjSwitch(ev){
+  ev.stopPropagation();
+  const dd=$('proj-switch');if(!dd)return;
+  const opening=dd.style.display!=='flex';
+  dd.style.display=opening?'flex':'none';
+  if(!opening)return;
+  const cur=filePath;
+  dd.innerHTML=recentProjects().map(p=>
+    `<div class="recent-row side${p.path===cur?' on':''}" data-path="${escHtml(p.path)}" onclick="pickProjSwitch(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}${p.path===cur?'　✓':''}</span><span class="rc-meta">${escHtml(relTime(p.ts))}</span></div>`).join('')
+    ||'<div class="hintbox">暂无可切换的项目——保存或打开 DDP 后出现在这里</div>';
+}
+function pickProjSwitch(path){
+  $('proj-switch').style.display='none';
+  if(path!==filePath)openProject(path);
+}
+document.addEventListener('click',()=>{const dd=$('proj-switch');if(dd&&dd.style.display==='flex')dd.style.display='none';});
+/* 多窗口：在新系统窗口打开该项目（Rust open_project_window 建 WebviewWindow，
+ * 新窗口经 ?project= 查询参数启动后自动免对话框打开同一项目） */
+function openProjectWindow(path){
+  if(!IS_TAURI){toast('多窗口需要桌面端');return;}
+  window.__TAURI__.core.invoke('open_project_window',{path})
+    .then(()=>toast('已在新窗口打开'))
+    .catch(err=>toast('新窗口打开失败：'+String(err).slice(0,60)));
 }
 function updateWelcomeRecents(){const b=$('welcome-recents');if(b)b.style.display=recentProjects().length?'block':'none';}
 function openRecentMenu(){$('fmenu-pop').classList.add('open');renderRecentRows($('fm-recents'));}
@@ -3039,6 +3085,7 @@ async function exportSvg(){
   }catch(err){toast('SVG 导出失败：'+String(err).slice(0,80));}
 }
 async function openProject(path){
+  if(path&&path===filePath)return; // ?v= 重载会重复触发启动自开：同项目已打开则幂等跳过
   if(agentBusy){toast('Agent 正在生成，完成后再打开');return;}
   // 仅确有未保存更改（内容或源码草稿）时确认；确认框回车默认「继续编辑」（安全侧），返回 true=留下
   if(IS_TAURI&&anyDirty()){
@@ -3407,6 +3454,9 @@ renderAllRecents();                // 侧栏项目区首次渲染（含空态文
 loadEngine().then(()=>{           // wasm 引擎预加载（画布首帧 op 前就绪）
   if(engineFailed)console.warn('引擎 wasm 加载失败：',engineFailed);
   else if(typeof setStatus==='function')setStatus('','',true,'引擎 wasm 就绪');
+  // 多窗口：新项目窗口经 ?project=<路径> 启动，引擎就绪后自动免对话框打开该项目
+  const bootProject=IS_TAURI?new URLSearchParams(location.search).get('project'):null;
+  if(bootProject)openProject(decodeURIComponent(bootProject));
 });
 renderAbs();
 syncFileLabel();

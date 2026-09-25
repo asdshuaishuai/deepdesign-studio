@@ -341,16 +341,32 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 
 - **数据流**：最近项目注册表存 localStorage `dd-recent-projects`（path/name/ts，容量 10）；
   启动与渲染前经 `list_ddp_projects` 按父目录批量对账（剔除已删文件、刷 mtime）。
-  呈现位两处：欢迎空态「最近项目」区 + 文件菜单顶部动态区；原生菜单 `open-recent` 打开同一列表。
-- **免对话框切换**：`openProject(path)` 先静默试 per-path 会话口令映射与空口令（DDP2 免密），
-  解密失败才弹密码框——口令映射是内存态，不持久化明文。⌘O 对话框流程保持「先密码后选文件」。
-- **导出 vs 保存的边界（防错文件事故）**：`exportDdpNow` 仅在 `filePath` 为空（项目从未保存，
+  呈现位三处：欢迎空态「最近项目」区 + 文件菜单顶部动态区 + **左栏顶部常驻项目区**
+  （当前项目名 + ＋新建/打开 + 最近列表，空态给引导文案——多项目入口永远可见）。
+  原生菜单 `open-recent` 打开同一列表。
+- **切换 = 下拉热切换**：项目名（▾）点击弹最近项目下拉，行点击 `openProject(path)` 就地切换
+  （不重启应用）；当前项目标 ✓。免对话框口令：先静默试 per-path 会话口令映射与空口令
+  （DDP2 免密），解密失败才弹密码框——口令映射是内存态，不持久化明文。⌘O 对话框流程保持
+  「先密码后选文件」。agent 在飞（agentBusy）时切换仍拦截。
+- **多窗口（2026-09）**：最近项目行 ⧉ 按钮 → `open_project_window` 命令建 `proj-<epoch>` 窗口，
+  URL 带 `?project=<percent-encoded path>`；前端引擎就绪后读取该参数自动免对话框打开
+  （openProject 对同 path 幂等跳过——?v= 缓存重载会二次触发）。支撑性改造：
+  - 脏态按窗口 label 记（`DIRTY_WINDOWS: LazyLock<Mutex<HashSet<label>>>`，
+    `set_project_dirty` 经注入的 window 取 label）；CloseRequested 按本窗 label 拦截。
+  - 原生菜单动作派发给**聚焦中的**窗口（fallback main）。
+  - `agent-event` 轨迹经 `emit_to(发起窗口 label)` 投递，不广播串窗。
+  - EngineHost 会话缓存全进程共享（mbt 键控）：多窗交替 agent run 会互踢缓存——
+    正确性无损（键不符即重开），仅性能交替重解析。
+- **保存 vs 导出边界（防错文件事故）**：`exportDdpNow` 仅在 `filePath` 为空（项目从未保存，
   导出即首次保存）时接管 `filePath`/会话口令；已绑定项目的导出是纯副本，不改绑 ⌘S 目标。
-- **标题同步**：`syncProjName` 统一更新 `#proj-name` / `document.title` / 原生窗口标题
+- **标题同步**：`syncProjName` 统一更新 `#proj-name` / 侧栏项目名 / `document.title` / 原生窗口标题
   （capabilities 增了单条 `core:window:allow-set-title`）。注意它位于 vm 动态切片区间内
   （newProject 会调），移位需同步 test_studio.cjs。
-- **边界（有意不做）**：agent 在飞时切换/新建仍硬拦截（丢更新风险）；切换重置撤销栈是引擎
-  history 边界；多窗口不在范围。
+- **边界（有意不做）**：切换重置撤销栈是引擎 history 边界；同项目双窗口同时编辑无冲突检测
+  （后保存者覆盖，用户自行避让）。
+- **已知问题（待查）**：ad-hoc 签名的 bundle 经 `open` 启动偶发**白屏**（LaunchServices/签名
+  相关，直跑 `target/release/deepdesign-studio` 二进制从未复现）；且每次重建 ad-hoc 重签会使
+  TCC「文稿」授权失效、启动必弹权限框。正式分发需 Developer ID 签名一并解决。
 
 ## 已知缺口
 

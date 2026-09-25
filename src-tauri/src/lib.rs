@@ -209,13 +209,51 @@ async fn confirm_discard(
 }
 
 /// 前端脏态同步（applyMbtResult 置脏 / 保存·打开·新建清除）：关窗拦截据此决定
-/// 是否拦下 CloseRequested。Rust 不解释视觉语义，只存一个布尔。
-static PROJECT_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// 前端脏态同步（applyMbtResult 置脏 / 保存·打开·新建清除）：关窗拦截据此决定
+/// 是否拦下 CloseRequested。Rust 不解释视觉语义，只存布尔集合。
+/// 多窗口（2026-09）：按窗口 label 记脏——每个项目窗口独立拦截自己的关闭。
+static DIRTY_WINDOWS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
 
-/// 前端脏态同步（见 PROJECT_DIRTY）。
+/// 前端脏态同步（见 DIRTY_WINDOWS）。window 由 Tauri 注入（调用方窗口）。
 #[tauri::command]
-fn set_project_dirty(dirty: bool) {
-    PROJECT_DIRTY.store(dirty, std::sync::atomic::Ordering::Relaxed);
+fn set_project_dirty(dirty: bool, window: tauri::Window) {
+    let label = window.label().to_string();
+    let mut set = DIRTY_WINDOWS.lock().expect("dirty set poisoned");
+    if dirty {
+        set.insert(label);
+    } else {
+        set.remove(&label);
+    }
+}
+
+/// 在新窗口打开一个项目（多项目多窗口，2026-09）：label 唯一（proj-<epoch>），
+/// 前端 index.html 读取 ?project= 查询参数在引擎就绪后自动免对话框打开该项目。
+#[tauri::command]
+fn open_project_window(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri::WebviewUrl;
+    let p = path.trim().to_string();
+    if p.is_empty() {
+        return Err("open_project_window:empty_path".into());
+    }
+    let label = format!("proj-{}", now_ms());
+    // path 百分号编码（斜杠/中文/空格），前端 decodeURIComponent 还原
+    let enc: String = p
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    let url = format!("index.html?project={enc}");
+    tauri::WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+        .title("deepDesign Studio")
+        .build()
+        .map_err(|e| format!("open_project_window_failed:{e}"))?;
+    Ok(())
 }
 
 /// ---------- Agent 运行日志（JSONL，宿主侧可诊断性） ----------
@@ -279,13 +317,18 @@ pub fn run() {
             app_exit,
             list_ddp_projects,
             rebase_agent_ops,
+            open_project_window,
             model_registry
         ])
         .on_window_event(|window, event| {
             // 脏文档关窗拦截：有未保存更改时拦下系统关闭，交前端确认（Rust 不解释
             // 语义）；确认放弃后前端清脏再触发关闭，第二次 CloseRequested 直接放行。
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if PROJECT_DIRTY.load(std::sync::atomic::Ordering::Relaxed) {
+                let dirty = DIRTY_WINDOWS
+                    .lock()
+                    .expect("dirty set poisoned")
+                    .contains(window.label());
+                if dirty {
                     api.prevent_close();
                     use tauri::Emitter as _;
                     let _ = window.emit("app-close-request", ());
@@ -316,9 +359,16 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| {
-            // 原生菜单 → 前端动作桥：直接 eval 前端全局映射函数（比事件通道更直接）
+            // 原生菜单 → 前端动作桥：直接 eval 前端全局映射函数（比事件通道更直接）。
+            // 多窗口：菜单动作派发给**聚焦中的**项目窗口（各窗同构前端），无聚焦回落 main。
             let id = event.id().as_ref().to_string();
-            if let Some(win) = app.get_webview_window("main") {
+            let target = app
+                .webview_windows()
+                .values()
+                .find(|w| w.is_focused().unwrap_or(false))
+                .cloned()
+                .or_else(|| app.get_webview_window("main"));
+            if let Some(win) = target {
                 let _ = win.eval(format!(
                     "if(typeof nativeMenuAction==='function')nativeMenuAction({:?})",
                     id
@@ -326,10 +376,11 @@ pub fn run() {
             }
         })
         .on_page_load(|webview, payload| {
-            // 资产协议无缓存头，WKWebView 可能滞留旧页：首载完成后强制带版本参数重载一次
+            // 资产协议无缓存头，WKWebView 可能滞留旧页：首载完成后强制带版本参数重载一次。
+            // 多窗口：?project=<路径> 的项目窗口保留既有 query，仅追加 v=（?project= 仍生效）
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
                 webview.eval(
-                    "if(!location.search)location.replace(location.href.split('?')[0]+'?v='+Date.now())",
+                    "if(!(/[?&]v=/.test(location.search)))location.replace(location.href+(location.href.includes('?')?'&':'?')+'v='+Date.now())",
                 )
                 .ok();
             }
@@ -366,6 +417,7 @@ async fn rebase_agent_ops(
 #[tauri::command]
 async fn invoke_fx_sdk(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     payload: String,
     api_key: String,
 ) -> Result<serde_json::Value, String> {
@@ -399,6 +451,8 @@ async fn invoke_fx_sdk(
     // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线；
     // 同一事件流落 JSONL 运行日志（app_data/logs/，保留 50 个），供事后诊断
     let run_id = p.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
+    // 多窗口：agent 轨迹只投递给发起 run 的窗口（emit_to），不广播串窗
+    let target_label = window.label().to_string();
     let emitter = app.clone();
     let journal = journal_dir(&app);
     let journal_file = journal
@@ -425,7 +479,7 @@ async fn invoke_fx_sdk(
             obj.insert("run".into(), serde_json::json!(run_id));
             obj.insert("ts".into(), serde_json::json!(now_ms()));
         }
-        let _ = emitter.emit("agent-event", &v);
+        let _ = emitter.emit_to(target_label.as_str(), "agent-event", &v);
         if let (Some(dir), Some(file)) = (&cb_journal, &cb_file) {
             journal_append(dir, file, &v);
         }
