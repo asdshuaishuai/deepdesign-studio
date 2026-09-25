@@ -84,7 +84,11 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
    adaptive templates pick structure by width.
    Artboard names become ids after sanitization — use ASCII snake_case names
    (e.g. chat_list); non-ASCII names collapse to "_" and collide. Chinese copy
-   belongs in node text values, never in artboard/node ids.
+   belongs in node text values, never in artboard/node ids. NEVER leave an
+   artboard named "__" or similar placeholder junk — if the entry board id is
+   meaningless, create a properly named board and move the content (or re-create
+   the screen with a real name) before finishing; tab bars with no target page
+   must not ship as dead links (drop the dead tab or create the target page).
 2. CREATE: one "template <id> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
    node ids are only discoverable there. Artboard id = sanitized name.
 3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.

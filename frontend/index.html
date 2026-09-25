@@ -271,8 +271,10 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .ap-send:disabled{background:rgba(0,0,0,.1);color:var(--tx3)}
 
 /* ---------- 右栏 ---------- */
-.right{width:280px;background:rgba(255,255,255,.92);border-left:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
+.right{width:360px;background:rgba(255,255,255,.92);border-left:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
 .rtabs{display:flex;border-bottom:var(--bd);font-size:12px;background:rgba(0,0,0,.02)}
+.track-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:11px;color:var(--tx3);border-bottom:var(--bd);flex-shrink:0}
+.track-head .tbtn{font-size:10.5px;padding:3px 8px}
 .rtab{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 0;border:none;background:transparent;color:var(--tx2);cursor:pointer;font-weight:500;border-bottom:2px solid transparent}
 .rtab.on{color:var(--acc-tx);border-bottom-color:var(--acc-tx);font-weight:600;background:rgba(0,122,255,.04)}
 .rtab .ic{width:13px;height:13px}
@@ -920,6 +922,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </div>
     </div>
     <div class="rpanel" id="rp-track" style="display:none">
+      <div class="track-head"><span>Agent 运行留痕</span><button class="tbtn" onclick="clearTrack()" title="清空追踪记录">清空</button></div>
       <div id="tl-body">
         <div class="empty-insp">
           <svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>
@@ -1822,8 +1825,13 @@ function layerIcon(n){
  * 待引擎补 inspect 类导出后恢复（渲染逻辑见 git 历史的 loadAudit）。 */
 async function runAutoFix(){
   if(!baseCmd){toast('先创建画板');return;}
-  if(await runOp(`fix ${active}`,'agent'))trackAgent('一键自动修复',[`fix ${active}`]);
+  const before=mbtRevision;
+  const ok=await runOp(`fix ${active}`,'agent');
+  if(!ok){toast('修复执行失败，详见状态栏');return;}
+  if(mbtRevision===before){toast('当前画板没有需要修复的视觉债');return;}
+  trackAgent('一键自动修复',[`fix ${active}`]);
 }
+function clearTrack(){const b=$('tl-body');if(!b)return;b.replaceChildren();toast('追踪记录已清空');}
 
 /* ---------- 命令执行 ---------- */
 function runOp(cmd,src){return serializeProject(()=>runOpNow(cmd,src));}
