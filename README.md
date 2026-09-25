@@ -2,7 +2,7 @@
 
 AI 原生原型设计工具的桌面客户端（Tauri 2）。基于 [MoonViz](https://github.com/asdshuaishuai/moonviz) 纯 MoonBit 引擎：唯一事实源是 `.mbt.md` 文档，人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后回写同一文档。
 
-**当前版本 v0.3.0** — [下载（GitHub Releases）](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest) · [生态官网](https://asdshuaishuai.github.io/deeporca-site/) · [引擎官网](https://asdshuaishuai.github.io/moonviz/)
+**当前版本 v0.3.0** — [官网](https://asdshuaishuai.github.io/deepdesign-studio/) · [下载（GitHub Releases）](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest) · [引擎官网](https://asdshuaishuai.github.io/moonviz/) · [生态官网](https://asdshuaishuai.github.io/deeporca-site/)
 
 ## 特性
 
