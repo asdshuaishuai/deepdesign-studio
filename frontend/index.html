@@ -469,7 +469,13 @@ body.mode-play .promptbar,body.mode-play .canvas-hint{display:none!important}
 .play-bar .pb-back:disabled{opacity:.35;cursor:default;background:transparent;border-color:var(--bd)}
 .play-bar .pb-exit{color:#e05252;border-color:color-mix(in srgb,#e05252 35%,transparent);background:color-mix(in srgb,#e05252 8%,transparent)}
 .play-bar .pb-exit:hover{background:color-mix(in srgb,#e05252 16%,transparent);border-color:color-mix(in srgb,#e05252 55%,transparent)}
+.play-bar .pb-toggle.on{color:var(--acc-tx);border-color:color-mix(in srgb,var(--acc) 55%,transparent);background:color-mix(in srgb,var(--acc) 10%,transparent)}
 .pm-hot{position:absolute;z-index:6;cursor:pointer;border-radius:10px;outline:2px dashed rgba(40,167,69,.85);outline-offset:2px}
+/* 演示「隐藏热区」开关：热区层保持可点，仅隐藏绿虚线视觉（真实成品观感） */
+body.play-hide-hot .pm-hot{outline-color:transparent}
+body.play-hide-hot .pm-hot:hover{background:transparent!important}
+body.play-hide-hot .frame-wrap svg g[data-flow-trigger]>rect{stroke:transparent}
+body.play-hide-hot .frame-wrap svg g[data-flow-trigger]>text{fill:transparent}
 /* 交互逻辑标注：带 flow 触发的按钮在编辑视图常显绿色虚线描边 */
 .frame-wrap svg g[data-flow-trigger]{cursor:pointer}
 .frame-wrap svg g[data-flow-trigger]>rect{stroke:#22C55E;stroke-width:3;stroke-dasharray:6 3}
@@ -1093,6 +1099,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   <span class="pb-crumb" id="play-crumb"></span>
   <span class="pb-hint">绿框 = 可点击交互 · Esc 返回上一页</span>
   <span style="flex:1"></span>
+  <button class="pb-toggle" id="play-hot-toggle" onclick="toggleHotZones()" title="隐藏/显示可点击热区的绿色标注（点击交互不受影响）">隐藏热区</button>
   <button class="pb-exit" onclick="exitPlay()" title="结束演示，回到编辑模式">退出演示 ✕</button>
 </div>
 
@@ -2448,6 +2455,8 @@ function addBoard(prefix,w,h,src){return serializeProject(async()=>{
 
 /* ---------- 模式切换 ---------- */
 function setMode(m){
+  // 空项目进演示无意义（欢迎页无交互可演示）——菜单/⌘4 与工具栏按钮同守卫
+  if(m==='play'&&mode!=='play'&&!nodes.length&&!Object.keys(sessions).length){toast('先创建画板');return;}
   if(m==='play'&&mode!=='play')playReturnMode=(mode==='decl')?'wireframe':mode;
   mode=m;
   document.body.classList.remove('mode-wireframe','mode-hifi','mode-decl','mode-play');
@@ -2936,6 +2945,14 @@ function attachPlayHotZones(){
 function updatePlayHud(){
   const back=$('play-back');
   if(back)back.disabled=playStack.length<=1;
+}
+/* 演示热区标注开关：隐藏绿虚线视觉（真实成品观感），点击交互不受影响 */
+let playHotHidden=false;
+function toggleHotZones(){
+  playHotHidden=!playHotHidden;
+  document.body.classList.toggle('play-hide-hot',playHotHidden);
+  const b=$('play-hot-toggle');
+  if(b){b.textContent=playHotHidden?'显示热区':'隐藏热区';b.classList.toggle('on',playHotHidden);}
 }
 function playApplySession(id){
   const s=sessions[id];if(!s)return;
