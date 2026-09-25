@@ -150,7 +150,8 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .layerrow{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:7px;cursor:pointer;font-size:12px;color:var(--tx2);margin-bottom:1px;font-family:ui-monospace;transition:background .12s ease,color .12s ease}
 .layerrow:hover{background:rgba(0,0,0,.04)}
 .layerrow.on{background:rgba(0,122,255,.09);color:var(--acc-tx);font-weight:600}
-.layerrow .lic{width:15px;text-align:center;flex-shrink:0;opacity:.7;font-size:11px}
+.layerrow .lic{width:15px;flex-shrink:0;opacity:.75;display:inline-flex;justify-content:center}
+.layerrow .lic svg{width:12px;height:12px}
 .layerrow .lnm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 组件网格 */
 .compsearch{width:100%;background:rgba(0,0,0,.045);border:1px solid rgba(0,0,0,.07);border-radius:var(--r-md);padding:6px 10px;font-size:12px;outline:none;margin-bottom:8px}
@@ -772,8 +773,6 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         <button class="tbtn" onclick="newProject()" title="新建项目（⌘N）">＋ 新建</button>
         <button class="tbtn" onclick="openProject()" title="打开 DDP（⌘O）">打开…</button>
       </div>
-      <div class="sec"><span>最近项目</span><span style="letter-spacing:0;font-weight:400">⧉ = 新窗口</span></div>
-      <div id="side-recent-list"></div>
     </div>
     <div class="ltabs">
       <button class="ltab on" id="lt-layer" onclick="switchLeft('layer')"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>图层</button>
@@ -1693,15 +1692,15 @@ function renderFlows(){
 /* ---------- 图层树 ---------- */
 async function renderLayers(){
   if(mbtText){
-    const rows=(sessions[active]?.nodes||[]).map(n=>({id:n.id,kind:n.kind,depth:0}));
+    const rows=(sessions[active]?.nodes||[]);
     $('layer-cnt').textContent=rows.length;
     const el=$('layer-tree');el.innerHTML='';
-    rows.forEach(r=>{
+    rows.forEach(n=>{
       const d=document.createElement('div');
-      d.className='layerrow'+(r.id===selected?' on':'');
-      const ic={frame:'▢',text:'T',rect:'▣',image:'▣',group:'◈'}[r.kind]||'◻';
-      d.innerHTML=`<span class="lic">${ic}</span><span class="lnm">${escHtml(r.id)}</span>`;
-      d.onclick=()=>select(r.id,null);el.appendChild(d);
+      d.className='layerrow'+(n.id===selected?' on':'');
+      d.title=(n.component||n.kind||'')+' · '+n.id;
+      d.innerHTML=`<span class="lic">${layerIcon(n)}</span><span class="lnm">${escHtml(n.id)}</span>`;
+      d.onclick=()=>select(n.id,null);el.appendChild(d);
     });
     if(!rows.length)el.innerHTML='<div class="hintbox">空画板</div>';return;
   }
@@ -1711,6 +1710,24 @@ async function renderLayers(){
   $('layer-tree').innerHTML='<div class="hintbox">空画板</div>';
 }
 function renderLayersIfOpen(){if($('lp-layer').style.display!=='none')renderLayers();}
+/* 图层树类型图标：按 component/kind 关键词分类（引擎 65 组件 + kind 兜底），
+ * 一眼分辨文本/输入/按钮/图片/分隔/开关/徽章/导航/容器——新增组件名命中任一关键词即可 */
+function layerIconSvg(d){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`}
+function layerIcon(n){
+  const c=((n.component||'')+' '+(n.kind||'')).toLowerCase();
+  const has=(...ws)=>ws.some(w=>c.includes(w));
+  if(has('input','search','textarea'))return layerIconSvg('<rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 12h7"/>');
+  if(has('button','fab','cta'))return layerIconSvg('<rect x="3" y="8" width="18" height="8" rx="4"/><path d="M9 12h6"/>');
+  if(has('image','photo'))return layerIconSvg('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l5-5 4 4 3-3 3 3"/>');
+  if(has('divider'))return layerIconSvg('<path d="M4 12h16"/>');
+  if(has('switch','checkbox','radio','check'))return layerIconSvg('<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12l2.5 2.5 5-5"/>');
+  if(has('badge','tag','chip'))return layerIconSvg('<rect x="4" y="8" width="16" height="8" rx="4"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>');
+  if(has('nav','tab'))return layerIconSvg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15h18M10 15v4"/>');
+  if(has('progress','spinner','toast','dialog','sheet','snack','feedback'))return layerIconSvg('<path d="M6 15v-4a6 6 0 0 1 12 0v4l1.5 2.5h-15z"/><path d="M10.5 20.5a1.5 1.5 0 0 0 3 0"/>');
+  if(has('icon'))return layerIconSvg('<path d="M12 4l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z"/>');
+  if(n.kind==='text'||has('text','heading','label','title','caption','body'))return layerIconSvg('<path d="M5 6V4h14v2M12 4v16M9 20h6"/>');
+  return layerIconSvg('<rect x="4" y="4" width="16" height="16" rx="2"/>');
+}
 
 /* ---------- UX 审计卡 ---------- */
 /* critique 属引擎只读检视面，wasm 产物（0.1.1）未导出——审计卡整体下线，
@@ -2954,18 +2971,12 @@ function relTime(ts){
   if(s<60)return'刚刚';if(s<3600)return Math.floor(s/60)+' 分钟前';
   if(s<86400)return Math.floor(s/3600)+' 小时前';return Math.floor(s/86400)+' 天前';
 }
-/* 三个呈现位（侧栏项目区 side-recent-list / 欢迎面板 recent-list / 文件菜单 fm-recents）
- * 共用一份注册表；侧栏常驻显示（空态给引导文案），欢迎区/文件菜单空时隐藏 */
-function renderAllRecents(){renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));renderRecentRows($('side-recent-list'));updateWelcomeRecents();}
+/* 两个呈现位（欢迎面板 recent-list / 文件菜单 fm-recents）共用一份注册表渲染；
+ * 侧栏的切换入口是项目名下拉（toggleProjSwitch），行内 ⧉ = 新窗口打开 */
+function renderAllRecents(){renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();}
 function renderRecentRows(box){
   if(!box)return;
   const list=recentProjects().slice(0,6);
-  if(box.id==='side-recent-list'){
-    if(!list.length){box.innerHTML='<div class="hintbox">暂无最近项目——保存或打开 DDP 后出现在这里</div>';return;}
-    box.innerHTML=list.map(p=>
-      `<div class="recent-row side" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}</span><span style="display:flex;align-items:center;gap:4px"><button class="rc-win" title="在新窗口打开（多项目并行）" onclick="event.stopPropagation();openProjectWindow(this.closest('[data-path]').dataset.path)">⧉</button><span class="rc-meta">${escHtml(relTime(p.ts))}</span></span></div>`).join('');
-    return;
-  }
   if(box.id==='fm-recents'){
     box.style.display=list.length?'block':'none';
     box.innerHTML=list.map(p=>
@@ -2975,7 +2986,9 @@ function renderRecentRows(box){
       `<div class="recent-row" data-path="${escHtml(p.path)}" onclick="openProject(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}</span><span class="rc-meta">${escHtml(relTime(p.ts))}</span></div>`).join('');
   }
 }
-/* 项目下拉切换（项目名点击）：列出最近项目，点击就地热切换（openProject 不重启应用） */
+/* 项目下拉切换（项目名点击）：列出最近项目，行点击就地热切换（openProject 不重启应用）；
+ * 行尾 ⧉ = 在新系统窗口打开该项目（Rust open_project_window 建 WebviewWindow，
+ * 新窗口经 ?project= 查询参数启动后自动免对话框打开同一项目） */
 function toggleProjSwitch(ev){
   ev.stopPropagation();
   const dd=$('proj-switch');if(!dd)return;
@@ -2984,7 +2997,7 @@ function toggleProjSwitch(ev){
   if(!opening)return;
   const cur=filePath;
   dd.innerHTML=recentProjects().map(p=>
-    `<div class="recent-row side${p.path===cur?' on':''}" data-path="${escHtml(p.path)}" onclick="pickProjSwitch(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}${p.path===cur?'　✓':''}</span><span class="rc-meta">${escHtml(relTime(p.ts))}</span></div>`).join('')
+    `<div class="recent-row side${p.path===cur?' on':''}" data-path="${escHtml(p.path)}" onclick="pickProjSwitch(this.dataset.path)"><span class="rc-name">${escHtml(p.name)}${p.path===cur?'　✓':''}</span><span style="display:flex;align-items:center;gap:4px"><button class="rc-win" title="在新窗口打开（多项目并行）" onclick="event.stopPropagation();openProjectWindow(this.closest('[data-path]').dataset.path)">⧉</button><span class="rc-meta">${escHtml(relTime(p.ts))}</span></span></div>`).join('')
     ||'<div class="hintbox">暂无可切换的项目——保存或打开 DDP 后出现在这里</div>';
 }
 function pickProjSwitch(path){
