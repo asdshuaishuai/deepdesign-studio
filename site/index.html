@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>deepDesign Studio — AI 原生原型设计 · 唯一事实源</title>
+<meta name="description" content="deepDesign Studio：基于 MoonViz 引擎的 AI 原生原型设计桌面客户端。人类画布与 Agent 共写同一份 .mbt.md 唯一事实源，收尾审查层、同步渲染预览、演示模式手绘批注、DDP 加密分发。" />
+<link rel="icon" type="image/png" href="assets/icon.png" />
+<style>
+:root{
+  --bg:#0e1013;--bg2:#14171c;--panel:#1a1e25;--bd:rgba(255,255,255,.09);
+  --tx:#e7e9ee;--tx2:#a8adb8;--tx3:#6b7280;
+  --acc:#6366f1;--acc2:#0ea5e9;--grad:linear-gradient(135deg,#6366f1,#0ea5e9);
+  --ok:#2f6b4f;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--tx);font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.25);border-radius:5px;padding:1px 6px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+/* ---------- nav ---------- */
+.nav{position:sticky;top:0;z-index:50;background:rgba(14,16,19,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--bd)}
+.nav-in{max-width:1120px;margin:0 auto;padding:0 24px;height:62px;display:flex;align-items:center;gap:26px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15.5px}
+.brand img{width:28px;height:28px;border-radius:7px}
+.brand em{font-style:normal;color:var(--tx3);font-weight:500;margin-left:2px}
+.nav-links{display:flex;gap:20px;margin-left:auto;font-size:13.5px;color:var(--tx2)}
+.nav-links a:hover{color:var(--tx)}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer;border:1px solid transparent;transition:.15s}
+.btn-pri{background:var(--grad);color:#fff}
+.btn-pri:hover{filter:brightness(1.12)}
+.btn-gh{border-color:var(--bd);color:var(--tx2)}
+.btn-gh:hover{border-color:var(--acc);color:var(--tx)}
+/* ---------- hero ---------- */
+.hero{position:relative;overflow:hidden;padding:104px 0 88px;text-align:center;
+  background:radial-gradient(720px 340px at 50% -60px,rgba(99,102,241,.20),transparent 70%),
+             radial-gradient(560px 300px at 82% 18%,rgba(14,165,233,.10),transparent 70%)}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--bd);background:var(--panel);border-radius:99px;padding:6px 15px;font-size:12.5px;color:var(--tx2)}
+.hero-badge b{color:#4ade80;font-weight:600}
+.hero h1{font-size:52px;line-height:1.16;font-weight:800;margin:26px 0 18px;letter-spacing:-.01em}
+.hero h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-sub{font-size:17px;color:var(--tx2);max-width:680px;margin:0 auto}
+.hero-sub code{background:none;border:none;padding:0;color:var(--acc2)}
+.cta{display:flex;gap:14px;justify-content:center;margin-top:34px}
+.cta .btn{padding:12px 26px;font-size:15px;border-radius:11px}
+.btn-dl svg{flex:none}
+.meta-row{display:flex;gap:10px;justify-content:center;margin-top:30px;flex-wrap:wrap}
+.meta-row span{border:1px solid var(--bd);background:var(--bg2);border-radius:8px;padding:5px 13px;font-size:12.5px;color:var(--tx3)}
+/* ---------- sections ---------- */
+section{padding:84px 0}
+.sec-head{text-align:center;max-width:720px;margin:0 auto 52px}
+.sec-head .no{font-size:12px;letter-spacing:.18em;color:var(--acc2);font-weight:700}
+.sec-head h2{font-size:32px;font-weight:800;margin:10px 0 14px;letter-spacing:-.01em}
+.sec-head p{color:var(--tx2);font-size:15px}
+.alt{background:var(--bg2);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)}
+/* features */
+.feat{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.feat .card{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:24px}
+.card .ic{font-size:24px}
+.card h3{font-size:16px;margin:12px 0 8px}
+.card p{font-size:13.5px;color:var(--tx2)}
+.card p strong{color:var(--tx)}
+/* shots */
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.shots figure{background:var(--panel);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.shots img{display:block;width:100%;height:auto}
+.shots figcaption{padding:12px 16px;font-size:12.5px;color:var(--tx3);border-top:1px solid var(--bd)}
+/* arch */
+.arch{display:flex;align-items:stretch;gap:0;justify-content:center;flex-wrap:wrap}
+.arch .node{flex:1;min-width:230px;max-width:330px;background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:20px 22px}
+.arch .node b{display:block;font-size:15px;margin-bottom:6px}
+.arch .node span{font-size:13px;color:var(--tx2)}
+.arch .arr{display:flex;align-items:center;padding:0 14px;color:var(--acc2);font-size:12px;font-weight:600}
+/* usage */
+.usage{max-width:760px;margin:0 auto}
+.usage ol{list-style:none;counter-reset:s;display:grid;gap:14px}
+.usage li{counter-increment:s;background:var(--panel);border:1px solid var(--bd);border-radius:13px;padding:18px 22px 18px 62px;position:relative;font-size:14px;color:var(--tx2)}
+.usage li::before{content:counter(s);position:absolute;left:20px;top:18px;width:28px;height:28px;border-radius:8px;background:var(--grad);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.usage li b{color:var(--tx)}
+/* thanks */
+.spot{background:linear-gradient(135deg,rgba(99,102,241,.13),rgba(14,165,233,.05) 60%);border:1px solid rgba(99,102,241,.4);border-radius:16px;padding:30px 32px;margin-bottom:18px}
+.spot h3{font-size:19px;display:flex;align-items:center;gap:10px}
+.spot p{color:var(--tx2);font-size:14px;margin-top:12px}
+.spot p strong{color:var(--tx)}
+.chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}
+.chips a,.chips span{border:1px solid var(--bd);background:var(--bg);border-radius:8px;padding:4px 12px;font-size:12.5px;color:var(--tx2)}
+.chips a:hover{border-color:var(--acc);color:var(--tx)}
+.thanks{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.thanks .t{background:var(--panel);border:1px solid var(--bd);border-radius:13px;padding:18px}
+.thanks .t b{font-size:14px;display:block}
+.thanks .t small{display:block;color:var(--tx3);font-size:12px;margin-top:6px;line-height:1.6}
+/* footer */
+footer{border-top:1px solid var(--bd);padding:38px 0;text-align:center;color:var(--tx3);font-size:13px}
+footer .links{display:flex;gap:22px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+footer a:hover{color:var(--tx)}
+@media (max-width:900px){
+  .feat,.thanks{grid-template-columns:1fr 1fr}
+  .shots{grid-template-columns:1fr}
+  .hero h1{font-size:38px}
+  .nav-links{display:none}
+}
+@media (max-width:560px){.feat,.thanks{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top"><img src="assets/icon.png" alt="deepDesign" />deepDesign <em>Studio</em></a>
+    <nav class="nav-links">
+      <a href="#features">特性</a>
+      <a href="#shots">截图</a>
+      <a href="#arch">架构</a>
+      <a href="#start">上手</a>
+      <a href="#thanks">开源感谢</a>
+    </nav>
+    <a class="btn btn-gh" href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn btn-pri btn-dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8.75 1.5a.75.75 0 0 0-1.5 0v7.44L4.53 6.22a.75.75 0 0 0-1.06 1.06l4 4a.75.75 0 0 0 1.06 0l4-4a.75.75 0 1 0-1.06-1.06L8.75 8.94V1.5ZM2.5 12.75a.75.75 0 0 1 1.5 0v.5h8v-.5a.75.75 0 0 1 1.5 0v.75a1.25 1.25 0 0 1-1.25 1.25H3.75A1.25 1.25 0 0 1 2.5 13.5v-.75Z"/></svg>
+      Download v0.3.0
+    </a>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero" id="top">
+  <div class="wrap">
+    <span class="hero-badge"><b>●</b> v0.3.0 现已发布 · macOS / Windows</span>
+    <h1>人类与 Agent<br />共写<span class="g">同一份事实源</span></h1>
+    <p class="hero-sub">deepDesign Studio 是 AI 原生原型设计工具的桌面客户端：基于 MoonViz 引擎，
+    人类画布操作与 Agent 修改都经引擎校验后回写同一份 <code>.mbt.md</code> —— 看着设计一步步长出来，产出即验收。</p>
+    <div class="cta">
+      <a class="btn btn-pri btn-dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8.75 1.5a.75.75 0 0 0-1.5 0v7.44L4.53 6.22a.75.75 0 0 0-1.06 1.06l4 4a.75.75 0 0 0 1.06 0l4-4a.75.75 0 1 0-1.06-1.06L8.75 8.94V1.5ZM2.5 12.75a.75.75 0 0 1 1.5 0v.5h8v-.5a.75.75 0 0 1 1.5 0v.75a1.25 1.25 0 0 1-1.25 1.25H3.75A1.25 1.25 0 0 1 2.5 13.5v-.75Z"/></svg>
+        下载 deepDesign Studio
+      </a>
+      <a class="btn btn-gh" href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">查看源码 ↗</a>
+    </div>
+    <div class="meta-row">
+      <span>Tauri 2 · Rust</span><span>MoonViz 引擎 · 100% MoonBit WASM</span><span>OpenAI / Anthropic 双协议</span><span>DDP 加密分发</span><span>MIT 开源</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 特性 ============ -->
+<section id="features" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="no">01 · FEATURES</div>
+      <h2>为「和 AI 一起做设计」而生</h2>
+      <p>不是给聊天框套个画布——Agent 循环、引擎校验、画布渲染在同一个进程里协同。</p>
+    </div>
+    <div class="feat">
+      <div class="card"><div class="ic">🤖</div><h3>进程内 Agent + 收尾审查</h3><p>Rust Agent 循环 × wasmtime 宿主，无 JS 运行时、无子进程桥。OpenAI / Anthropic 双协议，thinking 等级按 8 家厂商方言下发。设计完成后自动进入<strong>三段收尾审查</strong>：需求完整度、操作逻辑连线、综合修复——发现缺口直接补齐。</p></div>
+      <div class="card"><div class="ic">⚡</div><h3>同步渲染预览</h3><p>Agent 执行过程画布<strong>实时可见</strong>：每步变更节流回传渲染上屏，不是等终态的黑盒。事实源仍由终态回灌收口，预览不污染文档。</p></div>
+      <div class="card"><div class="ic">🗂️</div><h3>多项目 · 多窗口</h3><p>最近项目下拉热切换（不重启应用）；每个项目可开独立系统窗口并行编辑，未保存更改按窗口保护；画板支持拖拽移动、自由排布。</p></div>
+      <div class="card"><div class="ic">▶</div><h3>演示模式 + 手绘批注</h3><p>底部操作栏导航、一键隐藏交互热区成真实成品观感、漏接交互的返回钮强制可点。✏ <strong>全画板手绘批注</strong>：马克笔笔迹持久化在 DDP 内，重新打开自动重放、可修改。</p></div>
+      <div class="card"><div class="ic">🧠</div><h3>上下文管理</h3><p>Agent 历史三层裁剪：工具结果整形（剥离冗余校验块）、同源去重、按模型上下文窗口预算——多页长任务成本可控、不丢关键信息。</p></div>
+      <div class="card"><div class="ic">🔐</div><h3>13 家服务商 · DDP 分发</h3><p>DeepSeek / GLM / Kimi / MiniMax 双协议 / StepFun 等，models.dev 快照本地化、离线可用。Argon2id + XChaCha20 加密导出（或免密 DDP2），与 ddpView 查看器回路一致。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 截图 ============ -->
+<section id="shots">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="no">02 · SCREENSHOTS</div>
+      <h2>看一眼就知道</h2>
+    </div>
+    <div class="shots">
+      <figure><img src="assets/editor-dark.png" alt="编辑视图" loading="lazy" /><figcaption>多画板编辑视图：图层树 · 65 组件库 · 属性检查器 · Agent 追踪</figcaption></figure>
+      <figure><img src="assets/demo-ink.png" alt="演示模式手绘批注" loading="lazy" /><figcaption>演示模式 ✏ 手绘批注：马克笔圈点讲解，批注持久化在 DDP</figcaption></figure>
+      <figure><img src="assets/demo-clean.png" alt="隐藏热区的演示观感" loading="lazy" /><figcaption>一键隐藏交互标注：真实成品观感，点击不失效</figcaption></figure>
+      <figure><img src="assets/components.png" alt="AI 组件库" loading="lazy" /><figcaption>内置 65 组件库：分类浏览 · 关键词搜索 · 点击/拖放放置</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 架构 ============ -->
+<section id="arch" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="no">03 · ARCHITECTURE</div>
+      <h2>三层架构 · 一个事实源</h2>
+      <p>Rust 不解释视觉语义——它只做搬运、宿主与加解密；一切设计语义都回到引擎校验。</p>
+    </div>
+    <div class="arch">
+      <div class="node"><b>前端 · 纯静态</b><span>多画板画布 / 65 组件库 / MBT 源码视图 / 演示模式 + 手绘批注 / 多项目多窗口</span></div>
+      <div class="arr">invoke ⇄</div>
+      <div class="node"><b>Rust 后端</b><span>wasmtime 进程内引擎宿主 · Agent 循环 + 收尾审查 · 同步渲染预览 · DDP 加解密</span></div>
+      <div class="arr">wasm 直调</div>
+      <div class="node"><b>MoonViz 引擎</b><span>classic WASM 编译期内嵌 · HumanGate / AgentGate 双门 · canonical 回写 · 零工具链</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 上手 ============ -->
+<section id="start">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="no">04 · QUICK START</div>
+      <h2>四步出活</h2>
+    </div>
+    <div class="usage">
+      <ol>
+        <li><b>起步</b> — 欢迎页选模板，或对底部 Prompt 条直接说需求：Agent 一次生成多页可交互原型，画布实时同步渲染，完成后自动三段审查补缺口。</li>
+        <li><b>编辑</b> — 画板拖拽排布；点选元素改属性；65 个内置组件点击/拖放；「MBT 源码」直接编辑 <code>.mbt.md</code>，校验后即时渲染。</li>
+        <li><b>演示</b> — ⌘4 进入演示模式：底部操作栏导航、一键隐藏热区；✏ 手绘批注圈点讲解，随项目保存、下次打开自动重放。</li>
+        <li><b>分发</b> — ⌘S 导出 DDP（加密或免密）；项目下拉热切换；⧉ 新窗口并行打开多个项目。</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 开源感谢 ============ -->
+<section id="thanks" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="no">05 · ACKNOWLEDGEMENTS</div>
+      <h2>开源感谢</h2>
+      <p>deepDesign 站在开源的肩膀上——而地基里的第一块，是我们自己的引擎。</p>
+    </div>
+
+    <div class="spot">
+      <h3>🌙 重点感谢 · MoonViz — 我们自己的引擎</h3>
+      <p>deepDesign 的每一笔人类画布操作、每一次 Agent 修改，都由 MoonViz 校验回写。<strong>100% MoonBit、零手写 JS</strong>：47 个 Agent 工具走统一文本协议，HumanGate / AgentGate 双门守住设计质量，标准 classic WASM 产物让同一份引擎在 WebView 与 wasmtime 里逐字节一致地运行。<code>.mbt.md</code> 唯一事实源的设计由它定义、被整个生态遵循。没有 MoonViz，就没有 deepDesign。</p>
+      <div class="chips">
+        <a href="https://github.com/asdshuaishuai/moonviz" target="_blank" rel="noopener">asdshuaishuai/moonviz</a>
+        <a href="https://asdshuaishuai.github.io/moonviz/" target="_blank" rel="noopener">引擎官网</a>
+        <span>MIT License</span><span>100% MoonBit</span><span>CLI · MCP · SDK · WASM</span>
+      </div>
+    </div>
+
+    <div class="thanks">
+      <div class="t"><b>🧩 Tauri 2</b><small>桌面应用壳：系统 WebView + Rust 后端，安装包轻量。MIT / Apache-2.0</small></div>
+      <div class="t"><b>⚙️ wasmtime</b><small>Bytecode Alliance 的 WASM 运行时——引擎在 Rust 侧的进程内宿主。Apache-2.0</small></div>
+      <div class="t"><b>🌙 MoonBit</b><small>引擎的编程语言与工具链：类型安全、WASM 优先。moonbitlang</small></div>
+      <div class="t"><b>🦀 tokio · reqwest · serde</b><small>Rust 异步 / HTTP / 序列化基座。MIT / Apache-2.0</small></div>
+      <div class="t"><b>🔐 RustCrypto</b><small>argon2 + chacha20poly1305：DDP 加密容器的密钥派生与认证加密。</small></div>
+      <div class="t"><b>📡 async-openai</b><small>chat-completion 类型层；响应侧保持 raw JSON 以兼容各家网关方言。Apache-2.0</small></div>
+      <div class="t"><b>📊 models.dev</b><small>模型元数据快照来源：端点、上下文窗口与能力标签。MIT</small></div>
+      <div class="t"><b>🤝 开源社区</b><small>所有 issue 反馈与贡献——上游引擎问题直接到 moonviz 仓库提 issue，两边都会跟进。</small></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="links">
+    <a href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest" target="_blank" rel="noopener">下载</a>
+    <a href="https://asdshuaishuai.github.io/moonviz/" target="_blank" rel="noopener">MoonViz 引擎</a>
+    <a href="https://asdshuaishuai.github.io/deeporca-site/" target="_blank" rel="noopener">DeepOrca 生态</a>
+  </div>
+  <div>deepDesign Studio · MIT License · Built with Tauri 2 + MoonViz WASM engine</div>
+</footer>
+
+</body>
+</html>
