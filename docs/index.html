@@ -32,6 +32,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;bac
 .btn-pri:hover{filter:brightness(1.12)}
 .btn-gh{border-color:var(--bd);color:var(--tx2)}
 .btn-gh:hover{border-color:var(--acc);color:var(--tx)}
+.btn-soon{border:1px dashed var(--bd);color:var(--tx3);cursor:default;background:none}
+.btn-soon small{font-size:10px;letter-spacing:.08em;border:1px solid var(--bd);border-radius:5px;padding:1px 6px}
 /* ---------- hero ---------- */
 .hero{position:relative;overflow:hidden;padding:104px 0 88px;text-align:center;
   background:radial-gradient(720px 340px at 50% -60px,rgba(99,102,241,.20),transparent 70%),
@@ -64,7 +66,7 @@ section{padding:84px 0}
 /* shots */
 .shots{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .shots figure{background:var(--panel);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
-.shots img{display:block;width:100%;height:auto}
+.shots img{display:block;width:100%;height:auto;aspect-ratio:3/2;object-fit:cover;object-position:top}
 .shots figcaption{padding:12px 16px;font-size:12.5px;color:var(--tx3);border-top:1px solid var(--bd)}
 /* arch */
 .arch{display:flex;align-items:stretch;gap:0;justify-content:center;flex-wrap:wrap}
@@ -116,26 +118,23 @@ footer a:hover{color:var(--tx)}
       <a href="#thanks">开源感谢</a>
     </nav>
     <a class="btn btn-gh" href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
-    <a class="btn btn-pri btn-dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest" target="_blank" rel="noopener">
-      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8.75 1.5a.75.75 0 0 0-1.5 0v7.44L4.53 6.22a.75.75 0 0 0-1.06 1.06l4 4a.75.75 0 0 0 1.06 0l4-4a.75.75 0 1 0-1.06-1.06L8.75 8.94V1.5ZM2.5 12.75a.75.75 0 0 1 1.5 0v.5h8v-.5a.75.75 0 0 1 1.5 0v.75a1.25 1.25 0 0 1-1.25 1.25H3.75A1.25 1.25 0 0 1 2.5 13.5v-.75Z"/></svg>
-      Download v0.3.0
-    </a>
+    <span class="btn btn-soon btn-dl">Download <small>COMING SOON</small></span>
   </div>
 </header>
 
 <!-- ============ HERO ============ -->
 <section class="hero" id="top">
   <div class="wrap">
-    <span class="hero-badge"><b>●</b> v0.3.0 现已发布 · macOS / Windows</span>
+    <span class="hero-badge"><b>●</b> v0.3.0 · macOS / Windows · 下载即将开放</span>
     <h1>人类与 Agent<br />共写<span class="g">同一份事实源</span></h1>
     <p class="hero-sub">deepDesign Studio 是 AI 原生原型设计工具的桌面客户端：基于 MoonViz 引擎，
     人类画布操作与 Agent 修改都经引擎校验后回写同一份 <code>.mbt.md</code> —— 看着设计一步步长出来，产出即验收。</p>
     <div class="cta">
-      <a class="btn btn-pri btn-dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest" target="_blank" rel="noopener">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8.75 1.5a.75.75 0 0 0-1.5 0v7.44L4.53 6.22a.75.75 0 0 0-1.06 1.06l4 4a.75.75 0 0 0 1.06 0l4-4a.75.75 0 1 0-1.06-1.06L8.75 8.94V1.5ZM2.5 12.75a.75.75 0 0 1 1.5 0v.5h8v-.5a.75.75 0 0 1 1.5 0v.75a1.25 1.25 0 0 1-1.25 1.25H3.75A1.25 1.25 0 0 1 2.5 13.5v-.75Z"/></svg>
-        下载 deepDesign Studio
+      <a class="btn btn-pri btn-dl" href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub 查看源码
       </a>
-      <a class="btn btn-gh" href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">查看源码 ↗</a>
+      <span class="btn btn-soon btn-dl">下载 deepDesign Studio <small>COMING SOON</small></span>
     </div>
     <div class="meta-row">
       <span>Tauri 2 · Rust</span><span>MoonViz 引擎 · 100% MoonBit WASM</span><span>OpenAI / Anthropic 双协议</span><span>DDP 加密分发</span><span>MIT 开源</span>
@@ -173,7 +172,7 @@ footer a:hover{color:var(--tx)}
       <figure><img src="assets/editor-dark.png" alt="编辑视图" loading="lazy" /><figcaption>多画板编辑视图：图层树 · 65 组件库 · 属性检查器 · Agent 追踪</figcaption></figure>
       <figure><img src="assets/demo-ink.png" alt="演示模式手绘批注" loading="lazy" /><figcaption>演示模式 ✏ 手绘批注：马克笔圈点讲解，批注持久化在 DDP</figcaption></figure>
       <figure><img src="assets/demo-clean.png" alt="隐藏热区的演示观感" loading="lazy" /><figcaption>一键隐藏交互标注：真实成品观感，点击不失效</figcaption></figure>
-      <figure><img src="assets/components.png" alt="AI 组件库" loading="lazy" /><figcaption>内置 65 组件库：分类浏览 · 关键词搜索 · 点击/拖放放置</figcaption></figure>
+      <figure><img src="assets/components.png" alt="AI 组件库" loading="lazy" /><figcaption>AI 组件面板：65 个内置组件 · 分类浏览 · 关键词搜索 · 点击/拖放放置</figcaption></figure>
     </div>
   </div>
 </section>
@@ -249,7 +248,7 @@ footer a:hover{color:var(--tx)}
 <footer>
   <div class="links">
     <a href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
-    <a href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest" target="_blank" rel="noopener">下载</a>
+    <a href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
     <a href="https://asdshuaishuai.github.io/moonviz/" target="_blank" rel="noopener">MoonViz 引擎</a>
     <a href="https://asdshuaishuai.github.io/deeporca-site/" target="_blank" rel="noopener">DeepOrca 生态</a>
   </div>
