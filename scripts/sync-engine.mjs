@@ -336,6 +336,7 @@ async function contractProbe(exports, wasmBytes) {
   const listed = JSON.parse(readStr(exports.list_components()));
   if (!Array.isArray(listed) || !listed.length) fail(`list_components 异常：${JSON.stringify(listed).slice(0, 120)}`);
   const dummy = seedDoc('__seed', 390, 844);
+  const gateDebt = [];
   const components = [];
   for (const c of listed) {
     if (!c || typeof c.id !== 'string' || !Array.isArray(c.variants)) {
@@ -346,6 +347,17 @@ async function contractProbe(exports, wasmBytes) {
       writeStr(`place __seed ${c.id} probe_${c.id} - 10 10`),
     )));
     if (r.ok) {
+      // 双门观察（issues #12）：人类门可 place ≠ AgentGate 必放行——但统一探针位置
+      // (10,10) 无法代表每个组件的合法几何（fill 宽组件如 app_bar 在偏移处必触发
+      // contained_in_parent，是探针 artifact 而非组件债），因此只计数警告不 fail。
+      // 真实债务出现时应进 agent.rs 的 AGENT_GATE_DEBT 登记而非这里。
+      const ag = JSON.parse(readStr(exports.apply_agent_op(
+        writeStr(dummy),
+        writeStr(`place __seed ${c.id} probe_${c.id} - 10 10`),
+      )));
+      if (!ag.ok) {
+        gateDebt.push(c.id);
+      }
       if (!COMPONENT_DESCRIPTIONS[c.id]) {
         console.warn(`[sync-engine] 组件 ${c.id} 无本地描述文案（tooltip 将为空）——补 COMPONENT_DESCRIPTIONS`);
       }
@@ -359,7 +371,7 @@ async function contractProbe(exports, wasmBytes) {
     }
   }
   if (!components.length) fail('组件探针全部失败——引擎产物或探针种子有异常');
-  return { components, engineIds };
+  return { components, engineIds, gateDebt };
 }
 
 async function main() {
@@ -403,7 +415,10 @@ async function main() {
   if (exports) {
     // 实例化成功后的探针失败 = 引擎产物回归（输出形状变了/导出缺失/模板漂移），
     // 必须硬失败退出——否则新 wasm 配旧 components.json 静默下游消费
-    const { components, engineIds } = await contractProbe(exports, bytes);
+    const { components, engineIds, gateDebt } = await contractProbe(exports, bytes);
+    if (gateDebt.length) {
+      console.warn(`[sync-engine] ⚠ ${gateDebt.length} 个组件在统一探针位置被 AgentGate 拒（多为 fill 宽组件的位置 artifact）：${gateDebt.join(', ')}——真实债请登记 agent.rs AGENT_GATE_DEBT`);
+    }
     writeFileSync(join(dst, 'components.json'), JSON.stringify(components, null, 2) + '\n');
     manifest = {
       ...manifest,

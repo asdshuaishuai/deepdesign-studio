@@ -34,7 +34,11 @@ async fn camping_real_llm_e2e() {
     let journal = std::sync::Mutex::new(std::io::BufWriter::new(
         std::fs::File::create("/tmp/camping-journal.jsonl").unwrap(),
     ));
+    let events: std::sync::Mutex<Vec<serde_json::Value>> = std::sync::Mutex::new(Vec::new());
     let progress = |mut v: serde_json::Value| {
+        if let Ok(mut ev) = events.lock() {
+            ev.push(v.clone());
+        }
         if let Some(o) = v.as_object_mut() {
             o.insert(
                 "ts".into(),
@@ -111,4 +115,13 @@ async fn camping_real_llm_e2e() {
         Some(&serde_json::json!(true)),
         "终态文档未过引擎校验：{v}"
     );
+    // 终态契约：以 done 事件收尾（真实 run 曾因脚本耗尽断连静默变 error——登记性防线）
+    let journal_events = events.lock().unwrap();
+    if let Some(last) = journal_events.iter().rev().find(|e| e.get("type").and_then(|t| t.as_str()).is_some_and(|t| t != "assistant_text")) {
+        assert_eq!(
+            last.get("type"),
+            Some(&serde_json::json!("done")),
+            "真实 run 未以 done 收尾（尾事件：{last}）"
+        );
+    }
 }

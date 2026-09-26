@@ -28,6 +28,9 @@ fn our_family(base_url: &str) -> &'static str {
 }
 
 /// 已知协议族分歧：快照 npm 家族与我们预设 URL 推断的不一致、且**不改线**的项。
+/// ⚠ 与文末 KNOWN_DIVERGENCES（api 端点轴）是**两条分歧轴**、喂给两个不同检查
+/// （npm 家族比对 / 端点比对）——覆盖同一批 id 是有意的，但新增分歧必须两张表
+/// 同步评估登记，否则任一检查单方面漂移都不红。
 /// 规则（本文件的承诺）：协议族变化意味着请求体改造（Messages vs Chat Completions），
 /// 不是改 URL 的事——必须人工裁决。三条全是"快照说 anthropic、我们仍是 OpenAI wire"，
 /// 切换需请求体层逐模型验证，暂留。

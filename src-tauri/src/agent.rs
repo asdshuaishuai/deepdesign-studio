@@ -70,8 +70,8 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   width_mode=fill & height_mode=fill — content placed later may sit on top of
   a fill-mode node. Nodes with EXPLICIT sizes still must never intersect any
   sibling rect (no_sibling_overlap rejects them): before each place, reserve a
-  non-intersecting slot; run query <ab> to learn actual sizes, then update w/h
-  right after placing.
+  non-intersecting slot; when you know a node's final size, pass [w] [h] inline
+  (place supports trailing width/height — one op, gate sees the final bbox).
 - Tiny precision nodes (battery/status icons, switches) occupy small rects
   inside bars — place them FIRST, then place larger siblings around them.
 - Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
@@ -137,14 +137,18 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   recolors immediately, persists in the document's frontmatter tokens: section, and setting
   the value back to its default removes it.
 - interact triggers: tap long_press swipe_left swipe_right swipe_up swipe_down scroll_end
-  key_enter focus blur. interact actions: back | haptic | navigate_to:<board>
+  key_enter focus blur. interact actions: back | navigate_to:<board>
   | show_toast:<msg> | set_text:<node>:<text> | set_state:<node>:<state>
-  | toggle_state:<node> | play_sound:<name>. Define the state via "state" BEFORE
-  set_state/toggle_state can target it; call set-state only after a state exists.
+  | toggle_state:<node> | haptic | play_sound. NOTE: the demo player currently
+  EXECUTES only back / navigate_to; other actions are document semantics only
+  (wire them when they carry meaning, but do not rely on demo playback).
+  Define the state via "state" BEFORE set_state/toggle_state can target it;
+  call set-state only after a state exists.
 - inspection: read-only commands ARE available on this engine face (routed through the wasm
   session API — they inspect but never commit): list | flows | list-templates | list-components
   | list-tokens | list-themes | lint <ab> | critique <ab> | query <ab> | infer <ab> | spec <ab>
   | missing <ab> | states <ab> | interactions <ab> | export-svg <ab> | export-html | tap <ab> <x> <y>
+  | list-ops (registry of valid mutating op names — check here before inventing syntax)
   | extract-design-system <ab> (color/size token usage analysis with confidence — ground
     theme/token decisions before restyling).
   | benchmark. Use them to ground decisions before mutating (lint catches contrast/touch-target
@@ -319,13 +323,17 @@ fn normalize_anthropic_response(v: &Value) -> Value {
             }
         }
     }
+    // stop_reason 透传（issues #10）：max_tokens 截断对主循环不可见时，半截
+    // tool_use 会被当正常调用、空 content 被当"模型总结了"。
+    let stop_reason = v.get("stop_reason").and_then(|x| x.as_str()).unwrap_or("");
     json!({
         "choices": [{
             "message": {
                 "role": "assistant",
                 "content": text,
                 "tool_calls": tool_calls,
-            }
+            },
+            "finish_reason": stop_reason,
         }]
     })
 }
@@ -480,6 +488,9 @@ struct EngineState<'a> {
     /// 全量渲染），终态据此判断 render 是否已过期、要不要补一次 render_mbt。
     rendered_mbt: Option<String>,
     ops: Vec<String>,
+    /// 成功变更 op 计数——终态信封带出为 revision，前端状态栏 rev 显示与
+    /// runAutoFix 的「无变化」判定都依赖它（终态此前不带 revision，rev 显示被清零）。
+    revision: u64,
 }
 
 fn b64_decode(s: &str) -> Result<String, String> {
@@ -506,6 +517,7 @@ impl<'a> EngineState<'a> {
             last_render: None,
             rendered_mbt: None,
             ops: Vec::new(),
+            revision: 0,
         })
     }
 
@@ -553,6 +565,7 @@ impl<'a> EngineState<'a> {
             self.rendered_mbt = self.mbt.clone();
             self.last_render = Some(r.clone());
             self.ops.push(op.to_string());
+            self.revision += 1;
             return json!({
                 "ok": true, "op": op,
                 "revision": r.get("revision").cloned().unwrap_or(json!(0)),
@@ -624,6 +637,7 @@ impl<'a> EngineState<'a> {
                 }
             }
             self.ops.push(op.to_string());
+            self.revision += 1;
             // L0 整形：export-* 信封化 / 检视类超限截断（失败信封已在内部原样放行）
             return shape_readonly_result(op, r);
         }
@@ -641,6 +655,7 @@ impl<'a> EngineState<'a> {
             }
             self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
             self.ops.push(op.to_string());
+            self.revision += 1;
             let mut out = json!({"ok": true, "op": op});
             if let (Some(o), Some(src)) = (out.as_object_mut(), r.as_object()) {
                 for (k, v) in src {
@@ -663,6 +678,7 @@ impl<'a> EngineState<'a> {
         if r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some() {
             self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
             self.ops.push(op.to_string());
+            self.revision += 1;
             json!({
                 "ok": true, "op": op,
                 "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
@@ -841,8 +857,10 @@ fn supersede_stale_tool_results(messages: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// L2 预算回落值：128K tokens（模型未命中快照时的保守默认）。
-const DEFAULT_CONTEXT_TOKENS: usize = 128 * 1024;
+/// L2 预算回落值：64K tokens（模型未命中快照时的保守默认——快照外模型
+/// 实际窗口未知，按 128K 乐观估算会让 0.7 阈值永不触发、L2 形同虚设；
+/// 64K 下多数真实窗口 ≥ 此值，裁剪偏早好于请求 400）。
+const DEFAULT_CONTEXT_TOKENS: usize = 64 * 1024;
 /// 逐模型上下文窗口（models.json 快照的 limit.context，tokens）。模型名可能带
 /// provider 前缀（"deepseek/xxx"），取末段做**精确**匹配——快照 id 是闭集，
 /// 包含匹配会撞错型号。查不到回落保守默认；查到则设 16K 下限防上游脏数据。
@@ -1299,6 +1317,9 @@ pub async fn run(
             .get("tool_calls")
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
+        // Anthropic 侧 max_tokens 截断（finish_reason=stop_reason 透传）：标记进总结文本，
+        // 不静默——截断的"总结"与半截 tool_use 都曾因不可见而被误当正常回合（issues #10）
+        let truncated = resp.pointer("/choices/0/finish_reason") == Some(&json!("max_tokens"));
 
         // 中间轮的 assistant 文本（计划/说明）进轨迹
         let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
@@ -1327,7 +1348,7 @@ pub async fn run(
                 messages.push(json!({"role": "user", "content": review_prompt(instruction)}));
                 continue;
             }
-            let text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let mut text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if state.mbt.is_none() && state.ops.is_empty() {
                 // 澄清式回复（CLARIFY-FIRST）：文本即 agent 的提问——照常推送轨迹
                 emit("assistant_text", json!({"text": text}));
@@ -1342,6 +1363,9 @@ pub async fn run(
             // 走到这里说明 assistant 已给出自然总结——即便恰在第 MAX_STEPS 轮,
             // 语义是 done;max_turns 只属于循环耗尽仍无总结的路径（循环外兜底）
             let stop = if text.trim().is_empty() && step + 1 >= MAX_STEPS { "max_turns" } else { "done" };
+            if truncated && stop == "done" {
+                text.push_str("\n[输出因 max_tokens 预算被截断——内容可能不完整]");
+            }
             eprintln!("[agent] run end: stop={stop} ops={} text_len={}", state.ops.len(), text.len());
             emit("assistant_text", json!({"text": text}));
             emit("done", json!({"stopReason": stop, "ops": state.ops.len()}));
@@ -1350,6 +1374,7 @@ pub async fn run(
                 "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
                 "render": state.last_render.clone(),
                 "ops": state.ops,
+                "revision": state.revision,
                 "stopReason": stop,
                 "text": text,
             });
@@ -1443,6 +1468,7 @@ async fn finish_partial(state: &mut EngineState<'_>, error: &str) -> Value {
         "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
         "render": state.last_render.clone(),
         "ops": state.ops,
+        "revision": state.revision,
         "stopReason": "error",
         "text": "",
     })
@@ -2047,7 +2073,7 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             .filter_map(|t| t.get("id").and_then(|v| v.as_str()).map(String::from))
             .collect();
         assert!(!ids.is_empty());
-        const AGENT_GATE_DEBT: [&str; 0] = [];
+        const AGENT_GATE_DEBT: &[&str] = &[];
         for id in &ids {
             let seed = seed_doc(SEED_BOARD, 24, 24);
             let human = ENGINE

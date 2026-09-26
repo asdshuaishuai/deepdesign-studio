@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2/capability",
   "identifier": "default",
-  "description": "主窗口最小权限：自绘标题栏窗口面 + 窗口标题随项目名同步 + agent 实时轨迹的事件监听。自定义命令不经 ACL。",
-  "windows": ["main"],
+  "description": "主窗口与多项目窗口（proj-*）最小权限：自绘标题栏窗口面 + 窗口标题随项目名同步 + agent 实时轨迹/关窗确认的事件监听。自定义命令不经 ACL。",
+  "windows": ["main", "proj-*"],
   "permissions": [
     "core:window:allow-start-dragging",
     "core:window:allow-minimize",

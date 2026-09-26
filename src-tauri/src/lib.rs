@@ -115,27 +115,29 @@ async fn open_ddp(
 }
 
 /// 扫描工作区目录中的 .ddp 项目文件，返回元数据列表（多项目切换器数据源）。
+/// 目录不存在/不可读必须报错而非返回空表——前端用扫描结果对账最近项目，
+/// 静默空表会把「移动盘未挂载」洗成「项目全没了」并落盘清空注册表。
 #[tauri::command]
 fn list_ddp_projects(dir: String) -> Result<serde_json::Value, String> {
     let dir_path = PathBuf::from(dir.trim());
     if !dir_path.is_dir() {
-        return Ok(serde_json::json!({"ok": true, "projects": []}));
+        return Err(format!("dir_not_found:{}", dir_path.display()));
     }
     let mut projects = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir_path) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let p = entry.path();
-            if p.extension().map(|x| x == "ddp").unwrap_or(false) {
-                let meta = entry.metadata().ok();
-                projects.push(serde_json::json!({
-                    "file": p.file_name().unwrap_or_default().to_string_lossy(),
-                    "path": p.display().to_string(),
-                    "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
-                    "modified": meta.as_ref().and_then(|m| m.modified().ok())
-                        .map(|t| t.duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs() as i64).unwrap_or(0)).unwrap_or(0),
-                }));
-            }
+    let entries = std::fs::read_dir(&dir_path)
+        .map_err(|e| format!("dir_read_failed:{}:{e}", dir_path.display()))?;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let p = entry.path();
+        if p.extension().map(|x| x == "ddp").unwrap_or(false) {
+            let meta = entry.metadata().ok();
+            projects.push(serde_json::json!({
+                "file": p.file_name().unwrap_or_default().to_string_lossy(),
+                "path": p.display().to_string(),
+                "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                "modified": meta.as_ref().and_then(|m| m.modified().ok())
+                    .map(|t| t.duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64).unwrap_or(0)).unwrap_or(0),
+            }));
         }
     }
     projects.sort_by(|a, b| {
@@ -331,7 +333,9 @@ pub fn run() {
                 if dirty {
                     api.prevent_close();
                     use tauri::Emitter as _;
-                    let _ = window.emit("app-close-request", ());
+                    if let Err(e) = window.emit("app-close-request", ()) {
+                        eprintln!("[app] app-close-request 投递失败（脏文档确认可能不弹）: {e}");
+                    }
                 }
             }
         })
@@ -369,9 +373,10 @@ pub fn run() {
                 .cloned()
                 .or_else(|| app.get_webview_window("main"));
             if let Some(win) = target {
+                // serde_json 字符串编码保证合法 JS 字面量（{:?} 的 \u{…} 转义在 JS 里非法）
+                let lit = serde_json::to_string(&id).unwrap_or_else(|_| "\"unknown\"".into());
                 let _ = win.eval(format!(
-                    "if(typeof nativeMenuAction==='function')nativeMenuAction({:?})",
-                    id
+                    "if(typeof nativeMenuAction==='function')nativeMenuAction({lit})"
                 ));
             }
         })
@@ -479,7 +484,9 @@ async fn invoke_fx_sdk(
             obj.insert("run".into(), serde_json::json!(run_id));
             obj.insert("ts".into(), serde_json::json!(now_ms()));
         }
-        let _ = emitter.emit_to(target_label.as_str(), "agent-event", &v);
+        if let Err(e) = emitter.emit_to(target_label.as_str(), "agent-event", &v) {
+            eprintln!("[agent] agent-event 投递失败（{target_label}）: {e}");
+        }
         if let (Some(dir), Some(file)) = (&cb_journal, &cb_file) {
             journal_append(dir, file, &v);
         }

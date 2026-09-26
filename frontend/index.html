@@ -844,7 +844,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         <button class="ctool" data-tool="link" title="连接交互（先点源按钮，再点目标画板）"><svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/></svg></button>
         <div style="width:1px;height:16px;background:rgba(0,0,0,.1);margin:0 3px"></div>
         <button class="ctool magic" onclick="runAutoFix()" title="AI 自动修复（引擎 fix）"><svg class="ic" viewBox="0 0 24 24"><path d="M15 4V2M15 10V8M11.5 6.5H9.5M20.5 6.5h-2M17.7 3.8l-1.4 1.4M17.7 9.2l-1.4-1.4M12.3 3.8l1.4 1.4M12.3 9.2l1.4-1.4"/><path d="M4 20l5-1 9-9-4-4-9 9z"/></svg></button>
-        <button class="ctool" onclick="zoomReset()" title="适配窗口"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+        <button class="ctool" onclick="zoomFit()" title="适配窗口"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
       <div class="czoom">
         <button onclick="zoomOut()"><svg class="ic" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
@@ -1120,7 +1120,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 
 <script>
 'use strict';
-const APP_VER='6.0';
+const APP_VER='0.3.0';
 let agentThread={pending:null}; // agent 澄清上下文（提问 → 用户回答 → 续跑）；置于测试切片起点
 const IS_TAURI=!!(window.__TAURI__&&window.__TAURI__.core);
 const IS_WIN=/Win/i.test(navigator.platform||navigator.userAgent);
@@ -1160,14 +1160,14 @@ function winCtl(action){
 function toggleFileMenu(ev){if(ev)ev.stopPropagation();const pop=$('fmenu-pop');const opening=!pop.classList.contains('open');pop.classList.toggle('open');if(opening)renderRecentRows($('fm-recents'));}
 function fmAct(fn){$('fmenu-pop').classList.remove('open');if(typeof window[fn]==='function')window[fn]();}
 document.addEventListener('click',ev=>{const pop=$('fmenu-pop');if(pop&&pop.classList.contains('open')&&!ev.target.closest('.fmenu-wrap'))pop.classList.remove('open');});
-let baseCmd='',opCmds=[];
+let baseCmd='';
 let nodes=[],selected=null;
-let zoom=1,scale=1;
+let zoom=1;
 let currentW=390,currentH=844;
-let flows=[],sessions={},active='',filePath='',placing=0,placeMode=null;
-let studioFlows=[]; // Legacy migration cache only; canonical flow state now lives in mbtText.
+let flows=[],sessions={},active='',filePath='',placing=0;
 let mbtText='',mbtRevision=0,declDraftDirty=false;
 let projectDirty=false,fileLabelName='';
+let viewEpoch=0; // 项目状态代币：真实变更 +1；过期 agent 预览落地前比对丢弃（防显示失步）
 let ddpSessionPassword=''; // 会话级：仅记住本次打开/导出所用口令，供原地保存复用；不持久化
 let ddpPasswordByPath={}; // 会话级 per-path 口令映射：最近项目免对话框切换时先试后问（不持久化明文）
 /* 脏 = 内容脏（applyMbtResult 变更）∨ 源码草稿脏（decl-text 未提交编辑）——
@@ -1190,7 +1190,6 @@ let inkPaths=[],inkCur=null,inkCv=null,inkCtx=null;
  * 引擎 canonical 往返会丢弃未知注释/键（真机实证），批注以「引擎 canonical + 前端批注块」
  * 合成：mbtText 恒为 inject(canonical)——引擎每次回写后 applyMbtResult 重新注入，
  * DDP 落盘/打开自然带批注；批注块是合法 markdown，引擎工具链忽略它（accept 已验证）。 */
-const INK_MARK='deepdesign:ink';
 function inkSerialize(){
   if(!inkPaths.length)return null;
   const pts=inkPaths.filter(p=>p.length>1).map(p=>p.map(q=>[Math.round(q.x*10000)/10000,Math.round(q.y*10000)/10000]));
@@ -1225,7 +1224,7 @@ function inkRestore(mbt){
   }catch(_){return false;}
 }
 
-function syncDirtyRemote(){if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_project_dirty',{dirty:projectDirty||declDraftDirty}).catch(()=>{});}
+function syncDirtyRemote(){if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_project_dirty',{dirty:projectDirty||declDraftDirty}).catch(e=>console.warn('[dirty] Rust 脏态同步失败:',e));}
 let projectQueue=Promise.resolve();
 function serializeProject(task){const pending=projectQueue.then(task);projectQueue=pending.catch(()=>{});return pending;}
 let toolMode='select',mode='wireframe',playStack=[],currentSvg='';
@@ -1485,12 +1484,12 @@ function mbtResult(result){
 }
 function applyMbtResult(result,{reset=false,acceptDraft=false,preview=false}={}){
   if(!result||result.ok!==true||!result.mbt)throw new Error('引擎未返回 canonical .mbt.md');
-  if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;placeMode=null;playStack=[];}
+  if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;playStack=[];}
   // preview=true（Agent 运行中同步渲染预览）：只更新画布渲染——
   // 不写 mbtText/不置脏/不进撤销/不注批注（事实源与 rebase 基线由终态回灌收口）
   const canonical=preview?result.mbt:inkInject(result.mbt);
   const changed=mbtText!==canonical;
-  if(!preview){mbtText=canonical;mbtRevision=Number(result.revision)||0;}
+  if(!preview){mbtText=canonical;mbtRevision=Number(result.revision)||0;viewEpoch++;}
   if(changed&&!preview){
     projectDirty=true;syncFileLabel();syncDirtyRemote();
     if(!histApplying)histCommit(active);
@@ -1498,29 +1497,31 @@ function applyMbtResult(result,{reset=false,acceptDraft=false,preview=false}={})
   const decl=$('decl-text');if(reset||acceptDraft){declDraftDirty=false;syncDirtyRemote();}if(decl&&!declDraftDirty&&!preview)decl.value=mbtText;if(typeof renderDeclHighlight==='function')renderDeclHighlight();
   const next={};
   for(const art of result.artboards||[]){
-    next[art.id]={baseCmd:'__mbt__',w:Math.round(art.width||390),h:Math.round(art.height||844),ops:[],svg:art.svg||'',nodes:art.nodes||[]};
+    next[art.id]={w:Math.round(art.width||390),h:Math.round(art.height||844),ops:[],svg:art.svg||'',nodes:art.nodes||[]};
   }
-  sessions=next;if(!preview)flows=Array.isArray(result.flows)?result.flows:[];studioFlows=flows.slice();
+  sessions=next;if(!preview)flows=Array.isArray(result.flows)?result.flows:[];
   active=(!reset&&sessions[active])?active:((result.entry&&sessions[result.entry])?result.entry:(Object.keys(sessions)[0]||''));
   const current=sessions[active];
-  baseCmd=current?'__mbt__':'';opCmds=[];currentW=current?current.w:390;currentH=current?current.h:844;
+  baseCmd=current?'__mbt__':'';currentW=current?current.w:390;currentH=current?current.h:844;
   currentSvg=current?current.svg:'';nodes=current?current.nodes:[];selected=(!reset&&nodes.some(n=>n.id===selected))?selected:null;
   renderStage();renderAbs();if(!preview)renderFlows();renderInspector();renderLayersIfOpen();requestAnimationFrame(updateSel);
   $('tail-artboard').textContent=active||'未打开画板';
   $('tail-info').textContent=current?`${current.w} × ${current.h}`:'';
   if(!preview)setStatus('', '', true, '');
 }
-/* Agent 运行中同步渲染预览：节流 900ms，防高频 wasm 渲染卡顿 */
-let previewTimer=0,pendingPreviewB64=null;
+/* Agent 运行中同步渲染预览：节流 900ms，防高频 wasm 渲染卡顿。
+ * viewEpoch 竞态守卫：人类 op 推进项目状态（applyMbtResult 非 preview 路径）时 bump，
+ * 调度时与落地前各比对一次——被更早调度的陈旧预览不得覆盖较新的画布显示。 */
+let previewTimer=0,pendingPreviewB64=null,pendingPreviewEpoch=0;
 function schedulePreview(b64){
-  pendingPreviewB64=b64;
+  pendingPreviewB64=b64;pendingPreviewEpoch=viewEpoch;
   if(previewTimer)return;
-  previewTimer=setTimeout(()=>{previewTimer=0;const b=pendingPreviewB64;pendingPreviewB64=null;if(b)paintPreview(b);},900);
+  previewTimer=setTimeout(()=>{previewTimer=0;const b=pendingPreviewB64;const ep=pendingPreviewEpoch;pendingPreviewB64=null;if(b&&ep===viewEpoch)paintPreview(b,ep);},900);
 }
-async function paintPreview(b64){
+async function paintPreview(b64,epoch){
   try{
     const r=await engRender(b64ToUtf8(b64));
-    if(!mbtResult(r))return;
+    if(!mbtResult(r)||(epoch!==undefined&&epoch!==viewEpoch))return;
     applyMbtResult(r,{preview:true});
   }catch(_){ }
 }
@@ -1623,11 +1624,11 @@ function renderStage(){
     const body=$('fb-'+id);
     const sourceSvg=isActive?currentSvg:(sess.svg||'');
     if(sourceSvg){
-      body.innerHTML=sourceSvg.replace('<svg ','<svg preserveAspectRatio="xMidYMid meet" ');
+      body.innerHTML=sanitizeSvg(sourceSvg).replace('<svg ','<svg preserveAspectRatio="xMidYMid meet" ');
       const svg=body.querySelector('svg');
       if(svg){svg.style.width='100%';svg.style.height='100%';}
       // 交互逻辑标注：给带 flow 触发的按钮组挂 data-flow-trigger（绿虚线常显）
-      const fgraph=studioFlows.length?studioFlows:flows;
+      const fgraph=flows;
       const flinked=new Set(fgraph.filter(x=>x.from===id).map(x=>(x.trigger||'').replace('tap:','')));
       if(flinked.size&&svg)svg.querySelectorAll('g[id^="n_"]').forEach(g=>{
         if(flinked.has(g.id.slice(2)))g.setAttribute('data-flow-trigger','');
@@ -1657,7 +1658,7 @@ function flowTriggerLabel(f){
 function renderFlowWires(stage){
   const old=stage.querySelector('.flow-wires');
   if(old)old.remove();
-  const graph=studioFlows.length?studioFlows:flows;
+  const graph=flows;
   if(!graph.length)return;
   const wire=document.createElementNS('http://www.w3.org/2000/svg','svg');
   wire.classList.add('flow-wires');
@@ -1710,6 +1711,18 @@ function escapeCss(v){return String(v).replace(/[^a-zA-Z0-9_-]/g,'_');}
 const escHtml=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 // 属性上下文专用：input value="..." 里只需引号与 &（<> 在属性值内无害但一并转更稳）
 const escAttr=v=>String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+/* 引擎 SVG 直灌 innerHTML 前的消毒（issues #33）：
+ * 节点 id 是不可信字符串（引擎 sanitize_id 不覆盖节点，AGENTS.md 已登记），
+ * `place … 'x"><img onerror=…>'` 会以裸双引号出现在属性值里突破引号。
+ * 合法引擎产物的属性值不含裸引号——把属性值内的 " 归一为 &quot; 是幂等消毒；
+ * 另剥 <script> 块与 on* 事件属性（引擎不产出，出现即注入特征）。 */
+function sanitizeSvg(svg){
+  let s=String(svg||'');
+  s=s.replace(/<script[\s\S]*?<\/script\s*>/gi,'');
+  s=s.replace(/(\s)(on\w+)=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'$1');
+  s=s.replace(/([a-zA-Z-]+)="([^"]*)"/g,(m,k,v)=>v.includes('"')?`${k}="${v.replace(/"/g,'&quot;')}"`:m);
+  return s;
+}
 
 /* 连接模式优先级高于 Frame 切换：捕获阶段截断普通 onclick */
 function bindFlowTargetCapture(){
@@ -1749,8 +1762,8 @@ async function createFlow(from,to,node){
 
 async function switchSession(id){
   const s=sessions[id];if(!s||id===active)return;
-  active=id;baseCmd=s.baseCmd;currentW=s.w;currentH=s.h;
-  opCmds=mbtText?[]:s.ops.slice();currentSvg=s.svg||'';nodes=s.nodes||[];selected=null;closeAgentPop();  // 渲染缺失回退空,不沿用上一画板
+  active=id;baseCmd='__mbt__';currentW=s.w;currentH=s.h;
+  currentSvg=s.svg||'';nodes=s.nodes||[];selected=null;closeAgentPop();  // 渲染缺失回退空,不沿用上一画板
   setStatus('human',`切换到 ${id}`,true,'');
   await refresh();
   if(mode==='decl')loadDeclMain();
@@ -1865,7 +1878,7 @@ const nodeOf=id=>nodes.find(n=>n.id===id);
 function activeDisplayScale(){
   const body=document.querySelector('.frame-wrap.active .frame-body');
   const sess=sessions[active];
-  return body&&sess&&sess.w ? body.getBoundingClientRect().width/sess.w : (scale||1);
+  return body&&sess&&sess.w ? body.getBoundingClientRect().width/sess.w : 1;
 }
 function onDown(e){
   if(mode==='play')return;
@@ -2065,7 +2078,7 @@ function canvasMenu(x,y){
     {label:'✓ 校验并渲染',action:()=>validateMbt()},
     {label:'▶ 演示模式',kbd:'⌘4',action:()=>setMode('play')},
     '-',
-    {label:'⛶ 适配窗口',kbd:'⌘0',action:()=>zoomReset()},
+    {label:'⛶ 适配窗口',kbd:'⌘0',action:()=>zoomFit()},
   ]);
 }
 function artboardMenu(x,y,id){
@@ -2080,6 +2093,7 @@ function artboardMenu(x,y,id){
 }
 async function deleteBoard(id){
   if(Object.keys(sessions).length<=1){toast('至少保留一个画板');return;}
+  if(!confirm(`删除画板 ${id}？（⌘Z 可撤销）`))return;
   const ok=await runOp(`delete-artboard ${id}`,'human');
   if(ok){toast(`画板 ${id} 已删除`);}
 }
@@ -2089,7 +2103,7 @@ function declMenu(x,y){
     {label:'⧉ 复制源码',action:()=>{navigator.clipboard.writeText($('decl-text').value).then(()=>toast('已复制完整 .mbt.md'));}},
     '-',
     {label:'✓ 校验并渲染',action:()=>validateMbt()},
-    {label:'🗑 清空编辑器',danger:true,action:()=>{$('decl-text').value='';declDraftDirty=true;renderDeclHighlight();$('decl-text').focus();}},
+    {label:'🗑 清空编辑器',danger:true,action:()=>{$('decl-text').value='';declDraftDirty=true;syncFileLabel();syncDirtyRemote();renderDeclHighlight();$('decl-text').focus();}},
   ]);
 }
 function startInlineEdit(nid,x,y){
@@ -2141,7 +2155,7 @@ function nativeMenuAction(id){
     'view-hifi':()=>setMode('hifi'),
     'view-decl':()=>setMode('decl'),
     'view-play':()=>setMode('play'),
-    'view-fit':()=>zoomReset(),
+    'view-fit':()=>zoomFit(),
     'board-new':()=>createBlank(),
     'board-dup':()=>duplicateActiveBoard(),
     'autofix':()=>runAutoFix(),
@@ -2197,7 +2211,7 @@ document.addEventListener('keydown',async e=>{
       '2':()=>setMode('hifi'),
       '3':()=>setMode('decl'),
       '4':()=>setMode('play'),
-      '0':()=>zoomReset(),
+      '0':()=>zoomFit(),
       '/':()=>openShortcuts(),
       ',':()=>openSettings(),
     }[k];
@@ -2211,7 +2225,11 @@ document.addEventListener('keydown',async e=>{
     if(btn){e.preventDefault();btn.click();}
     return;
   }
-  if(e.key==='Escape'&&(placeMode||linkSource)){placeMode=null;linkSource=null;$('canvas-scroll').classList.remove('placing','linking');$('canvas-hint').textContent='选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流';return;}
+  if(e.key==='Escape'&&linkSource){linkSource=null;$('canvas-scroll').classList.remove('placing','linking');$('canvas-hint').textContent='选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流';return;}
+  /* ⇧⌘⌫ / ⇧⌘Backspace 删除活动画板（画板菜单 kbd 承诺的键位，双平台统一绑定） */
+  if((e.metaKey||e.ctrlKey)&&e.shiftKey&&(e.key==='Backspace'||e.key==='Delete')){
+    e.preventDefault();if(active)deleteBoard(active);return;
+  }
   if(e.key.startsWith('Arrow')&&selected){
     e.preventDefault();
     const n=nodeOf(selected);if(!n)return;
@@ -2256,6 +2274,7 @@ async function sendAgent(){
     const ctx=agentThread.pending
       ? `${base}\n\n[Agent 上一轮的提问]: ${agentThread.pending}\n\n[用户已回答]: 请基于回答继续执行（直接操作，不要再次追问）。`
       : base;
+    const startMbt=mbtText; // run 起点快照：rebase 比对基准（askFxSdk 期间无人类 op 进队列）
     const r=await askFxSdk(ctx);
     if(!r.ops.length){
       if(r.text&&r.text.trim()){
@@ -2270,20 +2289,22 @@ async function sendAgent(){
       $('ap-send').disabled=false;agentBusy=false;return;
     }
     agentThread.pending=null;
-    // 已提交工作不得丢:render 缺失时从 mbt_b64 的 canonical 重渲染兜底
-    if(r.render){
-      try{await serializeProject(()=>applyMbtResult(r.render));}catch(e){res.style.display='block';res.className='ap-result err';res.textContent='应用渲染结果失败：'+String(e).slice(0,80);$('ap-send').disabled=false;agentBusy=false;return;}
-    }else if(r.mbt_b64){
-      const src=b64ToUtf8(r.mbt_b64);
-      // 直写 mbtText 绕过 applyMbtResult 的脏逻辑——agent 已提交的工作必须显式置脏
-      await serializeProject(async()=>{mbtText=inkInject(src);projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();});
-    }
+    // 已提交工作不得丢：与 runGlobalPrompt 共用终态回灌（rebase + render 兜底）——
+    // 行内 Agent 此前无同款保护，同一条丢失更新路径只堵一个入口等于没堵（issues #8）
+    await applyAgentTerminal(r,startMbt);
     res.style.display='block';res.className='ap-result ok';
     const cut=r.stopReason==='max_turns'?'（已达步数上限）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
     res.textContent=`已通过 MoonViz 提交 ${r.ops.length} 条变更${cut}${r.text?' — '+String(r.text).slice(0,120):''}`;
     trackAgent(text,r.ops);
     $('ap-send').disabled=false;$('ap-input').value='';
   }catch(err){
+    // agent_no_mbt 且带模型提问原文 → 走澄清流而不是报错（提问文本见 askFxSdk）
+    if(err&&err.clarifyText){
+      agentThread.pending=err.clarifyText;
+      res.style.display='block';res.className='ap-result ok';res.style.whiteSpace='pre-wrap';
+      res.textContent='🤖 '+err.clarifyText+'\n\n— 在下方输入回答后再次发送，Agent 会结合回答继续';
+      $('ap-send').disabled=false;agentBusy=false;return;
+    }
     const msg=String(err);
     res.style.display='block';res.className='ap-result err';
     res.textContent=msg.includes('api_key_missing')?'未配置 AI 端点：请到 设置 ▸ AI 端点 填入 Base URL 与 Token':('Agent 不可用：'+msg.slice(0,120));
@@ -2338,7 +2359,7 @@ function traceOpen(runId,label,continuation){
         }
         if(p.type==='done'){appendTraceLine(box,`■ 完成（${p.ops} ops · ${p.stopReason}）`,'tl-done');return;}
         if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
-      }).then(u=>{TRACE.un=u;}).catch(()=>{});
+      }).then(u=>{TRACE.un=u;}).catch(e=>console.warn('[trace] agent-event 监听注册失败（本窗口轨迹将空白）:',e));
       return;
     }
   }
@@ -2366,7 +2387,7 @@ function traceOpen(runId,label,continuation){
     if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
     if(p.type==='review'){appendTraceLine(box,'🔎 收尾审查：需求完整度 · 连线完整度 · 综合修复','tl-assist');return;}
     if(p.type==='preview'){schedulePreview(p.mbt_b64);return;}
-  }).then(u=>{TRACE.un=u;}).catch(()=>{});
+  }).then(u=>{TRACE.un=u;}).catch(e=>console.warn('[trace] agent-event 监听注册失败（本窗口轨迹将空白）:',e));
 }
 function appendTraceLine(box,text,cls,id){
   const d=document.createElement('div');
@@ -2502,32 +2523,7 @@ async function runGlobalPrompt(){
       trackAgent(t,[],false);
       return true;
     }
-    if(r.mbt_b64){
-      // 必须经 serializeProject 进 projectQueue:askFxSdk 是队列外的秒级长调用,
-      // 期间排队的人类 op 会与这里交错——裸 applyMbtResult 会覆盖丢更新
-      await serializeProject(async()=>{
-        // 终态 rebase（docs/agent-rebase.md 方案 C）：队列时点的一致快照里发现画布
-        // 已被人类编辑推进（mbtText≠run 起点）→ 把 run 的变更 op 流重放到最新
-        // canonical（门拒绝即跳过），保住人类编辑；未推进走原快路径。
-        // r.render 与 run 终态文档配对——rebase 后必须作废，从 rebased 源重渲染。
-        let src=b64ToUtf8(r.mbt_b64),render=r.render;
-        if(IS_TAURI&&mbtText!==startMbt&&r.ops&&r.ops.length){
-          try{
-            const rb=await window.__TAURI__.core.invoke('rebase_agent_ops',{latestMbtB64:utf8ToB64(mbtText),ops:r.ops});
-            if(rb&&rb.ok&&rb.mbt_b64){
-              src=b64ToUtf8(rb.mbt_b64);render=null;
-              if(rb.skipped&&rb.skipped.length)toast(`Rebase：${rb.skipped.length} 条 agent 操作因画布已被编辑而跳过`);
-            }
-          }catch(err){toast('Rebase 失败，回退整体回灌：'+String(err).slice(0,60));}
-        }
-        if(render){
-          applyMbtResult({ok:true,mbt:src,entry:render.entry,artboards:render.artboards,flows:render.flows,revision:render.revision});
-        }else{
-          // 桥异常未带 render（或 rebase 后 render 作废）：直接从 canonical 源重渲染兜底
-          mbtText=inkInject(src);projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
-        }
-      });
-    }
+    await applyAgentTerminal(r,startMbt);
     trackAgent(t,r.ops);
     const cut=r.stopReason==='max_turns'?'（已达步数上限，结果可能不完整）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
     toast(`AI 已提交 ${r.ops.length} 条操作${cut}`);
@@ -2538,6 +2534,35 @@ async function runGlobalPrompt(){
   }finally{
     agentBusy=false;if($('gp-send'))$('gp-send').disabled=false;
   }
+}
+/* Agent 终态回灌（docs/agent-rebase.md 方案 C）——两个 Agent 入口共用：
+ * runGlobalPrompt 与 sendAgent 各自传 run 起点快照 startMbt。只堵一个入口
+ * 等于没堵（issues #8）：行内 Agent 同样需要 rebase 保护。
+ * 必须经 serializeProject 进 projectQueue:askFxSdk 是队列外的秒级长调用,
+ * 期间排队的人类 op 会与这里交错——裸 applyMbtResult 会覆盖丢更新。 */
+async function applyAgentTerminal(r,startMbt){
+  if(!r.mbt_b64)return;
+  await serializeProject(async()=>{
+    // 终态 rebase：队列时点的一致快照里发现画布已被人类编辑推进（mbtText≠run 起点）
+    // → 把 run 的变更 op 流重放到最新 canonical（门拒绝即跳过），保住人类编辑；
+    // 未推进走原快路径。r.render 与 run 终态文档配对——rebase 后必须作废，从 rebased 源重渲染。
+    let src=b64ToUtf8(r.mbt_b64),render=r.render;
+    if(IS_TAURI&&mbtText!==startMbt&&r.ops&&r.ops.length){
+      try{
+        const rb=await window.__TAURI__.core.invoke('rebase_agent_ops',{latestMbtB64:utf8ToB64(mbtText),ops:r.ops});
+        if(rb&&rb.ok&&rb.mbt_b64){
+          src=b64ToUtf8(rb.mbt_b64);render=null;
+          if(rb.skipped&&rb.skipped.length)toast(`Rebase：${rb.skipped.length} 条 agent 操作因画布已被编辑而跳过`);
+        }
+      }catch(err){toast('Rebase 失败，回退整体回灌：'+String(err).slice(0,60));}
+    }
+    if(render){
+      applyMbtResult({ok:true,mbt:src,entry:render.entry,artboards:render.artboards,flows:render.flows,revision:r.revision||render.revision});
+    }else{
+      // 桥异常未带 render（或 rebase 后 render 作废）：直接从 canonical 源重渲染兜底
+      mbtText=inkInject(src);projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
+    }
+  });
 }
 function usePrompt(t){$('gp-input').value=t;runGlobalPrompt();}
 
@@ -2606,12 +2631,16 @@ async function validateMbtNow(){
   if(!text.trim()){toast('先创建画板或打开 DDP');return;}
   try{
     // 整篇提交：wasm 面无 apply-agent-mbt-b64 等价导出，以 validate（结构）+ render
-    //（AgentGate 级重建）替代；视觉债的硬拒绝语义待引擎补 commit 导出后恢复
+    //（AgentGate 级重建）替代；视觉债的硬拒绝语义待引擎补 commit 导出后恢复。
+    // 诚实化：结构通过 ≠ 无债——顺手跑 session lint 把视觉债数量亮给用户，不给假绿灯。
     const check=await engValidate(text);
     if(!check.ok){toast('MBT 校验失败：'+String(check.error||'unknown').slice(0,80));return;}
     const result=await engRender(text);
     if(!mbtResult(result)){toast('MBT 渲染失败：'+String(result&&result.error||'unknown').slice(0,80));return;}
-    applyMbtResult(result,{acceptDraft:$('decl-text').value===text});toast('MBT 已校验并由引擎重新渲染');setStatus('agent','校验并渲染 ✓',true,'');
+    let debtNote='';
+    try{const l=await ENGINE.call('session_lint',text,active||'');const n=l&&l.data&&Array.isArray(l.data)?l.data.length:0;
+      if(n)debtNote=`（${n} 项视觉债——「校验并渲染」只验结构，AgentGate 级清偿请用 ⌘F 自动修复）`;}catch(_){ }
+    applyMbtResult(result,{acceptDraft:$('decl-text').value===text});toast('MBT 已校验并由引擎重新渲染'+debtNote);setStatus('agent','校验并渲染 ✓',true,'');
   }catch(err){toast('MBT 校验失败：'+String(err).slice(0,80));}
 }
 /* ---------- 组件库 ---------- */
@@ -2739,7 +2768,7 @@ function renderCompTree(filter){
         if(suppressComponentClick){suppressComponentClick=false;return;}
         if(!baseCmd){toast('先创建画板');return;}
         placing++;
-        runOp(`place ${active} ${c.id} ${c.id}_${placing} - 60 ${120+placing*60}`,'agent')
+        runOp(`place ${active} ${c.id} ${c.id}_${placing} - 60 ${120+placing*60}`,'human')
           .then(ok=>{if(ok)trackAgent(`放置组件 ${c.id}`,[`place ${active} ${c.id}`]);});
       };
       // Pointer 拖拽：不依赖 HTML5 drag/drop，在 WKWebView 与浏览器一致
@@ -2948,7 +2977,7 @@ async function loadIxList(){
   if(!r.data||!r.data.length){box.innerHTML='<div class="ix-empty">本画板暂无交互绑定 — 检查器上方绑定后在此可见</div>';return;}
   // 引擎 tap 解析顺序 flow → marker：同节点既有 flow 边又有 interact 标记时，
   // 演示只走 flow、marker 永不触发——如实标注，消除「绑了但不响」的困惑
-  const graph=studioFlows.length?studioFlows:flows;
+  const graph=flows;
   box.innerHTML=r.data.map(x=>{
     const shadowed=graph.some(f=>f.from===active&&f.trigger==='tap:'+x.node);
     return `<div class="ix-empty">⛓ ${escHtml(x.node)} · ${escHtml(x.trigger)} → ${escHtml(x.action)}${shadowed?' <span style="color:var(--tx3)">（同节点已有 flow，演示时 flow 优先）</span>':''}</div>`;
@@ -2995,6 +3024,8 @@ function applyZoom(){
 function zoomIn(){zoom=Math.min(2,zoom*1.2);applyZoom();}
 function zoomOut(){zoom=Math.max(0.2,zoom/1.2);applyZoom();}
 function zoomReset(){zoom=1;applyZoom();}
+/* 适配窗口：frameScale=min(zoom,fit)，把 zoom 抬到极大即让自动适配因子主导 */
+function zoomFit(){zoom=64;applyZoom();}
 
 /* ---------- 播放 ---------- */
 /* ---------- 演示模式：工作区内禁编辑，仅保留交互演示 ----------
@@ -3031,7 +3062,7 @@ function attachPlayHotZones(){
   if(!wrap)return;
   const body=wrap.querySelector('.frame-body');
   const sess=sessions[active];
-  const graph=studioFlows.length?studioFlows:flows;
+  const graph=flows;
   const linked=new Set(graph.filter(f=>f.from===active).map(f=>(f.trigger||'').replace('tap:','')));
   (playIx[active]||[]).forEach(n=>linked.add(n));
   // 强制返回（2026-09 用户反馈）：形似返回的元素即使未接 flow/interact 也挂热区——
@@ -3127,20 +3158,22 @@ function redrawInk(){
   });
 }
 function clearInk(){inkPaths=[];inkCur=null;if(inkCtx)inkCtx.clearRect(0,0,inkCv.width,inkCv.height);}
-/* 退出演示：批注重注入 mbtText（幂等：替换旧块）+ 置脏——用户 ⌘S 落盘进 DDP */
+/* 退出演示：批注重注入 mbtText（幂等：替换旧块）+ 置脏——用户 ⌘S 落盘进 DDP。
+ * 经 serializeProject 入队：与人类 op / agent 终态回灌串行化，防写写竞态。 */
 function inkPersist(){
   if(mode==='play')return;
-  const next=inkInject(mbtText);
-  if(next!==mbtText){mbtText=next;projectDirty=true;syncFileLabel();syncDirtyRemote();}
+  serializeProject(async()=>{
+    const next=inkInject(mbtText);
+    if(next!==mbtText){mbtText=next;projectDirty=true;syncFileLabel();syncDirtyRemote();viewEpoch++;}
+  });
 }
 function playApplySession(id){
   const s=sessions[id];if(!s)return;
-  baseCmd=s.baseCmd;currentW=s.w;currentH=s.h;
-  opCmds=mbtText?[]:s.ops.slice();
-  currentSvg=s.svg||'';nodes=s.nodes||[];  // 渲染缺失回退空,不沿用上一画板(跨板渗漏)
+  baseCmd='__mbt__';currentW=s.w;currentH=s.h;
+    currentSvg=s.svg||'';nodes=s.nodes||[];  // 渲染缺失回退空,不沿用上一画板(跨板渗漏)
 }
 async function playTap(fromAb,nodeId){
-  const graph=studioFlows.length?studioFlows:flows;
+  const graph=flows;
   const f=graph.find(x=>x.from===fromAb&&x.trigger==='tap:'+nodeId);
   if(f){playNavAnim('fwd');playStack.push(f.to);active=f.to;playApplySession(f.to);await renderStage();setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');return;}
   // flows 未命中 → 回退 interact 标记（引擎 tap 解析顺序 flow → marker）
@@ -3237,18 +3270,19 @@ function rememberProject(path){
     ...recentProjects().filter(p=>p.path!==path)]);
   renderAllRecents();
 }
-function forgetProject(path){saveRecents(recentProjects().filter(p=>p.path!==path));renderAllRecents();}
 /* 对账：按父目录批量扫描（Rust list_ddp_projects），文件已删除的条目剔除、mtime 刷新。
  * 位置在 vm 动态切片外——仅在运行时（启动/用户操作）被调用。 */
 async function refreshRecents(){
   if(!IS_TAURI)return;
   const list=recentProjects();if(!list.length){renderAllRecents();return;}
-  const found=new Map();
+  const found=new Map();let ok=true;
   for(const dir of [...new Set(list.map(p=>p.path.replace(/[\\/][^\\/]+$/,'')))]){
-    try{const r=await window.__TAURI__.core.invoke('list_ddp_projects',{dir});for(const it of(r&&r.projects)||[])found.set(it.path,it);}catch(_){ }
+    try{const r=await window.__TAURI__.core.invoke('list_ddp_projects',{dir});for(const it of(r&&r.projects)||[])found.set(it.path,it);}
+    catch(err){ok=false;console.warn('[recents] 目录扫描失败，跳过本轮对账（注册表保持原样）:',err);}
   }
-  const next=list.filter(p=>found.has(p.path)).map(p=>({path:p.path,name:p.name,ts:Math.max(p.ts||0,(found.get(p.path).modified||0)*1000)}));
-  if(next.length!==list.length)saveRecents(next);
+  // 任一目录扫描失败都不落盘——移动盘未挂载/权限瞬断不能被洗成「项目全没了」
+  if(ok){const next=list.filter(p=>found.has(p.path)).map(p=>({path:p.path,name:p.name,ts:Math.max(p.ts||0,(found.get(p.path).modified||0)*1000)}));
+    if(next.length!==list.length)saveRecents(next);}
   renderAllRecents();
 }
 function relTime(ts){
@@ -3434,10 +3468,10 @@ async function newProject(){
   agentThread.pending=null;const th=$('gp-thread');if(th)th.classList.remove('open');
   serializeProject(async()=>{
     mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];inkPaths=[];
-    opCmds=[];filePath='';placing=0;linkSource=null;placeMode=null;playStack=[];
-    // 残留即复活通道:nodes/studioFlows 让空项目进 play;declDraftDirty 让
+    filePath='';placing=0;linkSource=null;playStack=[];
+    // 残留即复活通道:nodes 让空项目进 play;declDraftDirty 让
     // 旧文档全文留在源码编辑器(校验并渲染会把旧项目带回新项目)——全部归零
-    nodes=[];currentSvg='';baseCmd='';studioFlows=[];declDraftDirty=false;zoom=1;
+    nodes=[];currentSvg='';baseCmd='';declDraftDirty=false;zoom=1;
     $('decl-text').value='';
     closeAgentPop();cancelInline();
     $('ap-input').value='';$('gp-input').value='';$('tl-body').replaceChildren();
@@ -3703,9 +3737,15 @@ function openSettings(){
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
   async function askFxSdk(instruction,runId){
   const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto',run:runId||0};
-  
+
   const data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:agentConfig.apiKey||''});
   if(!data||data.ok!==true){
+    // agent_no_mbt：模型在提问而非调工具——text 是模型的提问原文，不能整段丢弃
+    if(data&&data.error==='agent_no_mbt'&&data.text&&data.text.trim()){
+      const err=new Error(data.text.trim());
+      err.clarifyText=data.text.trim();
+      throw err;
+    }
     const d=(data&&(data.detail?data.error+': '+data.detail:data.error))||'fxsdk_failed';
     throw Error(d);
   }
@@ -3746,7 +3786,6 @@ loadAgentConfig();
 
 /* ---------- 启动 ---------- */
 let _resizeRaf=0;window.addEventListener('resize',()=>{if(!Object.keys(sessions).length)return;cancelAnimationFrame(_resizeRaf);_resizeRaf=requestAnimationFrame(()=>renderStage());});
-window.__state=()=>({baseCmd,opCmds,nodes,selected,flows,active,sessions,mode});
 loadComponents();
 if(IS_TAURI)loadModelRegistry();   // 模型注册表快照（离线；失败不影响主流程）
 if(IS_TAURI)refreshRecents();      // 最近项目磁盘对账（剔除已删除文件；失败不影响主流程）
@@ -3825,7 +3864,7 @@ function toggleAllTpl(){
       const art=r.ok&&r.artboards&&r.artboards.find(a=>a.id==='__t_'+tid);
       if(art&&art.svg&&art.svg.length>50){
         // 一次引擎调用填两处：精选大卡（th-tpl-，3 张）与展开网格（th-tpla-，全集）
-        for(const p of['th-tpl-','th-tpla-']){const el=$(p+tid);if(el)el.innerHTML=art.svg;}
+        for(const p of['th-tpl-','th-tpla-']){const el=$(p+tid);if(el)el.innerHTML=sanitizeSvg(art.svg);}
       }
       else console.warn('thumb miss',tid,String(r.error||''));
     }catch(err){console.warn('thumb err',tid,String(err).slice(0,100));}
