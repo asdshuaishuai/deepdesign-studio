@@ -75,6 +75,7 @@ body[data-mode="dark"],body[data-theme="deep"],body[data-theme="glass"],body[dat
 .mode-seg{display:flex;background:rgba(0,0,0,.055);padding:2px;border-radius:var(--r-md);gap:2px;border:1px solid rgba(0,0,0,.05)}
 .mode-btn{display:flex;align-items:center;gap:5px;border:none;background:transparent;color:var(--tx2);height:26px;padding:0 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s cubic-bezier(.25,.1,.25,1)}
 .mode-btn.on{background:#fff;color:var(--tx);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+body[data-mode="dark"] .mode-btn.on{background:rgba(255,255,255,.14);color:#fff;box-shadow:none}
 .mode-btn .ic{width:13px;height:13px;transform:translateY(.5px)}
 .filechip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:99px;background:rgba(0,0,0,.05);color:var(--tx2);font-size:10.5px;font-family:ui-monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Windows：decorations=false 后 topbar 即标题栏（拖拽区+窗控），去 macOS 红绿灯缩进 */
@@ -96,7 +97,7 @@ html.win .fmenu-wrap{display:block}
 .recent-block{margin-top:18px;text-align:left}
 .recent-block h3{font-size:11.5px;margin:0 0 8px;color:var(--tx3);letter-spacing:.06em}
 .recent-list{display:flex;flex-direction:column;gap:6px}
-.recent-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--panel-input,var(--panel,rgba(255,255,255,.55)));cursor:pointer;font-size:12.5px}
+.recent-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--panel-input,rgba(127,127,127,.14));color:var(--tx);cursor:pointer;font-size:12.5px}
 .recent-row:hover{border-color:var(--acc-tx)}
 .recent-row .rc-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .recent-row .rc-meta{color:var(--tx3);font-size:11px;white-space:nowrap}
@@ -622,6 +623,7 @@ body[data-mode="dark"][data-theme="win11"] .frame-chrome{background:#2B2B2B;bord
 /* Mac Dark — macOS 暗色 */
 body[data-mode="dark"][data-theme="mac"]{
   --base:#212125;--cvs:#26262b;--ink:#e8e8ec;
+  --panel:#2a2a2e;--panel-line:#3a3a40;--panel-input:#26262b;
   --tx:#e8e8ec;--tx2:#9a9aa2;--tx3:#8f8f97;
   --acc:#0a84ff;--acc-h:#409cff;--acc-tx:#2f97ff;--bd:1px solid #34343a;
 }
