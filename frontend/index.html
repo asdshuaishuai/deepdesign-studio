@@ -1587,7 +1587,8 @@ function renderStage(){
     const chrome=wrap.querySelector('.frame-chrome');
     chrome.addEventListener('contextmenu',ev=>{ev.preventDefault();ev.stopPropagation();artboardMenu(ev.clientX,ev.clientY,id);});
     const off=boardOffsets[id];
-    if(off)wrap.style.transform=`translate(${off.dx}px,${off.dy}px)`;
+    // 演示模式下画板固定居中：编辑期的拖拽偏移不带入播放视图（issues：交互跳转后位置漂移）
+    if(off&&mode!=='play')wrap.style.transform=`translate(${off.dx}px,${off.dy}px)`;
     chrome.addEventListener('pointerdown',ev=>{
       if(mode==='play')return;
       if(ev.button!==0)return;
@@ -1674,8 +1675,10 @@ function renderFlowWires(stage){
     if(!a||!b)continue;
     // WKWebView 中 getBoundingClientRect 与渲染错位会把关联线画到可视区外；
     // frame-wrap 是普通 div，offsetLeft/offsetWidth（相对 stage 布局）与渲染一致。
-    const x1=a.offsetLeft+a.offsetWidth,y1=a.offsetTop+a.offsetHeight/2;
-    const x2=b.offsetLeft,y2=b.offsetTop+b.offsetHeight/2;
+    // 拖拽偏移走 transform，offsetLeft 不变——端点须显式加上 boardOffsets（线随画板走）
+    const ao=boardOffsets[f.from]||{dx:0,dy:0},bo2=boardOffsets[f.to]||{dx:0,dy:0};
+    const x1=a.offsetLeft+a.offsetWidth+ao.dx,y1=a.offsetTop+a.offsetHeight/2+ao.dy;
+    const x2=b.offsetLeft+bo2.dx,y2=b.offsetTop+b.offsetHeight/2+bo2.dy;
     const c=(x1+x2)/2;
     const pth=document.createElementNS('http://www.w3.org/2000/svg','path');
     pth.setAttribute('d',`M${x1},${y1} C${c},${y1} ${c},${y2} ${x2},${y2}`);
