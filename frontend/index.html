@@ -396,6 +396,9 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 .empty-card p{color:var(--tx3);font-size:12px;margin-bottom:22px}
 .empty-card p kbd{background:rgba(0,0,0,.06);border-radius:5px;padding:1px 6px;font-family:ui-monospace;font-size:10.5px}
 .tpl-row{display:flex;gap:11px;justify-content:center;align-items:stretch;flex-wrap:wrap}
+.tpl-all{flex-direction:column;align-items:stretch;gap:4px;padding:6px 2px 2px;border-radius:12px;background:rgba(0,0,0,.03);border:1px dashed rgba(0,0,0,.08)}
+.tpl-all .tpl-row{justify-content:flex-start}
+.tpl-group-head{font-size:11px;font-weight:700;color:var(--tx3);letter-spacing:.06em;margin:8px 4px 2px;text-transform:uppercase}
 .tpl-more{margin:13px auto 0;display:block;background:none;border:none;color:var(--tx3);font-size:11.5px;cursor:pointer;padding:4px 12px;border-radius:8px;transition:all .15s}
 .tpl-more:hover{color:var(--acc-tx);background:color-mix(in srgb,var(--acc) 8%,transparent)}
 .tpl-all{margin-top:11px;max-width:560px}
@@ -446,7 +449,10 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .prov-chip:active{transform:scale(.97)}
 #agent-model-hint{font-size:10.5px;color:var(--tx3);line-height:1.55;margin-top:5px;min-height:1em}
 #agent-model-hint .warn{color:#c2410c}
-#agent-base-url,#agent-model{font-family:ui-monospace;font-size:11.5px}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--tx2)}.settings-grid label.wide{grid-column:1/3}.settings-grid input,.settings-grid select{height:32px;padding:0 9px;border:1px solid var(--panel-line,rgba(0,0,0,.14));border-radius:8px;background:var(--panel-input,#fff);font:12px ui-monospace;color:var(--tx)}.settings-grid input:focus,.settings-grid select:focus{outline:2px solid rgba(0,122,255,.25);border-color:var(--acc-tx)}.settings-grid input:disabled{background:rgba(0,0,0,.04);color:var(--tx3)}.settings-sec{font-size:10.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 2px}
+#agent-base-url,#agent-model{font-family:ui-monospace;font-size:11.5px}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--tx2)}.settings-grid label.wide{grid-column:1/3}.settings-grid input,.settings-grid select{height:32px;padding:0 9px;border:1px solid var(--panel-line,rgba(0,0,0,.14));border-radius:8px;background:var(--panel-input,#fff);font:12px ui-monospace;color:var(--tx)}.settings-grid input:focus,.settings-grid select:focus{outline:2px solid rgba(0,122,255,.25);border-color:var(--acc-tx)}.settings-grid input:disabled{background:rgba(0,0,0,.04);color:var(--tx3)}.stabs{display:flex;gap:4px;margin:2px 0 10px;background:rgba(0,0,0,.05);padding:3px;border-radius:9px}
+.stab{flex:1;border:none;background:transparent;color:var(--tx2);font-size:12px;font-weight:600;padding:7px 0;border-radius:7px;cursor:pointer}
+.stab.on{background:var(--panel-input,#fff);color:var(--tx);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.settings-sec{font-size:10.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 2px}
 .settings-sec:first-of-type{margin-top:2px}
 .prov-chip[data-theme-chip].on{background:var(--acc);color:#fff;border-color:var(--acc-tx)}
 .settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
@@ -1050,6 +1056,11 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 <div id="settings-modal" aria-hidden="true">
   <div class="settings-box" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="settings-head"><h3 id="settings-title">设置</h3><button class="icon-close" onclick="closeSettings()" aria-label="关闭设置">×</button></div>
+    <div class="stabs">
+      <button class="stab on" id="st-look" onclick="switchSettings('look')">外观</button>
+      <button class="stab" id="st-ai" onclick="switchSettings('ai')">AI 端点</button>
+    </div>
+    <div class="spane" id="sp-look">
     <div class="settings-sec">外观</div>
     <div class="settings-grid">
       <label class="wide">主题
@@ -1079,6 +1090,8 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         </select>
       </label>
     </div>
+    </div>
+    <div class="spane" id="sp-ai" style="display:none">
     <div class="settings-sec">AI 端点（Agent）</div>
     <p class="settings-note">Agent 为本应用内置的 Rust 进程内循环（wasmtime 引擎宿主），变更经 MoonViz 引擎门校验后写回唯一事实源 <code>.mbt.md</code>。此处配置 LLM 驱动端点：URL 含 <code>/anthropic</code> 走 Anthropic Messages 协议（x-api-key），其余按 OpenAI chat 兼容格式处理。</p>
     <div class="settings-grid">
@@ -1121,6 +1134,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         </select>
       </label>
       <label style="font-size:10.5px;color:var(--tx3);align-self:end">等级经 reasoning_effort 下发（DeepSeek/Kimi/GLM-5.2+）；MiniMax 仅支持开关。GLM-5.3 不支持关闭。</label>
+    </div>
     </div>
     <div class="settings-actions"><button title="closeSettings" class="tbtn" onclick="closeSettings()">取消</button><button class="tbtn pri" onclick="saveSettings()">保存设置</button></div>
   </div>
@@ -1687,6 +1701,7 @@ function renderStage(){
   if(scroller){scroller.scrollLeft=keepSx;scroller.scrollTop=keepSy;}
   renderFlowWires(stage);
   if(mode==='play')attachPlayHotZones();
+  if(I18N_LANG!=='zh-CN')applyI18n(); // 非中文语言：重建的 DOM（画板 chrome/欢迎卡）需要即时翻译
   const add=document.createElement('div');
   add.className='ghost-new';
   add.innerHTML='<svg class="ic" style="width:20px;height:20px" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新画板';
@@ -3449,7 +3464,7 @@ function relTime(ts){
 }
 /* 两个呈现位（欢迎面板 recent-list / 文件菜单 fm-recents）共用一份注册表渲染；
  * 侧栏的切换入口是项目名下拉（toggleProjSwitch），行内 ⧉ = 新窗口打开 */
-function renderAllRecents(){renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();}
+function renderAllRecents(){renderRecentRows($('fm-recents'));renderRecentRows($('recent-list'));updateWelcomeRecents();if(I18N_LANG!=='zh-CN')applyI18n();}
 function renderRecentRows(box){
   if(!box)return;
   const list=recentProjects().slice(0,6);
@@ -3910,6 +3925,12 @@ function openSettings(){
   sel.dataset.active=sel.value;
   // 在输入赋值之后再算提示：先算会读到上一轮的旧输入值
   fillModelHints();$('settings-modal').style.display='flex';$('settings-modal').setAttribute('aria-hidden','false');setTimeout(()=>$('agent-api-key').focus(),30)}
+function switchSettings(w){
+  ['look','ai'].forEach(x=>{
+    const t=$('st-'+x),pn=$('sp-'+x);if(!t||!pn)return;
+    t.classList.toggle('on',x===w);pn.style.display=x===w?'':'none';
+  });
+}
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
   async function askFxSdk(instruction,runId){
   const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto',run:runId||0};
@@ -3990,12 +4011,25 @@ function setLang(lang,persist=true){
   I18N_LANG=lang;
   if(persist){try{localStorage.setItem('dd-lang',lang);}catch(_){ }}
   document.documentElement.lang=lang;
+  ensureI18nObserver();
   applyI18n();
   const sel=$('lang-select');if(sel)sel.value=lang;
   if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_menu_language',{lang}).catch(()=>{ });
 }
 /* 静态 DOM 翻译：文本节点 + placeholder/title 属性，精确匹配原文键。
  * 跳过 script/style/code 与含换行多行文本（注释/代码污染源）。 */
+/* 渲染即翻译兜底：renderStage/renderInspector/时间线等任何重建路径产出的中文文本，
+ * 由 body 级 MutationObserver 去抖后统一翻译——不再依赖每个渲染出口记得调 applyI18n */
+let i18nObsTimer=0,i18nObserver=null;
+function ensureI18nObserver(){
+  if(i18nObserver||typeof MutationObserver==='undefined')return;
+  i18nObserver=new MutationObserver(()=>{
+    if(I18N_LANG==='zh-CN')return;
+    clearTimeout(i18nObsTimer);
+    i18nObsTimer=setTimeout(()=>applyI18n(),150);
+  });
+  i18nObserver.observe(document.body,{childList:true,subtree:true,characterData:false});
+}
 function applyI18n(){
   if(I18N_LANG==='zh-CN')return;
   const m=I18N_DICT[I18N_LANG];if(!m)return;
@@ -4223,10 +4257,23 @@ function mkTplCard(tid,name,device,thumbPrefix){
   d.onclick=()=>quickStart(tid,w,h);
   return d;
 }
+const TPL_GROUPS=[['mobile','手机原型'],['web','Web 页面'],['pc','桌面 / 自适应']];
 function renderTplRow(){
   const row=$('tpl-row'),all=$('tpl-all');
   if(row){row.innerHTML='';TPLS.filter(([tid])=>TPL_FEATURED.includes(tid)).forEach(([tid,name,device])=>row.appendChild(mkTplCard(tid,name,device,'th-tpl-')));}
-  if(all){all.innerHTML='';TPLS.forEach(([tid,name,device])=>all.appendChild(mkTplCard(tid,name,device,'th-tpla-')));}
+  if(all){
+    all.innerHTML='';
+    // 分组渲染（用户反馈：不要 14 张卡平铺一墙）——每组一段标题 + 该组卡片
+    for(const[g,label]of TPL_GROUPS){
+      const items=TPLS.filter(([, ,dev])=>dev===g);
+      if(!items.length)continue;
+      const head=document.createElement('div');head.className='tpl-group-head';head.textContent=label+` · ${items.length}`;
+      all.appendChild(head);
+      const wrap=document.createElement('div');wrap.className='tpl-row';wrap.style.justifyContent='flex-start';
+      items.forEach(([tid,name,device])=>wrap.appendChild(mkTplCard(tid,name,device,'th-tpla-')));
+      all.appendChild(wrap);
+    }
+  }
 }
 function toggleAllTpl(){
   const all=$('tpl-all'),btn=$('tpl-more');
