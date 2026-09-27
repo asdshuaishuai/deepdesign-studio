@@ -26,12 +26,11 @@ if pgrep -f "deepdesign-studio" >/dev/null 2>&1; then
   sleep 1.5
 fi
 
-# 1) 卸掉残留 DMG 挂载卷（历史幽灵注册的主要来源）
-for vol in /Volumes/dmg.*; do
+# 1) 卸掉残留 DMG 挂载卷（历史幽灵注册的主要来源；卷名可能是 dmg.* 或产品名）
+for vol in /Volumes/dmg.* "/Volumes/deepDesign Studio"; do
   [ -d "$vol" ] || continue
-  case "$vol" in
-    *dmg.*) say "弹出残留挂载 $vol"; hdiutil detach "$vol" -quiet >/dev/null 2>&1 || true ;;
-  esac
+  say "弹出残留挂载 $vol"
+  diskutil unmount "$vol" >/dev/null 2>&1 || hdiutil detach "$vol" -quiet >/dev/null 2>&1 || true
 done
 
 # 2) 注销 LaunchServices 里本应用的**全部**注册（/Applications、target bundle、DMG 卷…）
@@ -88,14 +87,18 @@ rm -rf "$(dirname "$STAGE")"
 
 # 7) 验证：磁盘与注册表各自恰好一份
 sleep 1
+# 只统计路径真实存在的注册：卸载后的 DMG 卷会留下系统异步回收的卷级幽灵条目
+# （lsregister -u 清不掉、Finder eject 也清不掉），它不可达、不构成可启动的第二副本
 COUNT_LS=0
 if [ -x "$LSREG" ]; then
-  COUNT_LS=$("$LSREG" -dump 2>/dev/null | grep -i "path:" | grep -i "deepdesign" | sort -u | wc -l | tr -d ' ')
+  COUNT_LS=$("$LSREG" -dump 2>/dev/null | grep -i "path:" | grep -i "deepdesign" \
+    | sed 's/^ *path: *//; s/ (0x[0-9a-f]*)$//' | sort -u \
+    | while IFS= read -r rp; do [ -e "$rp" ] && echo "$rp"; done | wc -l | tr -d ' ')
 fi
 COUNT_DISK=$(ls -d /Applications/*deep* 2>/dev/null | wc -l | tr -d ' ')
 say "验证：磁盘副本=$COUNT_DISK  LaunchServices 注册=$COUNT_LS"
-[ "$COUNT_DISK" = "1" ] || die "磁盘副本数 ≠ 1（=$COUNT_DISK）"
-[ "$COUNT_LS" -le "1" ] || die "注册数 > 1（=$COUNT_LS）——存在重复注册"
+[ "$COUNT_DISK" = "1" ] || die "磁盘副本数 ≠ 1（=${COUNT_DISK}）"
+[ "$COUNT_LS" -le "1" ] || die "注册数 > 1（=${COUNT_LS}）——存在重复注册"
 
 # 8) 启动
 say "启动应用…"

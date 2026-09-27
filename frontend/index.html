@@ -202,8 +202,8 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .czoom .fit:hover{color:var(--acc-tx)}
 /* 多 Frame 并排 */
 .stage{position:relative;display:flex;align-items:flex-start;gap:96px;padding:56px 64px 48px;min-width:max-content;min-height:100%}
-.frame-wrap{flex-shrink:0;transition:box-shadow .18s ease,border-color .18s ease}
-.frame-chrome{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f0f1f5;border:1px solid rgba(0,0,0,.09);border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;cursor:pointer;user-select:none}
+.frame-wrap{flex-shrink:0;display:flex;flex-direction:column;transition:width .22s cubic-bezier(.25,.1,.25,1),box-shadow .18s ease,border-color .18s ease}
+.frame-chrome{width:100%;display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f0f1f5;border:1px solid rgba(0,0,0,.09);border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;cursor:pointer;user-select:none}
 .frame-wrap.active .frame-chrome{background:#fff;border-color:rgba(0,122,255,.45);border-bottom:none}
 .frame-wrap.active .fc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--acc-tx)}
 .fc-dots{display:flex;gap:5px}
@@ -211,14 +211,14 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .fc-dots i:nth-child(1){background:#ff5f56}.fc-dots i:nth-child(2){background:#ffbd2e}.fc-dots i:nth-child(3){background:#27c93f}
 .fc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--tx2);font-family:ui-monospace}
 .fc-size{flex-shrink:0;font-size:9.5px;color:var(--tx3);font-family:ui-monospace;margin-left:auto}
-.frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);background:#fff;border:2px solid rgba(0,0,0,.09);border-radius:0 0 var(--r-lg) var(--r-lg);overflow:hidden;box-shadow:var(--sh-win);position:relative}
+.frame-body{width:100%;transition:height .22s cubic-bezier(.25,.1,.25,1);background:#fff;border:2px solid rgba(0,0,0,.09);border-radius:0 0 var(--r-lg) var(--r-lg);overflow:hidden;box-shadow:var(--sh-win);position:relative}
 .frame-wrap.active .frame-body{transition:height .22s cubic-bezier(.25,.1,.25,1);border:2.5px solid var(--acc);box-shadow:0 18px 48px rgba(0,122,255,.25),0 0 0 5px rgba(0,122,255,.14),0 0 0 1px rgba(0,122,255,.5)}
 .frame-body svg{display:block}
 .frame-wrap.active .frame-body svg g{cursor:pointer}
 .frame-wrap.active .frame-body svg text{pointer-events:auto;cursor:text}
 .frame-wrap:not(.active) .frame-body svg{pointer-events:none;opacity:.94}
 .frame-wrap:not(.active){cursor:pointer}
-.frame-wrap:not(.active):hover .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);box-shadow:0 18px 45px rgba(0,0,0,.16)}
+.frame-wrap:not(.active):hover .frame-body{transition:height .22s cubic-bezier(.25,.1,.25,1);box-shadow:0 18px 45px rgba(0,0,0,.16)}
 .ghost-new{display:flex;align-items:center;justify-content:center;width:150px;height:220px;border-radius:var(--r-lg);border:2px dashed rgba(0,0,0,.18);color:var(--tx3);font-size:12px;cursor:pointer;flex-shrink:0;align-self:center;gap:6px;flex-direction:column;transition:all .15s cubic-bezier(.25,.1,.25,1)}
 .ghost-new:hover{border-color:var(--acc-tx);color:var(--acc-tx);background:rgba(0,122,255,.04)}
 /* 底部全局 Prompt 条 */
@@ -459,7 +459,7 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .tok-yaml-key{color:var(--tok-yaml-key);font-weight:600}
 .tok-yaml-val{color:var(--tok-yaml-val)}
 /* 演示模式 = 工作区内禁编辑、只保留演示：不再是独立全屏页 */
-.frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);position:relative}
+.frame-body{width:100%;transition:height .22s cubic-bezier(.25,.1,.25,1);position:relative}
 .play-bar{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:90;align-items:center;gap:14px;min-width:560px;max-width:min(880px,94vw);background:var(--panel);color:var(--tx);border:var(--bd);padding:10px 12px;border-radius:14px;box-shadow:var(--sh-pop);backdrop-filter:blur(10px);font-size:12px}
 body.mode-play .play-bar{display:flex}
 body.mode-play .promptbar,body.mode-play .canvas-hint{display:none!important}
@@ -1601,8 +1601,10 @@ function renderStage(){
     wrap.className='frame-wrap'+(isActive?' active':'');
     wrap.dataset.frame=id;
     wrap.dataset.displayScale=String(s);
+    // 宽度唯一事实源在 wrap：标题栏/主体都 100% 锁定其上（修复标题栏与主体宽度不一致）
+    wrap.style.width=Math.round(sess.w*s)+'px';
     wrap.innerHTML=`<div class="frame-chrome"><div class="fc-dots"><i></i><i></i><i></i></div><span class="fc-name">${escHtml(id)}</span><span class="fc-size">${sess.w} × ${sess.h}</span></div>
-      <div class="frame-body" id="fb-${escAttr(id)}" style="width:${Math.round(sess.w*s)}px;height:${Math.round(sess.h*s)}px"></div>`;
+      <div class="frame-body" id="fb-${escAttr(id)}" style="height:${Math.round(sess.h*s)}px"></div>`;
     stage.appendChild(wrap);
     const chrome=wrap.querySelector('.frame-chrome');
     chrome.addEventListener('contextmenu',ev=>{ev.preventDefault();ev.stopPropagation();artboardMenu(ev.clientX,ev.clientY,id);});
