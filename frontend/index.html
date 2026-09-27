@@ -212,7 +212,7 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .fc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--tx2);font-family:ui-monospace}
 .fc-size{flex-shrink:0;font-size:9.5px;color:var(--tx3);font-family:ui-monospace;margin-left:auto}
 .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);background:#fff;border:2px solid rgba(0,0,0,.09);border-radius:0 0 var(--r-lg) var(--r-lg);overflow:hidden;box-shadow:var(--sh-win);position:relative}
-.frame-wrap.active .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);border:2.5px solid var(--acc);box-shadow:0 18px 48px rgba(0,122,255,.25),0 0 0 5px rgba(0,122,255,.14),0 0 0 1px rgba(0,122,255,.5)}
+.frame-wrap.active .frame-body{transition:height .22s cubic-bezier(.25,.1,.25,1);border:2.5px solid var(--acc);box-shadow:0 18px 48px rgba(0,122,255,.25),0 0 0 5px rgba(0,122,255,.14),0 0 0 1px rgba(0,122,255,.5)}
 .frame-body svg{display:block}
 .frame-wrap.active .frame-body svg g{cursor:pointer}
 .frame-wrap.active .frame-body svg text{pointer-events:auto;cursor:text}
@@ -326,11 +326,6 @@ body[data-mode="dark"] .empty-insp{border-color:rgba(255,255,255,.17);background
 body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.1)}
 .empty-insp svg{color:rgba(0,0,0,.18);margin-bottom:9px}
 /* 追踪卡（参考 diff 卡样式） */
-.trk{padding:9px 11px;border-radius:var(--r-lg);background:#fff;border:1px solid rgba(0,0,0,.08);margin-bottom:7px;box-shadow:var(--sh-sm)}
-.trk-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
-.trk-h .who{font-size:10px;font-family:ui-monospace;font-weight:700;color:#7c3aed}
-.trk-h .tm{font-size:9.5px;color:var(--tx3);font-family:ui-monospace}
-.trk-msg{font-size:11.5px;color:var(--tx);line-height:1.45;margin-bottom:5px}
 /* agent 实时任务轨迹（时间线） */
 .tl-run{padding:9px 11px;border-radius:var(--r-lg);background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.1));margin-bottom:8px}
 .tl-user{font-size:11.5px;font-weight:700;color:var(--tx);line-height:1.5;margin-bottom:6px}
@@ -346,9 +341,6 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 .tl-line.tl-err .tl-err-msg{color:#e05252}
 .tl-line .tl-ms{color:var(--tx3);font-size:9px}
 .tl-line.tl-done{color:var(--tx3);font-weight:600;margin-top:3px}
-.trk-cmds{border-top:1px dashed rgba(0,0,0,.09);padding-top:5px}
-.trk-cmds .pi{display:flex;gap:6px;font-family:ui-monospace;font-size:10px;color:var(--tx2);padding:1.5px 0}
-.trk-cmds .num{color:var(--tx3)}
 /* 中间产物视图 */
 .declview{font-family:ui-monospace;font-size:11px;line-height:1.6;color:#2d3748;white-space:pre-wrap;word-break:break-all;background:#fff;border:1px solid rgba(0,0,0,.09);border-radius:var(--r-lg);padding:11px;max-height:calc(100vh - 240px);overflow:auto}
 .decl-actions{display:flex;gap:6px;margin-top:8px}
@@ -530,7 +522,7 @@ body[data-theme="deep"] .mac-glass,body[data-theme="deep"] .ctools,body[data-the
 body[data-theme="deep"] .frame-chrome{background:#1f2228;border-color:#2c313a}
 body[data-theme="deep"] .frame-wrap.active .frame-chrome{background:#24272e}
 body[data-theme="deep"] .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);border-color:#2c313a}
-body[data-theme="deep"] .compcell,body[data-theme="deep"] .trk,body[data-theme="deep"] .flowrow,body[data-theme="deep"] .declview,body[data-theme="deep"] #ctxmenu,body[data-theme="deep"] #inline-edit{background:#1f2228;border-color:#2c313a}
+body[data-theme="deep"] .compcell,body[data-theme="deep"] .flowrow,body[data-theme="deep"] .declview,body[data-theme="deep"] #ctxmenu,body[data-theme="deep"] #inline-edit{background:#1f2228;border-color:#2c313a}
 body[data-theme="deep"] .compcell .prev{background:#17191e;border-color:#2c313a}
 body[data-theme="deep"] .tbtn:hover,body[data-theme="deep"] .ctool:hover,body[data-theme="deep"] .layerrow:hover,body[data-theme="deep"] .abrow:hover{background:rgba(255,255,255,.06)}
 body[data-theme="deep"] .mode-seg{background:rgba(255,255,255,.06);border-color:transparent}
@@ -553,7 +545,7 @@ body[data-theme="neu"]{
 body[data-theme="neu"] .topbar,body[data-theme="neu"] .left,body[data-theme="neu"] .right,body[data-theme="neu"] .statusbar{-webkit-font-smoothing:antialiased;background:#e0e5ec;border:none;box-shadow:0 1px 0 rgba(255,255,255,.6)}
 body[data-theme="neu"] .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);box-shadow:-8px -8px 20px rgba(255,255,255,.8),8px 8px 20px rgba(163,177,198,.55);border:none}
 body[data-theme="neu"] .ctools,body[data-theme="neu"] .promptbar,body[data-theme="neu"] #agent-pop,body[data-theme="neu"] .ctool.on{background:#e0e5ec;box-shadow:-5px -5px 12px rgba(255,255,255,.85),5px 5px 12px rgba(163,177,198,.55);border:none}
-body[data-theme="neu"] .compcell,body[data-theme="neu"] .trk,body[data-theme="neu"] .flowrow,body[data-theme="neu"] .tpl-card,body[data-theme="neu"] .mode-btn.on,body[data-theme="neu"] .nodecard,body[data-theme="neu"] .pmain{box-shadow:-4px -4px 9px rgba(255,255,255,.85),4px 4px 9px rgba(163,177,198,.55);border:none}
+body[data-theme="neu"] .compcell,body[data-theme="neu"] .flowrow,body[data-theme="neu"] .tpl-card,body[data-theme="neu"] .mode-btn.on,body[data-theme="neu"] .nodecard,body[data-theme="neu"] .pmain{box-shadow:-4px -4px 9px rgba(255,255,255,.85),4px 4px 9px rgba(163,177,198,.55);border:none}
 body[data-theme="neu"] .pmain input,body[data-theme="neu"] .frow input,body[data-theme="neu"] .colorpair input{background:#e0e5ec;border:none;box-shadow:inset 2px 2px 5px rgba(163,177,198,.5),inset -2px -2px 5px rgba(255,255,255,.8)}
 body[data-theme="neu"] .mode-seg{background:#d8dee7;border:none}
 
@@ -570,7 +562,7 @@ body[data-theme="glass"] .topbar,body[data-theme="glass"] .left,body[data-theme=
 body[data-theme="glass"] .ctools,body[data-theme="glass"] .czoom,body[data-theme="glass"] .promptbar,body[data-theme="glass"] #agent-pop,body[data-theme="glass"] .empty-card{background:rgba(255,255,255,.12);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.25)}
 body[data-theme="glass"] .frame-chrome{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2)}
 body[data-theme="glass"] .frame-wrap.active .frame-chrome{background:rgba(255,255,255,.2)}
-body[data-theme="glass"] .compcell,body[data-theme="glass"] .trk,body[data-theme="glass"] .flowrow,body[data-theme="glass"] .tpl-card,body[data-theme="glass"] .mode-seg{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22)}
+body[data-theme="glass"] .compcell,body[data-theme="glass"] .flowrow,body[data-theme="glass"] .tpl-card,body[data-theme="glass"] .mode-seg{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22)}
 body[data-theme="glass"] .mode-btn.on{background:rgba(139,123,255,.4);color:#fff}
 body[data-theme="glass"] .pmain,body[data-theme="glass"] .compsearch,body[data-theme="glass"] .frow input,body[data-theme="glass"] .colorpair input,body[data-theme="glass"] .declview{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22);color:#f4f2ff}
 body[data-theme="glass"] .pmain input{color:#f4f2ff}
@@ -680,7 +672,7 @@ body[data-mode="dark"] .layerrow:hover,body[data-mode="dark"] .abrow:hover{backg
 /* 画板窗口：圆润 14px + 柔投影浮层，active 以品牌色描边光晕（打破黑白单调） */
 body[data-mode="dark"] .frame-chrome{border-radius:14px 14px 0 0}
 body[data-mode="dark"] .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);border-radius:0 0 14px 14px;border-width:1.5px;box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04)}
-body[data-mode="dark"] .frame-wrap.active .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);border:2px solid var(--acc);box-shadow:0 14px 36px rgba(0,0,0,.55),0 0 0 4px color-mix(in srgb,var(--acc) 18%,transparent),0 0 0 1px color-mix(in srgb,var(--acc) 55%,transparent)}
+body[data-mode="dark"] .frame-wrap.active .frame-body{transition:height .22s cubic-bezier(.25,.1,.25,1);border:2px solid var(--acc);box-shadow:0 14px 36px rgba(0,0,0,.55),0 0 0 4px color-mix(in srgb,var(--acc) 18%,transparent),0 0 0 1px color-mix(in srgb,var(--acc) 55%,transparent)}
 body[data-mode="dark"] .frame-wrap:not(.active):hover .frame-body{transition:width .22s cubic-bezier(.25,.1,.25,1),height .22s cubic-bezier(.25,.1,.25,1);box-shadow:0 12px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08)}
 /* 提示条 pill 化 + 内辉光 */
 body[data-mode="dark"] .canvas-tail,body[data-mode="dark"] .toast{border-radius:999px}
@@ -2391,7 +2383,7 @@ async function sendAgent(){
     res.style.display='block';res.className='ap-result ok';
     const cut=r.stopReason==='max_turns'?'（已达步数上限）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
     res.textContent=`已通过 MoonViz 提交 ${r.ops.length} 条变更${cut}${r.text?' — '+String(r.text).slice(0,120):''}`;
-    trackAgent(text,r.ops);
+    // 全程已在时间线（tl-run）实时呈现，不再补摘要卡
     $('ap-send').disabled=false;$('ap-input').value='';
   }catch(err){
     // agent_no_mbt 且带模型提问原文 → 走澄清流而不是报错（提问文本见 askFxSdk）
@@ -2410,16 +2402,19 @@ async function sendAgent(){
     agentBusy=false;
   }
 }
-/* Agent 追踪（参考 diff 卡） */
+/* Agent 行为卡（本地一次性 op）：与实时 run 时间线同一形态——右侧面板只讲一种视觉语言 */
+let trackSeq=0;
 function trackAgent(instruction,cmds){
-  const body=$('tl-body');
+  const body=$('tl-body');if(!body)return;
   if(body.querySelector('.empty-insp'))body.innerHTML='';
-  const d=document.createElement('div');d.className='trk';
+  const rid='local-'+Date.now()+'-'+(trackSeq++);
+  const wrap=document.createElement('div');wrap.className='tl-run';wrap.id='tl-run-'+rid;
   const time=new Date().toTimeString().slice(0,5);
-  d.innerHTML=`<div class="trk-h"><span class="who">⚡ AGENT · ${escHtml(selected||active)}</span><span class="tm">${time}</span></div>
-    <div class="trk-msg">${escHtml(instruction.length>90?instruction.slice(0,90)+'…':instruction)}</div>
-    ${cmds.length?`<div class="trk-cmds">${cmds.map((c,i)=>`<div class="pi"><span class="num">${i+1}</span><span>${escHtml(c)}</span></div>`).join('')}</div>`:''}`;
-  body.prepend(d);
+  const shown=instruction.length>100?instruction.slice(0,100)+'…':instruction;
+  let html=`<div class="tl-user" title="${escHtml(instruction)}">▸ ${escHtml(shown)} <span class="tl-ms">${time} · ${escHtml(selected||active||'')}</span></div>`;
+  (cmds||[]).forEach(c=>{html+=`<div class="tl-line tl-ok">✓ ${escHtml(c)}</div>`;});
+  wrap.innerHTML=html;
+  body.prepend(wrap);
 }
 /* ---------- Agent 追踪（右侧面板）：实时任务轨迹 ---------- */
 /* agent run 实时时间线：事件监听全局只注册一次（按事件里的 run id 分发到对应容器），
@@ -2430,6 +2425,8 @@ function traceOpen(runId,label,continuation){
   const body=$('tl-body');if(!body)return;
   // 长文本折叠：默认显示前 limit 字符，点击展开全文（用户要求全文保留但收缩）
   const fold=(t,limit)=>t.length<=limit?escHtml(t):`<details class="tl-fold"><summary>${escHtml(t.slice(0,limit))}…</summary><div class="tl-full">${escHtml(t)}</div></details>`;
+  // 点击执行即刻同步到右侧：切到追踪 tab，让轨迹从第一条 op 起可见
+  if(typeof switchRight==='function')switchRight('track');
   // 续轮（澄清回答）合并进现有块：只追加一行短回答，不再重复用户全文
   if(continuation){
     const wrap=document.querySelector('.tl-run');
@@ -2439,24 +2436,6 @@ function traceOpen(runId,label,continuation){
       line.className='tl-line tl-user-cont';
       line.innerHTML='↳ 回答：'+fold(label,80);
       wrap.appendChild(line);
-      if(TRACE.un||TRACE.tried||!IS_TAURI||!window.__TAURI__.event)return;
-      TRACE.tried=true;
-      window.__TAURI__.event.listen('agent-event',ev=>{
-        const p=ev.payload||{};
-        const box=document.getElementById('tl-run-'+p.run);if(!box)return;
-        if(p.type==='assistant_text'){appendTraceLine(box,'🤖 '+p.text,'tl-assist');return;}
-        if(p.type==='tool_start'){appendTraceLine(box,'⏳ '+p.op,'tl-tool pending','tlstep-'+p.run+'-'+p.seq);return;}
-        if(p.type==='tool_end'){
-          const line=document.getElementById('tlstep-'+p.run+'-'+p.seq);
-          if(line){
-            line.className='tl-line '+(p.ok?'tl-ok':'tl-err');
-            line.innerHTML=(p.ok?'✓ ':'✗ ')+escHtml(line.dataset.op||'')+(p.ms?` <span class="tl-ms">${p.ms}ms</span>`:'')+(p.error?` <span class="tl-err-msg">${escHtml(p.error)}</span>`:'');
-          }
-          return;
-        }
-        if(p.type==='done'){appendTraceLine(box,`■ 完成（${p.ops} ops · ${p.stopReason}）`,'tl-done');return;}
-        if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
-      }).then(u=>{TRACE.un=u;}).catch(e=>console.warn('[trace] agent-event 监听注册失败（本窗口轨迹将空白）:',e));
       return;
     }
   }
@@ -2464,11 +2443,15 @@ function traceOpen(runId,label,continuation){
   const shown=label.length>100?label.slice(0,100)+'…':label;
   wrap.innerHTML=`<div class="tl-user" title="${escHtml(label)}">▸ ${escHtml(shown)}</div>`;
   body.prepend(wrap);
-  // tried 标记：listen 失败被吞后不再反复注册（否则每个 run 叠一个监听器）
+}
+/* 全局唯一 agent-event 监听器：启动期注册（早于任何 run 事件，消灭首事件丢失的竞态），
+ * 覆盖全部事件类型；按 run id 路由到对应容器——工作区内所有 agent 行为同源呈现 */
+function ensureTraceListener(){
   if(TRACE.un||TRACE.tried||!IS_TAURI||!window.__TAURI__.event)return;
   TRACE.tried=true;
   window.__TAURI__.event.listen('agent-event',ev=>{
     const p=ev.payload||{};
+    if(p.type==='preview'){schedulePreview(p.mbt_b64);return;}
     const box=document.getElementById('tl-run-'+p.run);if(!box)return;
     if(p.type==='assistant_text'){appendTraceLine(box,'🤖 '+p.text,'tl-assist');return;}
     if(p.type==='tool_start'){appendTraceLine(box,'⏳ '+p.op,'tl-tool pending','tlstep-'+p.run+'-'+p.seq);return;}
@@ -2483,7 +2466,6 @@ function traceOpen(runId,label,continuation){
     if(p.type==='done'){appendTraceLine(box,`■ 完成（${p.ops} ops · ${p.stopReason}）`,'tl-done');return;}
     if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
     if(p.type==='review'){appendTraceLine(box,'🔎 收尾审查：需求完整度 · 连线完整度 · 综合修复','tl-assist');return;}
-    if(p.type==='preview'){schedulePreview(p.mbt_b64);return;}
   }).then(u=>{TRACE.un=u;}).catch(e=>console.warn('[trace] agent-event 监听注册失败（本窗口轨迹将空白）:',e));
 }
 function appendTraceLine(box,text,cls,id){
@@ -2624,8 +2606,7 @@ async function runGlobalPrompt(){
       trackAgent(t,[],false);
       return true;
     }
-    await applyAgentTerminal(r,startMbt);
-    trackAgent(t,r.ops);
+    await applyAgentTerminal(r,startMbt); // 同上：时间线即完整记录
     const cut=r.stopReason==='max_turns'?'（已达步数上限，结果可能不完整）':(r.stopReason==='error'?'（中途出错，已保留完成部分：'+String(r.partial_error||'').slice(0,60)+'）':'');
     toast(`AI 已提交 ${r.ops.length} 条操作${cut}`);
   }catch(err){
@@ -3966,7 +3947,7 @@ loadAgentConfig();
 let _resizeRaf=0;window.addEventListener('resize',()=>{if(!Object.keys(sessions).length)return;cancelAnimationFrame(_resizeRaf);_resizeRaf=requestAnimationFrame(()=>renderStage());});
 loadComponents();
 if(IS_TAURI)loadModelRegistry();   // 模型注册表快照（离线；失败不影响主流程）
-if(IS_TAURI)refreshRecents();      // 最近项目磁盘对账（剔除已删除文件；失败不影响主流程）
+if(IS_TAURI){refreshRecents();ensureTraceListener();} // 磁盘对账 + agent 轨迹监听（启动期就位，run 首事件零丢失）
 renderAllRecents();                // 侧栏项目区首次渲染（含空态文案）
 loadEngine().then(()=>{           // wasm 引擎预加载（画布首帧 op 前就绪）
   if(engineFailed)console.warn('引擎 wasm 加载失败：',engineFailed);
