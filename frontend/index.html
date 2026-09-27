@@ -18,7 +18,7 @@
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
-body{font-family:-apple-system,'PingFang SC','Inter','Segoe UI',sans-serif;background:var(--base);color:var(--tx);display:flex;flex-direction:column;overflow:hidden;font-size:var(--fs13);-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,'PingFang SC','Hiragino Sans','Apple SD Gothic Neo','Noto Sans CJK KR','Inter','Segoe UI',sans-serif;background:var(--base);color:var(--tx);display:flex;flex-direction:column;overflow:hidden;font-size:var(--fs13);-webkit-font-smoothing:antialiased}
 button{font-family:inherit;color:inherit}
 input,textarea{font-family:inherit;color:inherit}
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -1067,6 +1067,17 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
           <option value="dark">☀️ 开（深色）</option>
         </select>
       </label>
+      <label>语言 / Language
+        <select id="lang-select" onchange="setLang(this.value)">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文（台灣）</option>
+          <option value="zh-HK">繁體中文（香港）</option>
+          <option value="en">English</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+          <option value="fr">Français</option>
+        </select>
+      </label>
     </div>
     <div class="settings-sec">AI 端点（Agent）</div>
     <p class="settings-note">Agent 为本应用内置的 Rust 进程内循环（wasmtime 引擎宿主），变更经 MoonViz 引擎门校验后写回唯一事实源 <code>.mbt.md</code>。此处配置 LLM 驱动端点：URL 含 <code>/anthropic</code> 走 Anthropic Messages 协议（x-api-key），其余按 OpenAI chat 兼容格式处理。</p>
@@ -1259,6 +1270,7 @@ document.addEventListener('keydown',e=>{
   }
 },true);
 function toast(m,kind){
+  m=L(m); // i18n choke：动态提示统一在此翻译（键=zh-CN 原文）
   const t=$('toast');t.textContent=(kind==='err'?'✕ ':'')+m;
   t.classList.toggle('err',kind==='err');
   // 可见期间换文案：重启入场动画，让新消息不被误认为旧消息
@@ -2084,6 +2096,8 @@ function cancelInline(){$('inline-edit').style.display='none';inlineTarget=null;
 
 /* ---------- 右键菜单（动态构建：节点 / 画布空白 / 画板卡片 / MBT 编辑器） ---------- */
 function showMenu(x,y,title,items){
+  title=L(title);
+  items=items.map(it=>typeof it==='string'?'-':Object.assign({},it,{label:L(it.label||'')})); // i18n choke
   const m=$('ctxmenu');
   m.innerHTML='';
   if(title){const t=document.createElement('div');t.className='ctx-title';t.textContent=title;m.appendChild(t);}
@@ -3946,7 +3960,214 @@ async function fetchFxModels(){
 $('settings-modal').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeSettings();}});
 loadAgentConfig();
 
+/* ================= 国际化（i18n）=================
+ * 七语言：zh-CN（默认/键源） zh-TW zh-HK en ja ko fr。
+ * 字典以 zh-CN 原文为键：applyI18n 遍历文本节点/placeholder/title 做精确匹配翻译，
+ * 动态文案在 choke 点（toast/showMenu/确认框）经 L() 翻译——不逐个改写调用面。
+ * 引擎 op / 错误原文 / 文档内容不翻译（协议与事实源）。 */
+const I18N_SUPPORTED=[
+  ['zh-CN','简体中文'],['zh-TW','繁體中文（台灣）'],['zh-HK','繁體中文（香港）'],
+  ['en','English'],['ja','日本語'],['ko','한국어'],['fr','Français']];
+const I18N_DICT={};   /* 字典由下方 I18N_DATA 填充 */
+let I18N_LANG='zh-CN';
+function L(text){
+  if(I18N_LANG==='zh-CN')return text;
+  const m=I18N_DICT[I18N_LANG];
+  return (m&&Object.prototype.hasOwnProperty.call(m,text))?m[text]:text;
+}
+function i18nDetect(){
+  let l=(navigator.language||'zh-CN').toLowerCase();
+  if(l.startsWith('zh')){
+    if(/tw|hant/i.test(navigator.language||''))return /hk/i.test(navigator.language||'')?'zh-HK':'zh-TW';
+    if(/hk/i.test(l))return 'zh-HK';
+    return 'zh-CN';
+  }
+  const base=l.split('-')[0];
+  return ['en','ja','ko','fr'].includes(base)?base:'en';
+}
+function setLang(lang,persist=true){
+  if(!I18N_SUPPORTED.some(x=>x[0]===lang))lang='zh-CN';
+  I18N_LANG=lang;
+  if(persist){try{localStorage.setItem('dd-lang',lang);}catch(_){ }}
+  document.documentElement.lang=lang;
+  applyI18n();
+  const sel=$('lang-select');if(sel)sel.value=lang;
+  if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_menu_language',{lang}).catch(()=>{ });
+}
+/* 静态 DOM 翻译：文本节点 + placeholder/title 属性，精确匹配原文键。
+ * 跳过 script/style/code 与含换行多行文本（注释/代码污染源）。 */
+function applyI18n(){
+  if(I18N_LANG==='zh-CN')return;
+  const m=I18N_DICT[I18N_LANG];if(!m)return;
+  const hit=t=>Object.prototype.hasOwnProperty.call(m,t)?m[t]:null;
+  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,{
+    acceptNode(n){
+      const p=n.parentElement;
+      if(!p)return NodeFilter.FILTER_REJECT;
+      const tag=p.tagName;
+      if(tag==='SCRIPT'||tag==='STYLE'||tag==='CODE')return NodeFilter.FILTER_REJECT;
+      if(p.closest('.declview'))return NodeFilter.FILTER_REJECT; // 源码区不译
+      const t=n.nodeValue.trim();
+      if(!t||t.length>60||/[\n{};]/.test(t))return NodeFilter.FILTER_REJECT;
+      return hit(t)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT;
+    }});
+  const nodes=[];
+  while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(n=>{
+    const raw=n.nodeValue,t=raw.trim(),tr=hit(t);
+    if(tr)n.nodeValue=raw.replace(t,tr);
+  });
+  document.querySelectorAll('[placeholder],[title]').forEach(el=>{
+    ['placeholder','title'].forEach(a=>{
+      const v=el.getAttribute(a);
+      if(v){const t=v.trim(),tr=hit(t);if(tr)el.setAttribute(a,v.replace(t,tr));}
+    });
+  });
+}
+/* 字典：键=zh-CN 原文（精确匹配）。覆盖高频界面文案；引擎 op/错误原文/文档内容不译。 */
+(function(){
+  const en={
+  "线框图":"Wireframe","高保真":"High-Fidelity","MBT 源码":"MBT Source","未命名项目":"Untitled",
+  "＋ 新建":"＋ New","打开…":"Open…","新建画板":"New Board","新画板":"New Board",
+  "AI 组件":"AI Components","交互流":"Flows","模板":"Templates","属性":"Properties","Agent 追踪":"Agent Trace",
+  "最近项目":"Recent Projects","未打开画板":"No board open","一键生成":"Generate","快捷":"Quick",
+  "Web 登录页":"Web Login","手机登录":"Mobile Login","仪表盘":"Dashboard","微信社交":"WeChat Social","自动修复":"Auto-Fix",
+  "◀ 返回":"◀ Back","✏ 标注":"✏ Annotate","🧹 清除":"🧹 Clear","隐藏热区":"Hide Hotspots","退出演示":"Exit Demo",
+  "MBT 渲染结果缺失":"MBT render missing","DDP 密码":"DDP Password","取消":"Cancel","确认":"Confirm","保存":"Save",
+  "导出":"Export","命名":"Name","新建":"New","画板尺寸":"Board Size","设置":"Settings","外观":"Appearance","主题":"Theme","语言":"Language",
+  "深色主题":"Dark theme","浅色主题":"Light theme","AI 端点（Agent）":"AI Endpoint (Agent)","模型":"Model","思考等级":"Thinking Level",
+  "先创建画板":"Create a board first","已复制完整 .mbt.md":"Full .mbt.md copied",
+  "当前画板没有需要修复的视觉债":"No visual debt to fix on this board",
+  "追踪记录已清空":"Trace cleared","标注模式：按住拖动圈画 · Esc 结束标注":"Annotate: drag to draw · Esc to finish",
+  "演示模式":"Demo Mode","新建项目…":"New Project…","打开 DDP…":"Open DDP…","打开最近的项目…":"Open Recent…",
+  "导出 DDP…":"Export DDP…","导出 HTML 原型…":"Export HTML Prototype…","导出 SVG（当前画板）…":"Export SVG (Current Board)…",
+  "撤销":"Undo","重做":"Redo","剪切":"Cut","复制":"Copy","粘贴":"Paste","全选":"Select All",
+  "校验并渲染":"Validate & Render","自动修复（引擎还债）":"Auto-Fix (engine debt)","帮助":"Help",
+  "快捷键与菜单说明":"Shortcuts & Menus","退出 deepDesign":"Quit deepDesign","设置…":"Settings…",
+  "复制当前画板":"Duplicate Board","从此画板演示":"Demo from this board","切换到此画板":"Switch to this board",
+  "复位画板位置":"Reset board position","删除此画板":"Delete this board","复制源码":"Copy Source","清空编辑器":"Clear Editor",
+  "MBT 源码 · 唯一事实源":"MBT Source · Single Source of Truth",
+  };
+  const mk=(over)=>Object.assign({},en,over);
+  I18N_DICT['en']=en;
+  I18N_DICT['zh-TW']=mk({
+  "线框图":"線框圖","高保真":"高傳真","MBT 源码":"MBT 原始碼","未命名项目":"未命名專案",
+  "＋ 新建":"＋ 新增","打开…":"開啟…","新建画板":"新增畫板","新画板":"新畫板",
+  "AI 组件":"AI 組件","交互流":"互動流","模板":"範本","属性":"屬性","Agent 追踪":"Agent 追蹤",
+  "最近项目":"最近專案","未打开画板":"未開啟畫板","一键生成":"一鍵產生","快捷":"快捷",
+  "Web 登录页":"Web 登入頁","手机登录":"手機登入","仪表盘":"儀表板","微信社交":"微信社交","自动修复":"自動修復",
+  "◀ 返回":"◀ 返回","✏ 标注":"✏ 標註","🧹 清除":"🧹 清除","隐藏热区":"隱藏熱區","退出演示":"退出示範",
+  "MBT 渲染结果缺失":"MBT 渲染結果缺失","DDP 密码":"DDP 密碼","取消":"取消","确认":"確認","保存":"儲存",
+  "导出":"匯出","命名":"命名","新建":"新增","画板尺寸":"畫板尺寸","设置":"設定","外观":"外觀","主题":"主題","语言":"語言",
+  "深色主题":"深色主題","浅色主题":"淺色主題","AI 端点（Agent）":"AI 端點（Agent）","模型":"模型","思考等级":"思考等級",
+  "先创建画板":"先建立畫板","已复制完整 .mbt.md":"已複製完整 .mbt.md",
+  "当前画板没有需要修复的视觉债":"目前畫板沒有需要修復的視覺債",
+  "追踪记录已清空":"追蹤記錄已清空","标注模式：按住拖动圈画 · Esc 结束标注":"標註模式：按住拖動圈畫 · Esc 結束標註",
+  "演示模式":"示範模式","新建项目…":"新增專案…","打开 DDP…":"開啟 DDP…","打开最近的项目…":"開啟最近的專案…",
+  "导出 DDP…":"匯出 DDP…","导出 HTML 原型…":"匯出 HTML 原型…","导出 SVG（当前画板）…":"匯出 SVG（目前畫板）…",
+  "撤销":"還原","重做":"重做","剪切":"剪下","复制":"複製","粘贴":"貼上","全选":"全選",
+  "校验并渲染":"校驗並渲染","自动修复（引擎还债）":"自動修復（引擎還債）","帮助":"說明",
+  "快捷键与菜单说明":"快捷鍵與選單說明","退出 deepDesign":"結束 deepDesign","设置…":"設定…",
+  "复制当前画板":"複製目前畫板","从此画板演示":"從此畫板示範","切换到此画板":"切換到此畫板",
+  "复位画板位置":"重設畫板位置","删除此画板":"刪除此畫板","复制源码":"複製原始碼","清空编辑器":"清空編輯器",
+  "MBT 源码 · 唯一事实源":"MBT 原始碼 · 唯一事實源",
+  });
+  I18N_DICT['zh-HK']=mk({
+  "线框图":"線框圖","高保真":"高傳真","MBT 源码":"MBT 原始碼","未命名项目":"未命名專案",
+  "＋ 新建":"＋ 新增","打开…":"開啟…","新建画板":"新增畫板","新画板":"新畫板",
+  "AI 组件":"AI 組件","交互流":"互動流","模板":"範本","属性":"屬性","Agent 追踪":"Agent 追蹤",
+  "最近项目":"最近專案","未打开画板":"未開啟畫板","一键生成":"一鍵產生","快捷":"快捷",
+  "Web 登录页":"Web 登入頁","手机登录":"手機登入","仪表盘":"儀表板","微信社交":"微信社交","自动修复":"自動修復",
+  "◀ 返回":"◀ 返回","✏ 标注":"✏ 標註","🧹 清除":"🧹 清除","隐藏热区":"隱藏熱區","退出演示":"退出示範",
+  "MBT 渲染结果缺失":"MBT 渲染結果缺失","DDP 密码":"DDP 密碼","取消":"取消","确认":"確認","保存":"儲存",
+  "导出":"匯出","命名":"命名","新建":"新增","画板尺寸":"畫板尺寸","设置":"設定","外观":"外觀","主题":"主題","语言":"語言",
+  "深色主题":"深色主題","浅色主题":"淺色主題","AI 端点（Agent）":"AI 端點（Agent）","模型":"模型","思考等级":"思考等級",
+  "先创建画板":"先建立畫板","已复制完整 .mbt.md":"已複製完整 .mbt.md",
+  "当前画板没有需要修复的视觉债":"目前畫板沒有需要修復的視覺債",
+  "追踪记录已清空":"追蹤記錄已清空","标注模式：按住拖動圈畫 · Esc 結束標註":"標註模式：按住拖動圈畫 · Esc 結束標註",
+  "演示模式":"示範模式","新建项目…":"新增專案…","打开 DDP…":"開啟 DDP…","打开最近的项目…":"開啟最近的專案…",
+  "导出 DDP…":"匯出 DDP…","导出 HTML 原型…":"匯出 HTML 原型…","导出 SVG（当前画板）…":"匯出 SVG（目前畫板）…",
+  "撤销":"復原","重做":"重做","剪切":"剪下","复制":"複製","粘贴":"貼上","全选":"全選",
+  "校验并渲染":"校驗並渲染","自动修复（引擎还债）":"自動修復（引擎還債）","帮助":"說明",
+  "快捷键与菜单说明":"快捷鍵與選單說明","退出 deepDesign":"結束 deepDesign","设置…":"設定…",
+  "复制当前画板":"複製目前畫板","从此画板演示":"從此畫板示範","切换到此画板":"切換到此畫板",
+  "复位画板位置":"重設畫板位置","删除此画板":"刪除此畫板","复制源码":"複製原始碼","清空编辑器":"清空編輯器",
+  "MBT 源码 · 唯一事实源":"MBT 原始碼 · 唯一事實源",
+  });
+  I18N_DICT['ja']=mk({
+  "线框图":"ワイヤーフレーム","高保真":"ハイファイ","MBT 源码":"MBT ソース","未命名项目":"無題プロジェクト",
+  "＋ 新建":"＋ 新規","打开…":"開く…","新建画板":"新規ボード","新画板":"新規ボード",
+  "AI 组件":"AI コンポーネント","交互流":"インタラクション","模板":"テンプレート","属性":"プロパティ","Agent 追踪":"Agent トレース",
+  "最近项目":"最近のプロジェクト","未打开画板":"ボード未開","一键生成":"生成","快捷":"クイック",
+  "Web 登录页":"Web ログイン","手机登录":"モバイルログイン","仪表盘":"ダッシュボード","微信社交":"WeChat","自动修复":"自動修復",
+  "◀ 返回":"◀ 戻る","✏ 标注":"✏ 注釈","🧹 清除":"🧹 クリア","隐藏热区":"ホットスポット非表示","退出演示":"デモ終了",
+  "MBT 渲染结果缺失":"MBT 描画結果なし","DDP 密码":"DDP パスワード","取消":"キャンセル","确认":"確認","保存":"保存",
+  "导出":"書き出す","命名":"名前","新建":"新規","画板尺寸":"ボードサイズ","设置":"設定","外观":"外観","主题":"テーマ","语言":"言語",
+  "深色主题":"ダークテーマ","浅色主题":"ライトテーマ","AI 端点（Agent）":"AI エンドポイント（Agent）","模型":"モデル","思考等级":"思考レベル",
+  "先创建画板":"先にボードを作成","已复制完整 .mbt.md":".mbt.md 全体をコピー",
+  "当前画板没有需要修复的视觉债":"このボードに修正すべき視覚的負債はありません",
+  "追踪记录已清空":"トレースを消去","标注模式：按住拖动圈画 · Esc 结束标注":"注釈：ドラッグで描画・Esc で終了",
+  "演示模式":"デモモード","新建项目…":"新規プロジェクト…","打开 DDP…":"DDP を開く…","打开最近的项目…":"最近のプロジェクトを開く…",
+  "导出 DDP…":"DDP を書き出す…","导出 HTML 原型…":"HTML プロトタイプを書き出す…","导出 SVG（当前画板）…":"SVG を書き出す（現在のボード）…",
+  "撤销":"取り消す","重做":"やり直す","剪切":"カット","复制":"コピー","粘贴":"ペースト","全选":"すべて選択",
+  "校验并渲染":"検証して描画","自动修复（引擎还债）":"自動修復（エンジン負債解消）","帮助":"ヘルプ",
+  "快捷键与菜单说明":"ショートカットとメニュー","退出 deepDesign":"deepDesign を終了","设置…":"設定…",
+  "复制当前画板":"現在のボードを複製","从此画板演示":"このボードからデモ","切换到此画板":"このボードへ切替",
+  "复位画板位置":"ボード位置をリセット","删除此画板":"このボードを削除","复制源码":"ソースをコピー","清空编辑器":"エディタをクリア",
+  "MBT 源码 · 唯一事实源":"MBT ソース・唯一の事実源",
+  });
+  I18N_DICT['ko']=mk({
+  "线框图":"와이어프레임","高保真":"하이파이","MBT 源码":"MBT 소스","未命名项目":"제목 없는 프로젝트",
+  "＋ 新建":"＋ 새로 만들기","打开…":"열기…","新建画板":"새 보드","新画板":"새 보드",
+  "AI 组件":"AI 컴포넌트","交互流":"인터랙션","模板":"템플릿","属性":"속성","Agent 追踪":"Agent 추적",
+  "最近项目":"최근 프로젝트","未打开画板":"보드 없음","一键生成":"생성","快捷":"빠른",
+  "Web 登录页":"Web 로그인","手机登录":"모바일 로그인","仪表盘":"대시보드","微信社交":"WeChat","自动修复":"자동 수정",
+  "◀ 返回":"◀ 뒤로","✏ 标注":"✏ 주석","🧹 清除":"🧹 지우기","隐藏热区":"핫스팟 숨기기","退出演示":"데모 종료",
+  "MBT 渲染结果缺失":"MBT 렌더 결과 없음","DDP 密码":"DDP 비밀번호","取消":"취소","确认":"확인","保存":"저장",
+  "导出":"내보내기","命名":"이름","新建":"새로 만들기","画板尺寸":"보드 크기","设置":"설정","外观":"화면","主题":"테마","语言":"언어",
+  "深色主题":"다크 테마","浅色主题":"라이트 테마","AI 端点（Agent）":"AI 엔드포인트(Agent)","模型":"모델","思考等级":"사고 수준",
+  "先创建画板":"먼저 보드를 만드세요","已复制完整 .mbt.md":".mbt.md 전체 복사됨",
+  "当前画板没有需要修复的视觉债":"이 보드에 수정할 시각 부채가 없습니다",
+  "追踪记录已清空":"추적 기록 삭제됨","标注模式：按住拖动圈画 · Esc 结束标注":"주석 모드: 드래그해 그리기 · Esc 종료",
+  "演示模式":"데모 모드","新建项目…":"새 프로젝트…","打开 DDP…":"DDP 열기…","打开最近的项目…":"최근 프로젝트 열기…",
+  "导出 DDP…":"DDP 내보내기…","导出 HTML 原型…":"HTML 프로토타입 내보내기…","导出 SVG（当前画板）…":"SVG 내보내기(현재 보드)…",
+  "撤销":"실행 취소","重做":"다시 실행","剪切":"잘라내기","复制":"복사","粘贴":"붙여넣기","全选":"모두 선택",
+  "校验并渲染":"검증 후 렌더링","自动修复（引擎还债）":"자동 수정(엔진 부채 해소)","帮助":"도움말",
+  "快捷键与菜单说明":"단축키 및 메뉴 안내","退出 deepDesign":"deepDesign 종료","设置…":"설정…",
+  "复制当前画板":"현재 보드 복제","从此画板演示":"이 보드에서 데모","切换到此画板":"이 보드로 전환",
+  "复位画板位置":"보드 위치 초기화","删除此画板":"이 보드 삭제","复制源码":"소스 복사","清空编辑器":"편집기 비우기",
+  "MBT 源码 · 唯一事实源":"MBT 소스 · 유일한 사실 원본",
+  });
+  I18N_DICT['fr']=mk({
+  "线框图":"Wireframe","高保真":"Haute fidélité","MBT 源码":"Source MBT","未命名项目":"Projet sans titre",
+  "＋ 新建":"＋ Nouveau","打开…":"Ouvrir…","新建画板":"Nouvelle planche","新画板":"Nouvelle planche",
+  "AI 组件":"Composants IA","交互流":"Interactions","模板":"Modèles","属性":"Propriétés","Agent 追踪":"Trace Agent",
+  "最近项目":"Projets récents","未打开画板":"Aucune planche","一键生成":"Générer","快捷":"Rapide",
+  "Web 登录页":"Login Web","手机登录":"Login mobile","仪表盘":"Tableau de bord","微信社交":"WeChat","自动修复":"Correction auto",
+  "◀ 返回":"◀ Retour","✏ 标注":"✏ Annoter","🧹 清除":"🧹 Effacer","隐藏热区":"Masquer zones","退出演示":"Quitter démo",
+  "MBT 渲染结果缺失":"Rendu MBT manquant","DDP 密码":"Mot de passe DDP","取消":"Annuler","确认":"Confirmer","保存":"Enregistrer",
+  "导出":"Exporter","命名":"Nom","新建":"Nouveau","画板尺寸":"Taille de planche","设置":"Réglages","外观":"Apparence","主题":"Thème","语言":"Langue",
+  "深色主题":"Thème sombre","浅色主题":"Thème clair","AI 端点（Agent）":"Point d'accès IA (Agent)","模型":"Modèle","思考等级":"Niveau de réflexion",
+  "先创建画板":"Créez d'abord une planche","已复制完整 .mbt.md":".mbt.md complet copié",
+  "当前画板没有需要修复的视觉债":"Aucune dette visuelle à corriger sur cette planche",
+  "追踪记录已清空":"Trace effacée","标注模式：按住拖动圈画 · Esc 结束标注":"Annotation : glissez pour dessiner · Échap pour finir",
+  "演示模式":"Mode démo","新建项目…":"Nouveau projet…","打开 DDP…":"Ouvrir un DDP…","打开最近的项目…":"Ouvrir un projet récent…",
+  "导出 DDP…":"Exporter en DDP…","导出 HTML 原型…":"Exporter le prototype HTML…","导出 SVG（当前画板）…":"Exporter en SVG (planche actuelle)…",
+  "撤销":"Annuler","重做":"Rétablir","剪切":"Couper","复制":"Copier","粘贴":"Coller","全选":"Tout sélectionner",
+  "校验并渲染":"Valider et rendre","自动修复（引擎还债）":"Correction auto (dette moteur)","帮助":"Aide",
+  "快捷键与菜单说明":"Raccourcis et menus","退出 deepDesign":"Quitter deepDesign","设置…":"Réglages…",
+  "复制当前画板":"Dupliquer la planche","从此画板演示":"Démo depuis cette planche","切换到此画板":"Aller à cette planche",
+  "复位画板位置":"Réinitialiser la position","删除此画板":"Supprimer cette planche","复制源码":"Copier la source","清空编辑器":"Vider l'éditeur",
+  "MBT 源码 · 唯一事实源":"Source MBT · vérité unique",
+  });
+})();
+
+
 /* ---------- 启动 ---------- */
+(function(){
+  let saved=null;try{saved=localStorage.getItem('dd-lang');}catch(_){ }
+  setLang(saved||i18nDetect(),false);
+})();
 let _resizeRaf=0;window.addEventListener('resize',()=>{if(!Object.keys(sessions).length)return;cancelAnimationFrame(_resizeRaf);_resizeRaf=requestAnimationFrame(()=>renderStage());});
 loadComponents();
 if(IS_TAURI)loadModelRegistry();   // 模型注册表快照（离线；失败不影响主流程）

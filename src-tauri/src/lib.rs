@@ -314,6 +314,17 @@ fn journal_append(dir: &std::path::Path, file: &str, line: &serde_json::Value) {
 /// 退出应用（⌘Q 自定义菜单项的终点）。直接 exit 是有意的：调用前置条件是脏拦截
 /// 已确认放弃（脏已清）——绕过 CloseRequested 不构成绕过保护。
 #[tauri::command]
+fn set_menu_language(app: tauri::AppHandle, lang: String) -> Result<(), String> {
+    // 前端语言切换时同步重建原生菜单（macOS 菜单栏；Windows 无原生菜单为空操作）
+    let norm = match lang.as_str() {
+        "zh-TW" | "zh-HK" | "en" | "ja" | "ko" | "fr" => lang,
+        _ => "zh-CN".to_string(),
+    };
+    *APP_MENU_LANG.lock().map_err(|e| e.to_string())? = norm;
+    build_native_menus(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn app_exit(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -336,6 +347,7 @@ pub fn run() {
             confirm_discard,
             set_project_dirty,
             app_exit,
+            set_menu_language,
             list_ddp_projects,
             rebase_agent_ops,
             open_project_window,
@@ -359,7 +371,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            build_native_menus(app)?;
+            build_native_menus(app.handle())?;
             // Windows：按主显示器分辨率比例定启动尺寸（82%×86%，clamp 到可见
             // 范围）并居中——任何分辨率下 UI 完全可见、与屏幕保持比例。
             // 窗口 visible:false（见 tauri.windows.conf.json）：尺寸就绪后再显示，
@@ -551,7 +563,88 @@ fn model_registry() -> serde_json::Value {
 /// 标题栏与工具栏合并（tauri.windows.conf.json decorations=false，topbar 即
 /// 标题栏），原菜单功能由前端「文件 ▾」下拉承载（frontend fmAct）。
 #[cfg(target_os = "macos")]
-fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+/* ── 原生菜单 i18n：七语言标签表（值=zh-CN 原文键）。切换语言时重建菜单 ── */
+static APP_MENU_LANG: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+fn menu_t(zh: &str) -> String {
+    let lang = APP_MENU_LANG.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let lang = lang.as_str();
+    let table: &[(&str, &str)] = match lang {
+        "zh-TW" => &[
+            ("文件","檔案"),("编辑","編輯"),("视图","檢視"),("画板","畫板"),("帮助","說明"),
+            ("新建项目…","新增專案…"),("打开 DDP…","開啟 DDP…"),("打开最近的项目…","開啟最近的專案…"),
+            ("保存","儲存"),("导出 DDP…","匯出 DDP…"),("导出 HTML 原型…","匯出 HTML 原型…"),
+            ("导出 SVG（当前画板）…","匯出 SVG（目前畫板）…"),("撤销","還原"),("重做","重做"),
+            ("剪切","剪下"),("复制","複製"),("粘贴","貼上"),("全选","全選"),
+            ("线框图","線框圖"),("高保真","高傳真"),("MBT 源码","MBT 原始碼"),("适配窗口","適應視窗"),
+            ("演示模式","示範模式"),("新建画板","新增畫板"),("复制当前画板","複製目前畫板"),
+            ("校验并渲染","校驗並渲染"),("自动修复（引擎还债）","自動修復（引擎還債）"),
+            ("设置…","設定…"),("退出 deepDesign","結束 deepDesign"),("快捷键与菜单说明","快捷鍵與選單說明"),
+        ],
+        "zh-HK" => &[
+            ("文件","檔案"),("编辑","編輯"),("视图","檢視"),("画板","畫板"),("帮助","說明"),
+            ("新建项目…","新增專案…"),("打开 DDP…","開啟 DDP…"),("打开最近的项目…","開啟最近的專案…"),
+            ("保存","儲存"),("导出 DDP…","匯出 DDP…"),("导出 HTML 原型…","匯出 HTML 原型…"),
+            ("导出 SVG（当前画板）…","匯出 SVG（目前畫板）…"),("撤销","復原"),("重做","重做"),
+            ("剪切","剪下"),("复制","複製"),("粘贴","貼上"),("全选","全選"),
+            ("线框图","線框圖"),("高保真","高傳真"),("MBT 源码","MBT 原始碼"),("适配窗口","適應視窗"),
+            ("演示模式","示範模式"),("新建画板","新增畫板"),("复制当前画板","複製目前畫板"),
+            ("校验并渲染","校驗並渲染"),("自动修复（引擎还债）","自動修復（引擎還債）"),
+            ("设置…","設定…"),("退出 deepDesign","結束 deepDesign"),("快捷键與選單說明","快捷鍵與選單說明"),
+        ],
+        "ja" => &[
+            ("ファイル","文件"),("編集","编辑"),("表示","视图"),("ボード","画板"),("ヘルプ","帮助"),
+            ("新規プロジェクト…","新建项目…"),("DDP を開く…","打开 DDP…"),("最近のプロジェクトを開く…","打开最近的项目…"),
+            ("保存","保存"),("DDP を書き出す…","导出 DDP…"),("HTML プロトタイプを書き出す…","导出 HTML 原型…"),
+            ("SVG を書き出す（現在のボード）…","导出 SVG（当前画板）…"),("取り消す","撤销"),("やり直す","重做"),
+            ("カット","剪切"),("コピー","复制"),("ペースト","粘贴"),("すべて選択","全选"),
+            ("ワイヤーフレーム","线框图"),("ハイファイ","高保真"),("MBT ソース","MBT 源码"),("ウィンドウに合わせる","适配窗口"),
+            ("デモモード","演示模式"),("新規ボード","新建画板"),("現在のボードを複製","复制当前画板"),
+            ("検証して描画","校验并渲染"),("自動修復（エンジン負債解消）","自动修复（引擎还债）"),
+            ("設定…","设置…"),("deepDesign を終了","退出 deepDesign"),("ショートカットとメニューの説明","快捷键与菜单说明"),
+        ],
+        "ko" => &[
+            ("파일","文件"),("편집","编辑"),("보기","视图"),("보드","画板"),("도움말","帮助"),
+            ("새 프로젝트…","新建项目…"),("DDP 열기…","打开 DDP…"),("최근 프로젝트 열기…","打开最近的项目…"),
+            ("저장","保存"),("DDP 내보내기…","导出 DDP…"),("HTML 프로토타입 내보내기…","导出 HTML 原型…"),
+            ("SVG 내보내기(현재 보드)…","导出 SVG（当前画板）…"),("실행 취소","撤销"),("다시 실행","重做"),
+            ("잘라내기","剪切"),("복사","复制"),("붙여넣기","粘贴"),("모두 선택","全选"),
+            ("와이어프레임","线框图"),("하이파이","高保真"),("MBT 소스","MBT 源码"),("창에 맞춤","适配窗口"),
+            ("데모 모드","演示模式"),("새 보드","新建画板"),("현재 보드 복제","复制当前画板"),
+            ("검증 후 렌더링","校验并渲染"),("자동 수정(엔진 부채 해소)","自动修复（引擎还债）"),
+            ("설정…","设置…"),("deepDesign 종료","退出 deepDesign"),("단축키 및 메뉴 안내","快捷键与菜单说明"),
+        ],
+        "fr" => &[
+            ("Fichier","文件"),("Édition","编辑"),("Affichage","视图"),("Planche","画板"),("Aide","帮助"),
+            ("Nouveau projet…","新建项目…"),("Ouvrir un DDP…","打开 DDP…"),("Ouvrir un projet récent…","打开最近的项目…"),
+            ("Enregistrer","保存"),("Exporter en DDP…","导出 DDP…"),("Exporter le prototype HTML…","导出 HTML 原型…"),
+            ("Exporter en SVG (planche actuelle)…","导出 SVG（当前画板）…"),("Annuler","撤销"),("Rétablir","重做"),
+            ("Couper","剪切"),("Copier","复制"),("Coller","粘贴"),("Tout sélectionner","全选"),
+            ("Wireframe","线框图"),("Haute fidélité","高保真"),("Source MBT","MBT 源码"),("Ajuster à la fenêtre","适配窗口"),
+            ("Mode démo","演示模式"),("Nouvelle planche","新建画板"),("Dupliquer la planche","复制当前画板"),
+            ("Valider et rendre","校验并渲染"),("Correction auto (dette moteur)","自动修复（引擎还债）"),
+            ("Réglages…","设置…"),("Quitter deepDesign","退出 deepDesign"),("Raccourcis et menus","快捷键与菜单说明"),
+        ],
+        "en" => &[
+            ("File","文件"),("Edit","编辑"),("View","视图"),("Board","画板"),("Help","帮助"),
+            ("New Project…","新建项目…"),("Open DDP…","打开 DDP…"),("Open Recent…","打开最近的项目…"),
+            ("Save","保存"),("Export DDP…","导出 DDP…"),("Export HTML Prototype…","导出 HTML 原型…"),
+            ("Export SVG (Current Board)…","导出 SVG（当前画板）…"),("Undo","撤销"),("Redo","重做"),
+            ("Cut","剪切"),("Copy","复制"),("Paste","粘贴"),("Select All","全选"),
+            ("Wireframe","线框图"),("High-Fidelity","高保真"),("MBT Source","MBT 源码"),("Fit Window","适配窗口"),
+            ("Demo Mode","演示模式"),("New Board","新建画板"),("Duplicate Board","复制当前画板"),
+            ("Validate & Render","校验并渲染"),("Auto-Fix (engine debt)","自动修复（引擎还债）"),
+            ("Settings…","设置…"),("Quit deepDesign","退出 deepDesign"),("Shortcuts & Menus","快捷键与菜单说明"),
+        ],
+        _ => &[],
+    };
+    if lang == "zh-CN" { return zh.to_string(); }
+    for (loc, zh_key) in table {
+        if *zh_key == zh { return loc.to_string(); }
+    }
+    zh.to_string()
+}
+
+fn build_native_menus(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
 
     let app_menu = SubmenuBuilder::new(app, "deepDesign Studio")
@@ -564,7 +657,7 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "settings",
-            "设置…",
+            &menu_t("设置…"),
             true,
             Some("CmdOrCtrl+Comma"),
         )?)
@@ -580,38 +673,38 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "quit-app",
-            "退出 deepDesign",
+            &menu_t("退出 deepDesign"),
             true,
             Some("CmdOrCtrl+Q"),
         )?)
         .build()?;
 
-    let file = SubmenuBuilder::new(app, "文件")
+    let file = SubmenuBuilder::new(app, &menu_t("文件"))
         .item(&MenuItem::with_id(
             app,
             "new-project",
-            "新建项目…",
+            &menu_t("新建项目…"),
             true,
             Some("CmdOrCtrl+N"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "open-ddp",
-            "打开 DDP…",
+            &menu_t("打开 DDP…"),
             true,
             Some("CmdOrCtrl+O"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "open-recent",
-            "打开最近的项目…",
+            &menu_t("打开最近的项目…"),
             true,
             None::<&str>,
         )?)
         .item(&MenuItem::with_id(
             app,
             "save",
-            "保存",
+            &menu_t("保存"),
             true,
             Some("CmdOrCtrl+S"),
         )?)
@@ -619,76 +712,76 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "export-ddp",
-            "导出 DDP…",
+            &menu_t("导出 DDP…"),
             true,
             Some("CmdOrCtrl+Shift+E"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "export-html",
-            "导出 HTML 原型…",
+            &menu_t("导出 HTML 原型…"),
             true,
             Some("CmdOrCtrl+Shift+H"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "export-svg",
-            "导出 SVG（当前画板）…",
+            &menu_t("导出 SVG（当前画板）…"),
             true,
             None::<&str>,
         )?)
         .build()?;
 
-    let edit = SubmenuBuilder::new(app, "编辑")
+    let edit = SubmenuBuilder::new(app, &menu_t("编辑"))
         // 自定义撤销/重做（文档级，走前端历史会话）：预置项只作用于焦点文本框，
         // 会让 ⌘Z 被文本语义吞掉；undoMbt 对输入框焦点回退 execCommand 文本撤销
         .item(&MenuItem::with_id(
             app,
             "edit-undo",
-            "撤销",
+            &menu_t("撤销"),
             true,
             Some("CmdOrCtrl+Z"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "edit-redo",
-            "重做",
+            &menu_t("重做"),
             true,
             Some("CmdOrCtrl+Shift+Z"),
         )?)
         .separator()
-        .item(&PredefinedMenuItem::cut(app, Some("剪切"))?)
-        .item(&PredefinedMenuItem::copy(app, Some("复制"))?)
-        .item(&PredefinedMenuItem::paste(app, Some("粘贴"))?)
-        .item(&PredefinedMenuItem::select_all(app, Some("全选"))?)
+        .item(&PredefinedMenuItem::cut(app, Some(&menu_t("剪切")))?)
+        .item(&PredefinedMenuItem::copy(app, Some(&menu_t("复制")))?)
+        .item(&PredefinedMenuItem::paste(app, Some(&menu_t("粘贴")))?)
+        .item(&PredefinedMenuItem::select_all(app, Some(&menu_t("全选")))?)
         .build()?;
 
-    let view = SubmenuBuilder::new(app, "视图")
+    let view = SubmenuBuilder::new(app, &menu_t("视图"))
         .item(&MenuItem::with_id(
             app,
             "view-wireframe",
-            "线框图",
+            &menu_t("线框图"),
             true,
             Some("CmdOrCtrl+1"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "view-hifi",
-            "高保真",
+            &menu_t("高保真"),
             true,
             Some("CmdOrCtrl+2"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "view-decl",
-            "MBT 源码",
+            &menu_t("MBT 源码"),
             true,
             Some("CmdOrCtrl+3"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "view-play",
-            "演示模式",
+            &menu_t("演示模式"),
             true,
             Some("CmdOrCtrl+4"),
         )?)
@@ -696,24 +789,24 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "view-fit",
-            "适配窗口",
+            &menu_t("适配窗口"),
             true,
             Some("CmdOrCtrl+0"),
         )?)
         .build()?;
 
-    let board = SubmenuBuilder::new(app, "画板")
+    let board = SubmenuBuilder::new(app, &menu_t("画板"))
         .item(&MenuItem::with_id(
             app,
             "board-new",
-            "新建画板",
+            &menu_t("新建画板"),
             true,
             Some("CmdOrCtrl+Shift+N"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "board-dup",
-            "复制当前画板",
+            &menu_t("复制当前画板"),
             true,
             Some("CmdOrCtrl+Shift+D"),
         )?)
@@ -721,7 +814,7 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "autofix",
-            "自动修复（引擎还债）",
+            &menu_t("自动修复（引擎还债）"),
             true,
             Some("CmdOrCtrl+Shift+F"),
         )?)
@@ -729,17 +822,17 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .item(&MenuItem::with_id(
             app,
             "validate",
-            "校验并渲染",
+            &menu_t("校验并渲染"),
             true,
             None::<&str>,
         )?)
         .build()?;
 
-    let help = SubmenuBuilder::new(app, "帮助")
+    let help = SubmenuBuilder::new(app, &menu_t("帮助"))
         .item(&MenuItem::with_id(
             app,
             "shortcuts",
-            "快捷键与菜单说明",
+            &menu_t("快捷键与菜单说明"),
             true,
             Some("CmdOrCtrl+/"),
         )?)
@@ -753,7 +846,7 @@ fn build_native_menus(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 }
 
 #[cfg(not(target_os = "macos"))]
-fn build_native_menus(_app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn build_native_menus(_app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Windows：无原生菜单栏（标题栏合并，见函数文档）；原菜单功能由前端「文件 ▾」下拉承载
     Ok(())
 }
