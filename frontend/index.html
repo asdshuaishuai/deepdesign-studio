@@ -202,7 +202,7 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .czoom .fit:hover{color:var(--acc-tx)}
 /* 多 Frame 并排 */
 .stage{position:relative;display:flex;align-items:flex-start;gap:96px;padding:56px 64px 48px;min-width:max-content;min-height:100%}
-.frame-wrap{flex-shrink:0;transition:transform .2s,box-shadow .18s ease,border-color .18s ease}
+.frame-wrap{flex-shrink:0;transition:box-shadow .18s ease,border-color .18s ease}
 .frame-chrome{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f0f1f5;border:1px solid rgba(0,0,0,.09);border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;cursor:pointer;user-select:none}
 .frame-wrap.active .frame-chrome{background:#fff;border-color:rgba(0,122,255,.45);border-bottom:none}
 .frame-wrap.active .fc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--acc-tx)}
@@ -600,6 +600,13 @@ body.mode-wireframe .frame-body svg{background:#fff}
 
 /* Frame-to-frame interaction links: visible only in design modes. */
 .flow-wires{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:visible}
+/* 连线组：默认静音（细线低透明度、无标签），悬停高亮 + 出标签（命中线恢复 pointer-events） */
+.flow-wires .flow-g .flow-line{transition:opacity .12s,stroke-width .12s}
+.flow-wires .flow-g .flow-label{display:none}
+.flow-wires .flow-g:hover .flow-label{display:block}
+.flow-wires .flow-g:hover .flow-line{opacity:1;stroke-width:2}
+.flow-wires .flow-g:hover .flow-src{r:4;fill:#0a67e0}
+.flow-wires .flow-hit{pointer-events:stroke}
 .frame-wrap{position:relative;z-index:4}
 body:not(.design-active) .flow-wires{display:none}
 
@@ -1701,47 +1708,80 @@ function renderFlowWires(stage){
   // 旧的 width/height 属性 + viewBox 会被 CSS 覆盖成 100%，盒与 viewBox 不一致时整线缩放错位
 
   wire.innerHTML='<defs><marker id="dd-flow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,1 L7,4 L0,7 z" fill="#3f8fff"/></marker></defs>';
-  // 同一对画板的多条 flow 需错开：否则曲线与标签逐像素叠死（一板多按钮连同一目标极常见）
+  // 连线信息架构重做（2026-09 两轮反馈「乱、不清晰」）：
+  // 1) 锚定真实触发按钮——线从按钮所在高度出发，一眼对应「哪个按钮跳哪块板」，
+  //    不再全部挤在画板垂直中点互相纠缠；
+  // 2) 标签默认隐藏、悬停显示——常驻标签是最大噪声源（N 条流 = N 个胶囊糊在画板上），
+  //    流清单已在右侧流程面板常驻，画布上悬停补个快捷读法即可；
+  // 3) 默认态细线低透明度（背景层语义），悬停高亮加粗 + 出标签。
+  const NS='http://www.w3.org/2000/svg';
+  const anchorY=(wrapEl,f)=>{
+    // 源锚点：触发节点纵向中心（画板坐标系 → stage 布局坐标），夹在画板上下边内
+    let y=wrapEl.offsetTop+wrapEl.offsetHeight/2;
+    const sc=parseFloat(wrapEl.dataset.displayScale)||1;
+    const trig=(f.trigger||'tap:').replace('tap:','');
+    const tn=sessions[f.from]&&Array.isArray(sessions[f.from].nodes)
+      ?sessions[f.from].nodes.find(n=>n.id===trig):null;
+    if(tn&&tn.rect&&tn.rect.h){
+      const ny=wrapEl.offsetTop+(tn.rect.y+tn.rect.h/2)*sc+2.5;
+      y=Math.max(wrapEl.offsetTop+16,Math.min(wrapEl.offsetTop+wrapEl.offsetHeight-16,ny));
+    }
+    return y;
+  };
   const pairIx={};
   for(const f of graph){
     const a=stage.querySelector(frameSel(f.from));
     const b=stage.querySelector(frameSel(f.to));
     if(!a||!b)continue;
-    const pk=f.from+'\u2192'+f.to,ix=pairIx[pk]=(pairIx[pk]||0)+1,lift=(ix-1)*26;
-    // WKWebView 中 getBoundingClientRect 与渲染错位会把关联线画到可视区外；
-    // frame-wrap 是普通 div，offsetLeft/offsetWidth（相对 stage 布局）与渲染一致。
-    // 拖拽偏移走 transform，offsetLeft 不变——端点须显式加上 boardOffsets（线随画板走）
+    // 同源同锚（同按钮多条/无锚点回退中点）时小间距扇开，防完全重叠
+    const ak=f.from+':'+(f.trigger||''),ix=pairIx[ak]=(pairIx[ak]||0)+1,lift=(ix-1)*12;
+    // WKWebView 中 getBoundingClientRect 与渲染错位；offsetLeft/Top（stage 布局）与渲染一致。
+    // 拖拽偏移走 transform，offset 不变——端点显式加 boardOffsets（线随画板走）。
     const ao=boardOffsets[f.from]||{dx:0,dy:0},bo2=boardOffsets[f.to]||{dx:0,dy:0};
-    const x1=a.offsetLeft+a.offsetWidth+ao.dx,y1=a.offsetTop+a.offsetHeight/2+ao.dy-lift;
-    const x2=b.offsetLeft+bo2.dx,y2=b.offsetTop+b.offsetHeight/2+bo2.dy-lift;
-    // 视觉降噪重做（2026-09 反馈「连线乱且不明确」）：细实线 + 单起点点 + 紧凑胶囊标签
-    // 直接骑在曲线中点上方——去掉虚线抖动、终点大圆、引线和大背景框四类噪声源。
+    const x1=a.offsetLeft+a.offsetWidth+ao.dx,y1=anchorY(a,f)+ao.dy-lift;
+    const x2=b.offsetLeft+bo2.dx,y2=b.offsetTop+b.offsetHeight/2+bo2.dy;
     const mx=(x1+x2)/2,my=(y1+y2)/2;
-    const pth=document.createElementNS('http://www.w3.org/2000/svg','path');
-    pth.setAttribute('d',`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    const g=document.createElementNS(NS,'g');g.setAttribute('class','flow-g');
+    const dPath=`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+    // 可见线（默认静音态）
+    const pth=document.createElementNS(NS,'path');
+    pth.setAttribute('class','flow-line');
+    pth.setAttribute('d',dPath);
     pth.setAttribute('fill','none');
-    pth.setAttribute('stroke','#3f8fff');pth.setAttribute('stroke-width','1.6');pth.setAttribute('opacity','.8');
+    pth.setAttribute('stroke','#3f8fff');pth.setAttribute('stroke-width','1.5');
+    pth.setAttribute('opacity','.38');
     pth.setAttribute('marker-end','url(#dd-flow-arrow)');
-    wire.appendChild(pth);
-    // 仅起点一个小圆点（起点即语义：「从这块板出发」），终点由箭头表达
-    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    g.appendChild(pth);
+    // 源点：按钮高度处一个小点（悬停放大由 CSS）
+    const dot=document.createElementNS(NS,'circle');
+    dot.setAttribute('class','flow-src');
     dot.setAttribute('cx',x1);dot.setAttribute('cy',y1);dot.setAttribute('r','3');
     dot.setAttribute('fill','#3f8fff');
-    wire.appendChild(dot);
-    // 紧凑标签：触发按钮文字（截 8 字）→ 目标板名，胶囊底、单行小字，骑在曲线正中
-    const tnode=sessions[f.from]&&Array.isArray(sessions[f.from].nodes)
+    g.appendChild(dot);
+    // 标签（悬停显示）：触发按钮文字 → 目标板，胶囊骑曲线中点上方
+    const tn=sessions[f.from]&&Array.isArray(sessions[f.from].nodes)
       ?sessions[f.from].nodes.find(n=>n.id===(f.trigger||'tap:').replace('tap:','')):null;
-    const tlabel=(tnode&&tnode.text?String(tnode.text).trim():((f.trigger||'tap:').replace('tap:',''))).slice(0,8)||'tap';
-    const label=`${tlabel} → ${f.to}`;
-    const fs=11,padX=9,est=label.replace(/[^\x00-\xff]/g,'11').length*fs/2.2+padX*2;
-    const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
-    bg.setAttribute('x',mx-est/2);bg.setAttribute('y',my-9);bg.setAttribute('width',est);bg.setAttribute('height','18');
-    bg.setAttribute('rx','9');bg.setAttribute('fill','rgba(11,98,196,.92)');
-    const tx=document.createElementNS('http://www.w3.org/2000/svg','text');
-    tx.setAttribute('x',mx);tx.setAttribute('y',my+4);tx.setAttribute('text-anchor','middle');
+    const tl=(tn&&tn.text?String(tn.text).trim():((f.trigger||'tap:').replace('tap:',''))).slice(0,10)||'tap';
+    const label=`${tl} → ${f.to}`;
+    const fs=11,est=label.replace(/[^\x00-\xff]/g,'11').length*fs/2.2+18;
+    const lg=document.createElementNS(NS,'g');lg.setAttribute('class','flow-label');
+    const bg=document.createElementNS(NS,'rect');
+    bg.setAttribute('x',mx-est/2);bg.setAttribute('y',my-26);bg.setAttribute('width',est);bg.setAttribute('height','19');
+    bg.setAttribute('rx','9.5');bg.setAttribute('fill','rgba(4,76,166,.95)');
+    const tx=document.createElementNS(NS,'text');
+    tx.setAttribute('x',mx);tx.setAttribute('y',my-13);tx.setAttribute('text-anchor','middle');
     tx.setAttribute('fill','#fff');tx.setAttribute('font-size',fs);tx.setAttribute('font-weight','500');
     tx.textContent=label;
-    wire.appendChild(bg);wire.appendChild(tx);
+    lg.appendChild(bg);lg.appendChild(tx);
+    g.appendChild(lg);
+    // 命中线：透明加粗描边，恢复 stroke 命中（父层 pointer-events:none 不阻 SVG 子元素显式开启）
+    const hit=document.createElementNS(NS,'path');
+    hit.setAttribute('class','flow-hit');
+    hit.setAttribute('d',dPath);
+    hit.setAttribute('fill','none');hit.setAttribute('stroke','rgba(0,0,0,0)');
+    hit.setAttribute('stroke-width','14');
+    g.appendChild(hit);
+    wire.appendChild(g);
   }
   stage.insertBefore(wire,stage.firstChild);
 }
