@@ -404,6 +404,17 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - 根目录那份 2412 行的 `index.html` 旧副本已在 `9f48220` 删除，确认无任何引用
   （`tauri.conf.json` 的 `frontendDist` 指向 `../frontend`）。前端只有 `frontend/index.html` 一份。
 
+## 安装纪律（唯一副本）
+
+- **本机任何时刻只允许存在一份 deepDesign Studio**。安装/更新一律走
+  `scripts/install-app.sh`（先停实例 → 弹残留 DMG 挂载 → 注销全部 LaunchServices 注册 →
+  删旧副本（含 target 内 dev bundle）→ 暂存新包 → 安装 → 重签 → 注册 → 验证
+  磁盘副本=1 且注册=1 → 启动）。**禁止手动 cp 到 /Applications**——手动拷贝绕过注册清理，
+  正是历史 31 条幽灵注册（Spotlight 出现多个 deepDesign）的来源。
+- 运行级单实例由 `tauri-plugin-single-instance` 保证：二次启动（任何路径来源，含 DMG 卷内
+  副本）只聚焦既有主窗，不并跑（已实测 `open -a` ×3 与 DMG 副本启动均单进程）。
+- `install-app.sh --uninstall` 彻底卸载；`--uninstall --purge` 连用户数据目录一起清。
+
 ## 提交与文档
 
 - 提交信息用 Conventional Commits + 英文 subject：`feat(agent): ...` / `fix(studio): ...` /
