@@ -334,6 +334,11 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 /* agent 实时任务轨迹（时间线） */
 .tl-run{padding:9px 11px;border-radius:var(--r-lg);background:var(--panel,#fff);border:1px solid var(--panel-line,rgba(0,0,0,.1));margin-bottom:8px}
 .tl-user{font-size:11.5px;font-weight:700;color:var(--tx);line-height:1.5;margin-bottom:6px}
+.tl-fold{display:block}
+.tl-fold summary{cursor:pointer;list-style:none}
+.tl-fold summary::-webkit-details-marker{display:none}
+.tl-fold .tl-full{white-space:pre-wrap;word-break:break-all;overflow:visible;text-overflow:clip;display:block;padding:4px 0 2px}
+.tl-line:has(.tl-fold[open]){white-space:normal;overflow:visible}
 .tl-line{font-family:ui-monospace;font-size:10.5px;line-height:1.6;color:var(--tx2);padding:2.5px 6px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl-line.tl-assist{color:var(--acc-tx);white-space:pre-wrap;white-space:normal}
 .tl-line.tl-ok{color:var(--ok)}
@@ -594,7 +599,7 @@ body.mode-wireframe .frame-body svg text{fill:#52606d!important}
 body.mode-wireframe .frame-body svg{background:#fff}
 
 /* Frame-to-frame interaction links: visible only in design modes. */
-.flow-wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible}
+.flow-wires{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:visible}
 .frame-wrap{position:relative;z-index:4}
 body:not(.design-active) .flow-wires{display:none}
 
@@ -1506,7 +1511,9 @@ function applyMbtResult(result,{reset=false,acceptDraft=false,preview=false}={})
   const current=sessions[active];
   baseCmd=current?'__mbt__':'';currentW=current?current.w:390;currentH=current?current.h:844;
   currentSvg=current?current.svg:'';nodes=current?current.nodes:[];selected=(!reset&&nodes.some(n=>n.id===selected))?selected:null;
-  renderStage();renderAbs();if(!preview)renderFlows();renderInspector();renderLayersIfOpen();requestAnimationFrame(updateSel);
+  renderStage();renderAbs();if(!preview)renderFlows();
+  if(!preview)renderInspector(); // preview 跳过：防属性面板输入焦点/IME 被周期性打断
+  renderLayersIfOpen();requestAnimationFrame(updateSel);
   $('tail-artboard').textContent=active||'未打开画板';
   $('tail-info').textContent=current?`${current.w} × ${current.h}`:'';
   if(!preview)setStatus('', '', true, '');
@@ -1561,13 +1568,19 @@ async function refresh(){
 /* ---------- 多 Frame 并排舞台 ---------- */
 function frameScale(sess){
   const h=$('canvas-scroll').clientHeight-200;
-  const availW=($('canvas-scroll').clientWidth-120)/Math.max(1,Object.keys(sessions).length);
+  // 演示模式只显示活动画板：分母取 1，否则多板项目演示画板被缩成一小块
+  const n=mode==='play'?1:Math.max(1,Object.keys(sessions).length);
+  const availW=($('canvas-scroll').clientWidth-120)/n;
   return Math.min(zoom, Math.max(0.18, Math.min(h/sess.h, availW/sess.w)));
 }
 /* 纯同步渲染（无 await 突变点）：曾有一对 renderGeneration 计数器/async 标记，
  * 是「异步作废守卫」的半成品——但判定逻辑从未存在，计数器只写不读（死存储），已删。 */
 function renderStage(){
   const stage=$('stage');
+  boardDrag=null; // DOM 即将整体重建：旧 capture 随元素失效，残留的拖拽态会造成幽灵拖拽
+  // 滚动位置保留：innerHTML='' 会使滚动内容塌缩、scrollTop 钳 0——Agent 预览期间
+  // 每 900ms 重建一次，用户平移过的画布会被反复弹回左上角
+  const scroller=$('canvas-scroll'),keepSx=scroller?scroller.scrollLeft:0,keepSy=scroller?scroller.scrollTop:0;
   bindFlowTargetCapture();
   const ids=Object.keys(sessions);
   if(!ids.length){stage.innerHTML='';$('empty-state').style.display='flex';return;}
@@ -1582,7 +1595,7 @@ function renderStage(){
     wrap.dataset.frame=id;
     wrap.dataset.displayScale=String(s);
     wrap.innerHTML=`<div class="frame-chrome"><div class="fc-dots"><i></i><i></i><i></i></div><span class="fc-name">${escHtml(id)}</span><span class="fc-size">${sess.w} × ${sess.h}</span></div>
-      <div class="frame-body" id="fb-${id}" style="width:${Math.round(sess.w*s)}px;height:${Math.round(sess.h*s)}px"></div>`;
+      <div class="frame-body" id="fb-${escAttr(id)}" style="width:${Math.round(sess.w*s)}px;height:${Math.round(sess.h*s)}px"></div>`;
     stage.appendChild(wrap);
     const chrome=wrap.querySelector('.frame-chrome');
     chrome.addEventListener('contextmenu',ev=>{ev.preventDefault();ev.stopPropagation();artboardMenu(ev.clientX,ev.clientY,id);});
@@ -1594,7 +1607,9 @@ function renderStage(){
       if(ev.button!==0)return;
       if(toolMode==='link'&&linkSource&&linkSource.from!==id){
         ev.preventDefault();ev.stopPropagation();
-        createFlow(linkSource.from,id,linkSource.node);
+        // 同步摘牌：防止 pointerup 后的冒泡 click 再次 createFlow（同一条 flow 提交两次）
+        const src=linkSource;linkSource=null;
+        createFlow(src.from,id,src.node);
         return;
       }
       // 标题栏拖拽移动画板（视图偏移；移动超阈值后抑制本次 click 切换画板）
@@ -1603,6 +1618,7 @@ function renderStage(){
     });
     chrome.addEventListener('pointermove',ev=>{
       if(!boardDrag||boardDrag.id!==id||mode==='play')return;
+      if(!(ev.buttons&1)){boardDrag=null;return;} // 按钮已松开（capture 失效的 up 没收到）：终止
       const ndx=ev.clientX-boardDrag.x,ndy=ev.clientY-boardDrag.y;
       if(!boardDrag.moved&&Math.abs(ndx)+Math.abs(ndy)<4)return;
       boardDrag.moved=true;
@@ -1642,6 +1658,7 @@ function renderStage(){
       wrap.onclick=()=>{if(Date.now()<boardClickShieldUntil)return;switchSession(id);};
     }
   }
+  if(scroller){scroller.scrollLeft=keepSx;scroller.scrollTop=keepSy;}
   renderFlowWires(stage);
   if(mode==='play')attachPlayHotZones();
   const add=document.createElement('div');
@@ -1665,20 +1682,23 @@ function renderFlowWires(stage){
   if(!graph.length)return;
   const wire=document.createElementNS('http://www.w3.org/2000/svg','svg');
   wire.classList.add('flow-wires');
-  wire.setAttribute('width',Math.max(stage.scrollWidth,1));
-  wire.setAttribute('height',Math.max(stage.scrollHeight,1));
-  wire.setAttribute('viewBox',`0 0 ${Math.max(stage.scrollWidth,1)} ${Math.max(stage.scrollHeight,1)}`);
+  // 无 viewBox/无几何属性：CSS inset:0 使 SVG 盒=stage 盒，用户坐标=视口 CSS 像素 1:1——
+  // 旧的 width/height 属性 + viewBox 会被 CSS 覆盖成 100%，盒与 viewBox 不一致时整线缩放错位
+
   wire.innerHTML='<defs><marker id="dd-flow-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#007aff"/></marker></defs>';
+  // 同一对画板的多条 flow 需错开：否则曲线与标签逐像素叠死（一板多按钮连同一目标极常见）
+  const pairIx={};
   for(const f of graph){
     const a=stage.querySelector(`.frame-wrap[data-frame="${escapeCss(f.from)}"]`);
     const b=stage.querySelector(`.frame-wrap[data-frame="${escapeCss(f.to)}"]`);
     if(!a||!b)continue;
+    const pk=f.from+'\u2192'+f.to,ix=pairIx[pk]=(pairIx[pk]||0)+1,lift=(ix-1)*26;
     // WKWebView 中 getBoundingClientRect 与渲染错位会把关联线画到可视区外；
     // frame-wrap 是普通 div，offsetLeft/offsetWidth（相对 stage 布局）与渲染一致。
     // 拖拽偏移走 transform，offsetLeft 不变——端点须显式加上 boardOffsets（线随画板走）
     const ao=boardOffsets[f.from]||{dx:0,dy:0},bo2=boardOffsets[f.to]||{dx:0,dy:0};
-    const x1=a.offsetLeft+a.offsetWidth+ao.dx,y1=a.offsetTop+a.offsetHeight/2+ao.dy;
-    const x2=b.offsetLeft+bo2.dx,y2=b.offsetTop+b.offsetHeight/2+bo2.dy;
+    const x1=a.offsetLeft+a.offsetWidth+ao.dx,y1=a.offsetTop+a.offsetHeight/2+ao.dy-lift;
+    const x2=b.offsetLeft+bo2.dx,y2=b.offsetTop+b.offsetHeight/2+bo2.dy-lift;
     const c=(x1+x2)/2;
     const pth=document.createElementNS('http://www.w3.org/2000/svg','path');
     pth.setAttribute('d',`M${x1},${y1} C${c},${y1} ${c},${y2} ${x2},${y2}`);
@@ -1693,7 +1713,7 @@ function renderFlowWires(stage){
     }
     // 标签带白底，避免压在点阵背景上看不清
     const label=flowTriggerLabel(f);
-    const ly=Math.min(y1,y2)-26;
+    const ly=Math.min(y1,y2)-26-(pairIx[f.from+'\u2192'+f.to]-1)*24;
     const tx=document.createElementNS('http://www.w3.org/2000/svg','text');
     tx.setAttribute('x',c);tx.setAttribute('y',ly+14);tx.setAttribute('text-anchor','middle');
     tx.setAttribute('fill','#0b62c4');tx.setAttribute('font-size','12');tx.setAttribute('font-weight','600');
@@ -1724,8 +1744,15 @@ const escAttr=v=>String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
 function sanitizeSvg(svg){
   let s=String(svg||'');
   s=s.replace(/<script[\s\S]*?<\/script\s*>/gi,'');
-  s=s.replace(/(\s)(on\w+)=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'$1');
-  s=s.replace(/([a-zA-Z-]+)="([^"]*)"/g,(m,k,v)=>v.includes('"')?`${k}="${v.replace(/"/g,'&quot;')}"`:m);
+  // on* 剥除：允许 = 两侧空白（HTML 属性允许，曾可绕过剥除）
+  s=s.replace(/(\s)(on\w+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'$1');
+  // 属性值内裸引号归一：值捕获必须允许包含引号（旧正则 [^"]* 使该步恒 no-op——死代码）。
+  // 注入形态 id="x"><img onerror=… 在属性值闭合处产生奇数个裸引号，逐属性归一。
+  s=s.replace(/([a-zA-Z-]+)="((?:[^"]*"[^"]*)*)"/g,(m,k,v)=>{
+    const q=(v.match(/"/g)||[]).length;
+    if(q%2===1)return `${k}="${v.replace(/"$/,'&quot;')}"`;
+    return m;
+  });
   return s;
 }
 
@@ -2197,7 +2224,13 @@ document.getElementById('decl-text').addEventListener('scroll',function(){const 
 document.addEventListener('keydown',async e=>{
   if($('export-choice').style.display==='flex'){if(e.key==='Escape')closeExportChoice('cancel');return;}
   if($('shortcuts-modal').style.display==='flex'){if(e.key==='Escape')closeShortcuts();return;}
-  if(mode==='play'){if(e.key==='Escape'){if(inkMode)toggleInk();else playBack();}return;}
+  const settingsOpen=$('settings-modal')&&$('settings-modal').style.display==='flex';
+  if(settingsOpen){if(e.key==='Escape')closeSettings();return;} // 模态开时全局分发短路：防 Backspace 误删弹窗后的画布节点
+  if(mode==='play'){
+    if(e.key==='Escape'){if(inkMode)toggleInk();else playBack();return;}
+    if(e.metaKey||e.ctrlKey||e.altKey)return; // Windows 无原生菜单：⌘S/⌘4 等组合在演示中照常可用
+    return;
+  }
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();$('gp-input').focus();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveProject();return;}
   /* Windows 快捷键分发：原为 macOS 原生菜单加速键（CmdOrCtrl+*），标题栏合并后
@@ -2222,7 +2255,8 @@ document.addEventListener('keydown',async e=>{
     }[k];
     if(bind){e.preventDefault();const r=bind();if(r&&r.then)r.catch(()=>{});return;}
   }
-  if(document.activeElement&&(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA'))return;
+  const ae=document.activeElement;
+  if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable))return; // SELECT 聚焦时 ↓ 是切选项不是挪节点
   /* 工具单键：与 tooltip 承诺一致（V 选择 / T 文本；画板工具未实现，不绑 A）。
      toLowerCase 兜 CapsLock；不含修饰键，避免吃掉 Ctrl+V 粘贴 */
   if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['v','t'].includes((e.key||'').toLowerCase())){
@@ -2315,6 +2349,7 @@ async function sendAgent(){
     res.textContent=msg.includes('api_key_missing')?'未配置 AI 端点：请到 设置 ▸ AI 端点 填入 Base URL 与 Token':('Agent 不可用：'+msg.slice(0,120));
     $('ap-send').disabled=false;
   }finally{
+    await rollbackPreview(); // 澄清/零 ops/异常路径都不落终态：预览中间态必须收口回事实源
     agentBusy=false;
   }
 }
@@ -2536,9 +2571,16 @@ async function runGlobalPrompt(){
     const msg=String(err);
     toast(msg.includes('api_key_missing')?'请先在设置中配置 AI 端点与 Token（设置 ▸ AI 端点）':'AI 调用失败：'+msg.slice(0,90));
     trackAgent(t,[],false);
+    await rollbackPreview(); // 失败收尾：画布若停在预览中间态，从 mbtText 复原
   }finally{
     agentBusy=false;if($('gp-send'))$('gp-send').disabled=false;
   }
+}
+/* 预览收口：run 未以终态回灌结束（异常/澄清/零 ops）时，画布可能停留在某个
+ * 从未落地的预览帧——从 mbtText（事实源）重渲染复原，保证所见=所存。 */
+async function rollbackPreview(){
+  if(!mbtText)return;
+  try{const r=await engRender(mbtText);if(mbtResult(r))applyMbtResult(r);}catch(_){ }
 }
 /* Agent 终态回灌（docs/agent-rebase.md 方案 C）——两个 Agent 入口共用：
  * runGlobalPrompt 与 sendAgent 各自传 run 起点快照 startMbt。只堵一个入口
@@ -3022,15 +3064,24 @@ function switchRight(w){
   });
 }
 /* ---------- 缩放 ---------- */
+let zoomFitMode=false;
 function applyZoom(){
-  $('zoom-pct').textContent=Math.round(zoom*100)+'%';
+  // FIT 态读数显示实际生效比例（zoom=64 是让 fit 主导的魔法数，直读会显示 6400%）
+  const eff=zoomFitMode&&sessions[active]?frameScale(sessions[active]):zoom;
+  $('zoom-pct').textContent=(zoomFitMode?'适配 ':'')+Math.round(eff*100)+'%';
   renderStage();
 }
-function zoomIn(){zoom=Math.min(2,zoom*1.2);applyZoom();}
-function zoomOut(){zoom=Math.max(0.2,zoom/1.2);applyZoom();}
-function zoomReset(){zoom=1;applyZoom();}
+function zoomIn(){zoomStep(1.2);}
+function zoomOut(){zoomStep(1/1.2);}
+function zoomStep(f){
+  // FIT 态起步：先落到实际生效比例再乘步进，避免 5333%→200% 的跳变
+  zoom=zoomFitMode&&sessions[active]?Math.max(0.18,frameScale(sessions[active])):zoom;
+  zoomFitMode=false;
+  zoom=Math.min(8,Math.max(0.18,zoom*f));applyZoom();
+}
+function zoomReset(){zoomFitMode=false;zoom=1;applyZoom();}
 /* 适配窗口：frameScale=min(zoom,fit)，把 zoom 抬到极大即让自动适配因子主导 */
-function zoomFit(){zoom=64;applyZoom();}
+function zoomFit(){zoom=64;zoomFitMode=true;applyZoom();}
 
 /* ---------- 播放 ---------- */
 /* ---------- 演示模式：工作区内禁编辑，仅保留交互演示 ----------
@@ -3059,7 +3110,18 @@ function togglePlay(on){
     setMode('play');
   } else exitPlay();
 }
-function exitPlay(){toggleInk();document.querySelectorAll('.ink-layer').forEach(cv=>cv.remove());inkCv=null;inkCtx=null;playClearHot();setMode(playReturnMode||'wireframe');inkPersist();}
+function exitPlay(){
+  // 条件关闭：未开标注时退出演示不能翻转成 ON（残留的 play-ink-mode 会禁用全部热区）
+  if(inkMode)toggleInk();
+  unmountInkLayer();
+  playStack=[]; // 退出即清栈：重进演示从当前画板重新开始
+  playClearHot();setMode(playReturnMode||'wireframe');inkPersist();
+}
+function unmountInkLayer(){
+  document.querySelectorAll('.ink-layer').forEach(cv=>cv.remove());
+  if(inkResizeCleanup){try{window.removeEventListener('resize',inkResizeCleanup);}catch(_){ }}
+  inkResizeCleanup=null;inkCv=null;inkCtx=null;
+}
 function playClearHot(){document.querySelectorAll('.pm-hot').forEach(el=>el.remove());}
 function attachPlayHotZones(){
   playClearHot();
@@ -3115,13 +3177,22 @@ function toggleInk(){
 }
 /* 全屏手绘墨迹层：覆盖整个演示视口，中点二次贝塞尔平滑（手绘笔感）。
  * 墨迹为视口像素坐标，切画板保留；退出演示清空。 */
+let inkResizeCleanup=null;
 function mountInkLayer(){
   if(inkCv)return;
   inkCv=document.createElement('canvas');
   inkCv.className='ink-layer';inkCv.id='ink-layer';
-  const fit=()=>{inkCv.width=innerWidth;inkCv.height=innerHeight;redrawInk();};
+  // DPR 缩放：Retina 屏上 1x canvas 笔迹发虚
+  const fit=()=>{
+    const dpr=Math.min(2.5,window.devicePixelRatio||1);
+    inkCv.width=Math.round(innerWidth*dpr);inkCv.height=Math.round(innerHeight*dpr);
+    inkCv.style.width=innerWidth+'px';inkCv.style.height=innerHeight+'px';
+    if(inkCtx)inkCtx.setTransform(dpr,0,0,dpr,0,0);
+    redrawInk();
+  };
   fit();
   window.addEventListener('resize',fit);
+  inkResizeCleanup=fit;
   const pos=e=>({x:e.clientX/innerWidth,y:e.clientY/innerHeight});
   const strokeSetup=()=>{inkCtx.strokeStyle='#E67E22';inkCtx.lineWidth=2.6;inkCtx.lineCap='round';inkCtx.lineJoin='round';};
   inkCv.addEventListener('pointerdown',e=>{
@@ -3129,13 +3200,13 @@ function mountInkLayer(){
     try{inkCv.setPointerCapture(e.pointerId);}catch(_){ }
     inkCur=[pos(e)];inkPaths.push(inkCur);
     strokeSetup();
-    const p0=inkCur[0];inkCtx.beginPath();inkCtx.arc(p0.x*inkCv.width,p0.y*inkCv.height,1.2,0,7);inkCtx.fillStyle=inkCtx.strokeStyle;inkCtx.fill();
+    const p0=inkCur[0];inkCtx.beginPath();inkCtx.arc(p0.x*innerWidth,p0.y*innerHeight,1.2,0,7);inkCtx.fillStyle=inkCtx.strokeStyle;inkCtx.fill();
   });
   inkCv.addEventListener('pointermove',e=>{
     if(!inkCur)return;
     const n=inkCur.length,p=pos(e),last=inkCur[n-1];
     // 中点平滑：从上一中点经当前点画到新中点（手绘圆头）；坐标归一化（持久化尺寸无关）
-    const W=inkCv.width,H=inkCv.height;
+    const W=innerWidth,H=innerHeight; // CSS 像素（DPR 由 canvas transform 承担）
     const midPrev={x:(inkCur[Math.max(0,n-2)].x+last.x)/2*W,y:(inkCur[Math.max(0,n-2)].y+last.y)/2*H};
     const midCur={x:(last.x+p.x)/2*W,y:(last.y+p.y)/2*H};
     inkCtx.beginPath();inkCtx.moveTo(midPrev.x,midPrev.y);inkCtx.quadraticCurveTo(last.x*W,last.y*H,midCur.x,midCur.y);inkCtx.stroke();
@@ -3149,7 +3220,7 @@ function mountInkLayer(){
 function redrawInk(){
   if(!inkCtx)return;
   inkCtx.strokeStyle='#E67E22';inkCtx.lineWidth=2.6;inkCtx.lineCap='round';inkCtx.lineJoin='round';
-  const W=inkCv.width,H=inkCv.height;
+  const W=innerWidth,H=innerHeight; // CSS 像素（DPR 由 canvas transform 承担）
   inkPaths.forEach(path=>{
     if(path.length<2)return;
     inkCtx.beginPath();
@@ -3162,7 +3233,7 @@ function redrawInk(){
     inkCtx.stroke();
   });
 }
-function clearInk(){inkPaths=[];inkCur=null;if(inkCtx)inkCtx.clearRect(0,0,inkCv.width,inkCv.height);}
+function clearInk(){inkPaths=[];inkCur=null;if(inkCtx)inkCtx.clearRect(0,0,innerWidth,innerHeight);}
 /* 退出演示：批注重注入 mbtText（幂等：替换旧块）+ 置脏——用户 ⌘S 落盘进 DDP。
  * 经 serializeProject 入队：与人类 op / agent 终态回灌串行化，防写写竞态。 */
 function inkPersist(){
@@ -3239,6 +3310,9 @@ function playNavAnim(dir){
   st.classList.remove('nav-fwd','nav-back');
   void st.offsetWidth;
   st.classList.add(dir==='back'?'nav-back':'nav-fwd');
+  // 一次性：动画结束即摘类。残留的方向类会让后续每一次 renderStage（preview 回灌/
+  // set_text 交互/重进演示）都误播滑入动画
+  st.addEventListener('animationend',()=>st.classList.remove('nav-fwd','nav-back'),{once:true});
 }
 
 /* ---------- DDP 文件：DDP = 加密后的单一 .mbt.md ---------- */
@@ -3459,6 +3533,10 @@ async function openProject(path){
     ddpSessionPassword=password;ddpPasswordByPath[r.path]=password;
     inkRestore(b64ToUtf8(r.mbt_b64)); // 批注随文档恢复（注入层见 inkPersist 注释）
     applyMbtResult(result,{reset:true});filePath=r.path;projectDirty=false;syncDirtyRemote();
+    // 项目边界：旧项目的澄清提问/拖拽偏移/演示交互缓存不得泄入新项目（id 撞名时真会串）
+    agentThread.pending=null;const th=$('gp-thread');if(th)th.classList.remove('open');
+    boardOffsets={};playIx={};playIxHits={};
+    if(mode==='play')setMode('play'); // 演示中换项目：归一返回栈到新活动画板
     setFileLabel(r.path.split(/[\\/]/).pop());syncProjName(r.path);rememberProject(r.path);
     toast('已打开 DDP，并从 MBT 重新渲染');});
 }
@@ -3474,6 +3552,8 @@ async function newProject(){
   serializeProject(async()=>{
     mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];inkPaths=[];
     filePath='';placing=0;linkSource=null;playStack=[];
+    boardOffsets={};playIx={};playIxHits={}; // 拖拽偏移/演示交互缓存跨项目残留会让撞名画板移位、热区误执行
+
     // 残留即复活通道:nodes 让空项目进 play;declDraftDirty 让
     // 旧文档全文留在源码编辑器(校验并渲染会把旧项目带回新项目)——全部归零
     nodes=[];currentSvg='';baseCmd='';declDraftDirty=false;zoom=1;
