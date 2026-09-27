@@ -151,6 +151,16 @@ assert(mapCalls.length>0,'未能提取 nativeMenuAction 映射体调用目标（
 const missingMap=mapCalls.filter(n=>!defined.has(n)&&!bound.has(n)&&!GLOBALS.has(n)&&!KEYWORDS.has(n));
 assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函数：${missingMap}`);
 
+/* 检查 I：函数不得重复定义。内联单文件无打包器/linter，`function applyI18n()`
+ * 写两遍时后者静默遮蔽前者（2026-09 i18n 事故：带快照恢复的新实现被文件尾部的
+ * 旧实现覆盖，切回简中永久失效）——vm 只执行其中之一，其余防线全部看不见。 */
+{
+  const names=[...script.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g)].map(m=>m[1]);
+  const dup={};
+  names.forEach(n=>{if(names.filter(x=>x===n).length>1)dup[n]=names.filter(x=>x===n).length;});
+  assert.deepEqual(Object.keys(dup),[],`函数重复定义（后者静默遮蔽前者）：${JSON.stringify(dup)}`);
+}
+
 /* 检查 H：Tauri 命令 ↔ 前端 invoke 双向 parity。
  * 正向：lib.rs 注册但前端零调用的命令 = 死命令（list_ddp_projects 曾作为
  * "多项目地基"裸奔无消费者）；反向：前端 invoke 未注册命令 = 运行时必炸

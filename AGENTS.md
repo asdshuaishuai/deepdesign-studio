@@ -274,6 +274,13 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 
 - 只有**一个**内联 `<script>`，全局可变状态集中在文件顶部（`nodes/selected/mbtText/sessions/active/...`）。
 - **所有会改项目的操作必须经 `serializeProject(task)` 串行化**（`projectQueue` 链）。绕过它会产生竞态。
+- **i18n（七语言，键源=zh-CN）**：字典 `I18N_DICT`（`scripts/gen-i18n.py` 生成注入，~350 键 × 6 语言）；
+  `applyI18n()` 是**快照式**切换——I18N_ORIG WeakMap / dataset 存 zh-CN 原文，任何语言→任何语言都从快照出发
+  （当前 DOM 文本可能是上一语言译文，直接查键=简中的字典必失败）；切回简中=恢复快照。`L()` 是动态文案 choke 点
+  （toast/确认框/fillModelHints/THINK_LABEL 等出生即译），`I18N_RERENDER` 注册表让出生即译节点随 setLang 重渲染，
+  `i18nSoon()`/MutationObserver 是渲染出口兜底；原生菜单经 `set_menu_language`（`menu_t` 七语言标签表）。
+  **事故登记：applyI18n 曾被文件尾部旧定义静默遮蔽**（后者胜出=无快照无简中恢复），test_studio 检查 I 现在
+  禁止任何函数重复定义（变异验证过必红）。
 - 引擎命令的 payload 一律 b64：`utf8ToB64` / `b64ToUtf8`。
 - 命令名 → invoke 参数的命名转换由 Tauri 负责：前端传 `mbtB64`，Rust 侧形参是 `mbt_b64`。
 - **画板 / 节点 id 必须是 ASCII snake_case**，且这是**约定而非引擎保证**：引擎的 `sanitize_id`
