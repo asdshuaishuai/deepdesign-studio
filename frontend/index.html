@@ -1700,7 +1700,7 @@ function renderFlowWires(stage){
   // 无 viewBox/无几何属性：CSS inset:0 使 SVG 盒=stage 盒，用户坐标=视口 CSS 像素 1:1——
   // 旧的 width/height 属性 + viewBox 会被 CSS 覆盖成 100%，盒与 viewBox 不一致时整线缩放错位
 
-  wire.innerHTML='<defs><marker id="dd-flow-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#007aff"/></marker></defs>';
+  wire.innerHTML='<defs><marker id="dd-flow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,1 L7,4 L0,7 z" fill="#3f8fff"/></marker></defs>';
   // 同一对画板的多条 flow 需错开：否则曲线与标签逐像素叠死（一板多按钮连同一目标极常见）
   const pairIx={};
   for(const f of graph){
@@ -1714,34 +1714,34 @@ function renderFlowWires(stage){
     const ao=boardOffsets[f.from]||{dx:0,dy:0},bo2=boardOffsets[f.to]||{dx:0,dy:0};
     const x1=a.offsetLeft+a.offsetWidth+ao.dx,y1=a.offsetTop+a.offsetHeight/2+ao.dy-lift;
     const x2=b.offsetLeft+bo2.dx,y2=b.offsetTop+b.offsetHeight/2+bo2.dy-lift;
-    const c=(x1+x2)/2;
+    // 视觉降噪重做（2026-09 反馈「连线乱且不明确」）：细实线 + 单起点点 + 紧凑胶囊标签
+    // 直接骑在曲线中点上方——去掉虚线抖动、终点大圆、引线和大背景框四类噪声源。
+    const mx=(x1+x2)/2,my=(y1+y2)/2;
     const pth=document.createElementNS('http://www.w3.org/2000/svg','path');
-    pth.setAttribute('d',`M${x1},${y1} C${c},${y1} ${c},${y2} ${x2},${y2}`);
-    pth.setAttribute('fill','none');pth.setAttribute('stroke','#007aff');pth.setAttribute('stroke-width','2');pth.setAttribute('stroke-dasharray','7 5');pth.setAttribute('marker-end','url(#dd-flow-arrow)');
+    pth.setAttribute('d',`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    pth.setAttribute('fill','none');
+    pth.setAttribute('stroke','#3f8fff');pth.setAttribute('stroke-width','1.6');pth.setAttribute('opacity','.8');
+    pth.setAttribute('marker-end','url(#dd-flow-arrow)');
     wire.appendChild(pth);
-    // 起点/终点小圆点：明确“从哪个画板的哪个高度出发”
-    for(const [cx,cy] of [[x1,y1],[x2,y2]]){
-      const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
-      dot.setAttribute('cx',cx);dot.setAttribute('cy',cy);dot.setAttribute('r','4');
-      dot.setAttribute('fill','#fff');dot.setAttribute('stroke','#007aff');dot.setAttribute('stroke-width','2');
-      wire.appendChild(dot);
-    }
-    // 标签带白底，避免压在点阵背景上看不清
-    const label=flowTriggerLabel(f);
-    const ly=Math.min(y1,y2)-26-(pairIx[f.from+'\u2192'+f.to]-1)*24;
-    const tx=document.createElementNS('http://www.w3.org/2000/svg','text');
-    tx.setAttribute('x',c);tx.setAttribute('y',ly+14);tx.setAttribute('text-anchor','middle');
-    tx.setAttribute('fill','#0b62c4');tx.setAttribute('font-size','12');tx.setAttribute('font-weight','600');
-    tx.textContent=label;
-    const pad=6,bw=label.length*12;
+    // 仅起点一个小圆点（起点即语义：「从这块板出发」），终点由箭头表达
+    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx',x1);dot.setAttribute('cy',y1);dot.setAttribute('r','3');
+    dot.setAttribute('fill','#3f8fff');
+    wire.appendChild(dot);
+    // 紧凑标签：触发按钮文字（截 8 字）→ 目标板名，胶囊底、单行小字，骑在曲线正中
+    const tnode=sessions[f.from]&&Array.isArray(sessions[f.from].nodes)
+      ?sessions[f.from].nodes.find(n=>n.id===(f.trigger||'tap:').replace('tap:','')):null;
+    const tlabel=(tnode&&tnode.text?String(tnode.text).trim():((f.trigger||'tap:').replace('tap:',''))).slice(0,8)||'tap';
+    const label=`${tlabel} → ${f.to}`;
+    const fs=11,padX=9,est=label.replace(/[^\x00-\xff]/g,'11').length*fs/2.2+padX*2;
     const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
-    bg.setAttribute('x',c-bw/2-pad);bg.setAttribute('y',ly);bg.setAttribute('width',bw+pad*2);bg.setAttribute('height','22');
-    bg.setAttribute('rx','7');bg.setAttribute('fill','rgba(255,255,255,.95)');bg.setAttribute('stroke','rgba(0,122,255,.4)');
-    // 引线：标签底部连到曲线上
-    const leg=document.createElementNS('http://www.w3.org/2000/svg','line');
-    leg.setAttribute('x1',c);leg.setAttribute('y1',ly+22);leg.setAttribute('x2',c);leg.setAttribute('y2',(y1+y2)/2);
-    leg.setAttribute('stroke','rgba(0,122,255,.4)');leg.setAttribute('stroke-width','1');
-    wire.appendChild(leg);wire.appendChild(bg);wire.appendChild(tx);
+    bg.setAttribute('x',mx-est/2);bg.setAttribute('y',my-9);bg.setAttribute('width',est);bg.setAttribute('height','18');
+    bg.setAttribute('rx','9');bg.setAttribute('fill','rgba(11,98,196,.92)');
+    const tx=document.createElementNS('http://www.w3.org/2000/svg','text');
+    tx.setAttribute('x',mx);tx.setAttribute('y',my+4);tx.setAttribute('text-anchor','middle');
+    tx.setAttribute('fill','#fff');tx.setAttribute('font-size',fs);tx.setAttribute('font-weight','500');
+    tx.textContent=label;
+    wire.appendChild(bg);wire.appendChild(tx);
   }
   stage.insertBefore(wire,stage.firstChild);
 }
@@ -3557,16 +3557,26 @@ async function openProject(path){
       if(r)break;
     }
     if(!r){
-      password=await promptDdpPassword('输入 DDP 密码（免密文件留空直接确认）：');
+      const fname=(path||'').split(/[\\/]/).pop()||'DDP';
+      password=await promptDdpPassword(`「${fname}」需要密码（解密后才会打开）：`);
       if(password===null)return;
       try{r=await window.__TAURI__.core.invoke('open_ddp',{password,path});}
       catch(err){toast('DDP 打开失败：'+String(err).slice(0,80),'err');return;}
     }
   }else{
-    password=await promptDdpPassword('输入 DDP 密码（免密文件留空直接确认）：');
-    if(password===null)return;
-    try{r=await window.__TAURI__.core.invoke('open_ddp',{password});}
-    catch(err){toast('DDP 打开失败：'+String(err).slice(0,80));return;}
+    // ⌘O 对话框流程：先选文件再按需问密码（选完才知是哪个文件、要不要口令）——
+    // 空口令试探：DDP2 免密直开；DDP1 返回 need_password+路径，据此弹框重试一轮
+    try{r=await window.__TAURI__.core.invoke('open_ddp',{password:''});}
+    catch(err){toast('DDP 打开失败：'+String(err).slice(0,80),'err');return;}
+    if(r&&r.need_password){
+      const fname=(r.path||'').split(/[\\/]/).pop()||'DDP';
+      password=await promptDdpPassword(`「${fname}」需要密码（解密后才会打开）：`);
+      if(password===null)return;
+      try{r=await window.__TAURI__.core.invoke('open_ddp',{password,path:r.path});}
+      catch(err){toast(`「${fname}」解密失败：`+String(err).slice(0,60),'err');return;}
+    }else if(r){
+      password='';
+    }
   }
   if(!r||r==='canceled')return;
   await serializeProject(async()=>{const result=await engRender(b64ToUtf8(r.mbt_b64));

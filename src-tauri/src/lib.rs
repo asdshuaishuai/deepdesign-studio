@@ -49,6 +49,7 @@ async fn save_ddp(
     let mbt = std::str::from_utf8(&mbt_bytes).map_err(|_| "ddp_mbt_not_utf8".to_string())?;
     let ddp = encrypt_ddp(mbt, &password)?;
 
+    let via_dialog = path.as_deref().map(|p| p.trim().is_empty()).unwrap_or(true);
     let picked: Option<PathBuf> = match path {
         Some(p) if !p.trim().is_empty() => Some(PathBuf::from(p.trim().to_string())),
         _ => app
@@ -84,6 +85,7 @@ async fn open_ddp(
     password: String,
     path: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    let via_dialog = path.as_deref().map(|p| p.trim().is_empty()).unwrap_or(true);
     let picked: Option<PathBuf> = match path {
         Some(p) if !p.trim().is_empty() => Some(PathBuf::from(p.trim().to_string())),
         _ => app
@@ -106,7 +108,18 @@ async fn open_ddp(
         .take(16 * 1024 * 1024 + 46)
         .read_to_end(&mut bytes)
         .map_err(|e| format!("ddp_read_failed:{e}"))?;
-    let mbt = decrypt_ddp(&bytes, &password)?;
+    let mbt = match decrypt_ddp(&bytes, &password) {
+        Ok(m) => m,
+        // 口令不符不整单失败：把选中的路径带回，前端据此弹口令框重试——
+        // 「先选文件、再按需问密码」；错密码与篡改同报错（无预言机），前端重试一轮即止
+        Err(_) if via_dialog => {
+            return Ok(serde_json::json!({
+                "need_password": true,
+                "path": pb.display().to_string(),
+            }))
+        }
+        Err(e) => return Err(e),
+    };
     Ok(serde_json::json!({
         "ok": true,
         "path": pb.display().to_string(),
