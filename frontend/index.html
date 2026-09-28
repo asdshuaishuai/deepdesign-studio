@@ -3500,10 +3500,16 @@ function isBackish(id,text){
     ||(t.length<=3&&/[←‹«]/.test(t));
 }
 function playBack(){
+  /* 演示模式铁律（2026-09 用户反馈）：热区返回永远追随 link/栈行为，绝不退出演示。
+   * 栈底（起始画板）再点返回 → 仅提示；退出唯一入口是「退出演示」按钮/Esc。 */
   const stage=$('stage');
-  if(stage&&playStack.length>1)playNavAnim('back');
-  if(playStack.length>1){playStack.pop();active=playStack[playStack.length-1];playApplySession(active);renderStage();}
-  else exitPlay();
+  if(playStack.length>1){
+    if(stage)playNavAnim('back');
+    playStack.pop();active=playStack[playStack.length-1];playApplySession(active);renderStage();
+  }else{
+    toast('已是起始页 · 返回不可用（退出演示请点右上角按钮）');
+    setStatus('human','▶ 栈底返回被拦截（演示不退出）',true,'播放导航');
+  }
 }
 /* 演示切页方向动画：renderStage 重建 DOM 前 给 stage 挂方向类，
  * CSS 只在 body.mode-play 下对 active 画板播放（编辑视图不受影响） */
