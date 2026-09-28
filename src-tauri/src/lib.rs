@@ -35,6 +35,7 @@ async fn save_ddp(
     mbt_b64: String,
     password: String,
     path: Option<String>, // 原地保存路径（前端已有 filePath 时传入，跳过对话框）；空/缺省回落对话框
+    filter_label: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let password = Zeroizing::new(password);
     let mbt_b64 = Zeroizing::new(mbt_b64);
@@ -55,7 +56,7 @@ async fn save_ddp(
         _ => app
             .dialog()
             .file()
-            .add_filter("deepDesign 视觉文档", &["ddp"])
+            .add_filter(filter_label.as_deref().unwrap_or("deepDesign 视觉文档"), &["ddp"])
             .blocking_save_file()
             .map(|p| {
                 let mut s = p.to_string();
@@ -84,6 +85,7 @@ async fn open_ddp(
     app: tauri::AppHandle,
     password: String,
     path: Option<String>,
+    filter_label: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let via_dialog = path.as_deref().map(|p| p.trim().is_empty()).unwrap_or(true);
     let picked: Option<PathBuf> = match path {
@@ -91,7 +93,7 @@ async fn open_ddp(
         _ => app
             .dialog()
             .file()
-            .add_filter("deepDesign 视觉文档", &["ddp"])
+            .add_filter(filter_label.as_deref().unwrap_or("deepDesign 视觉文档"), &["ddp"])
             .blocking_pick_file()
             .and_then(|fp| fp.into_path().ok()),
     };
@@ -169,6 +171,8 @@ async fn save_text_file(
     app: tauri::AppHandle,
     default_name: String,
     contents_b64: String,
+    html_filter_label: Option<String>,
+    svg_filter_label: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let contents = BASE64
         .decode(contents_b64.as_bytes())
@@ -179,8 +183,8 @@ async fn save_text_file(
     let Some(path) = app
         .dialog()
         .file()
-        .add_filter("HTML 原型", &["html"])
-        .add_filter("SVG 图形", &["svg"])
+        .add_filter(html_filter_label.as_deref().unwrap_or("HTML 原型"), &["html"])
+        .add_filter(svg_filter_label.as_deref().unwrap_or("SVG 图形"), &["svg"])
         .set_file_name(&default_name)
         .blocking_save_file()
         .map(|p| {
@@ -210,6 +214,8 @@ async fn confirm_discard(
     app: tauri::AppHandle,
     title: String,
     message: String,
+    ok_label: Option<String>,
+    cancel_label: Option<String>,
 ) -> Result<bool, String> {
     Ok(app
         .dialog()
@@ -217,8 +223,8 @@ async fn confirm_discard(
         .title(title)
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "继续编辑".into(),
-            "放弃更改".into(),
+            ok_label.unwrap_or_else(|| "继续编辑".into()),
+            cancel_label.unwrap_or_else(|| "放弃更改".into()),
         ))
         .blocking_show())
 }
@@ -264,8 +270,15 @@ fn open_project_window(app: tauri::AppHandle, path: String) -> Result<(), String
         })
         .collect();
     let url = format!("index.html?project={enc}");
-    tauri::WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
-        .title("deepDesign Studio")
+    let builder = tauri::WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+        .title("deepDesign Studio");
+    // Windows：proj 窗必须显式自绘标题栏——tauri.windows.conf.json 只作用于启动的
+    // main 窗，运行时建的窗不继承它，漏配会叠出「原生标题栏 + 自绘 topbar 窗控」双栏
+    // （前端 IS_WIN 下 topbar 自带窗控与拖拽区）。macOS 保留原生标题栏：mac 的
+    // topbar 没有窗控按钮，去装饰反而没法关窗。
+    #[cfg(target_os = "windows")]
+    let builder = builder.decorations(false);
+    builder
         .build()
         .map_err(|e| format!("open_project_window_failed:{e}"))?;
     Ok(())
@@ -562,34 +575,36 @@ fn model_registry() -> serde_json::Value {
 /// 发事件，动作在前端 nativeMenuAction 执行。Windows 上不构建菜单栏——
 /// 标题栏与工具栏合并（tauri.windows.conf.json decorations=false，topbar 即
 /// 标题栏），原菜单功能由前端「文件 ▾」下拉承载（frontend fmAct）。
-#[cfg(target_os = "macos")]
-/* ── 原生菜单 i18n：七语言标签表（值=zh-CN 原文键）。切换语言时重建菜单 ── */
+/* ── 原生菜单 i18n：当前语言 + 七语言标签表（值=zh-CN 原文键）。语言状态不
+ * cfg 门控——set_menu_language 双平台注册，Windows 上写入后重建走空 stub；
+ * menu_t 与菜单构建本身仅 macOS。 ── */
 static APP_MENU_LANG: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+#[cfg(target_os = "macos")]
 fn menu_t(zh: &str) -> String {
     let lang = APP_MENU_LANG.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let lang = lang.as_str();
     let table: &[(&str, &str)] = match lang {
         "zh-TW" => &[
-            ("文件","檔案"),("编辑","編輯"),("视图","檢視"),("画板","畫板"),("帮助","說明"),
-            ("新建项目…","新增專案…"),("打开 DDP…","開啟 DDP…"),("打开最近的项目…","開啟最近的專案…"),
-            ("保存","儲存"),("导出 DDP…","匯出 DDP…"),("导出 HTML 原型…","匯出 HTML 原型…"),
-            ("导出 SVG（当前画板）…","匯出 SVG（目前畫板）…"),("撤销","還原"),("重做","重做"),
-            ("剪切","剪下"),("复制","複製"),("粘贴","貼上"),("全选","全選"),
-            ("线框图","線框圖"),("高保真","高傳真"),("MBT 源码","MBT 原始碼"),("适配窗口","適應視窗"),
-            ("演示模式","示範模式"),("新建画板","新增畫板"),("复制当前画板","複製目前畫板"),
-            ("校验并渲染","校驗並渲染"),("自动修复（引擎还债）","自動修復（引擎還債）"),
-            ("设置…","設定…"),("退出 deepDesign","結束 deepDesign"),("快捷键与菜单说明","快捷鍵與選單說明"),
+            ("檔案","文件"),("編輯","编辑"),("檢視","视图"),("畫板","画板"),("說明","帮助"),
+            ("新增專案…","新建项目…"),("開啟 DDP…","打开 DDP…"),("開啟最近的專案…","打开最近的项目…"),
+            ("儲存","保存"),("匯出 DDP…","导出 DDP…"),("匯出 HTML 原型…","导出 HTML 原型…"),
+            ("匯出 SVG（目前畫板）…","导出 SVG（当前画板）…"),("還原","撤销"),("重做","重做"),
+            ("剪下","剪切"),("複製","复制"),("貼上","粘贴"),("全選","全选"),
+            ("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
+            ("示範模式","演示模式"),("新增畫板","新建画板"),("複製目前畫板","复制当前画板"),
+            ("校驗並渲染","校验并渲染"),("自動修復（引擎還債）","自动修复（引擎还债）"),
+            ("設定…","设置…"),("結束 deepDesign","退出 deepDesign"),("快捷鍵與選單說明","快捷键与菜单说明"),
         ],
         "zh-HK" => &[
-            ("文件","檔案"),("编辑","編輯"),("视图","檢視"),("画板","畫板"),("帮助","說明"),
-            ("新建项目…","新增專案…"),("打开 DDP…","開啟 DDP…"),("打开最近的项目…","開啟最近的專案…"),
-            ("保存","儲存"),("导出 DDP…","匯出 DDP…"),("导出 HTML 原型…","匯出 HTML 原型…"),
-            ("导出 SVG（当前画板）…","匯出 SVG（目前畫板）…"),("撤销","復原"),("重做","重做"),
-            ("剪切","剪下"),("复制","複製"),("粘贴","貼上"),("全选","全選"),
-            ("线框图","線框圖"),("高保真","高傳真"),("MBT 源码","MBT 原始碼"),("适配窗口","適應視窗"),
-            ("演示模式","示範模式"),("新建画板","新增畫板"),("复制当前画板","複製目前畫板"),
-            ("校验并渲染","校驗並渲染"),("自动修复（引擎还债）","自動修復（引擎還債）"),
-            ("设置…","設定…"),("退出 deepDesign","結束 deepDesign"),("快捷键與選單說明","快捷鍵與選單說明"),
+            ("檔案","文件"),("編輯","编辑"),("檢視","视图"),("畫板","画板"),("說明","帮助"),
+            ("新增專案…","新建项目…"),("開啟 DDP…","打开 DDP…"),("開啟最近的專案…","打开最近的项目…"),
+            ("儲存","保存"),("匯出 DDP…","导出 DDP…"),("匯出 HTML 原型…","导出 HTML 原型…"),
+            ("匯出 SVG（目前畫板）…","导出 SVG（当前画板）…"),("復原","撤销"),("重做","重做"),
+            ("剪下","剪切"),("複製","复制"),("貼上","粘贴"),("全選","全选"),
+            ("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
+            ("示範模式","演示模式"),("新增畫板","新建画板"),("複製目前畫板","复制当前画板"),
+            ("校驗並渲染","校验并渲染"),("自動修復（引擎還債）","自动修复（引擎还债）"),
+            ("設定…","设置…"),("結束 deepDesign","退出 deepDesign"),("快捷鍵與選單說明","快捷键与菜单说明"),
         ],
         "ja" => &[
             ("ファイル","文件"),("編集","编辑"),("表示","视图"),("ボード","画板"),("ヘルプ","帮助"),
@@ -644,6 +659,7 @@ fn menu_t(zh: &str) -> String {
     zh.to_string()
 }
 
+#[cfg(target_os = "macos")]
 fn build_native_menus(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
 

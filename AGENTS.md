@@ -55,6 +55,7 @@ cd src-tauri && cargo build
 node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（在仓库根跑，classic wasm 无 node 版本门槛）
 node scripts/sync-engine.mjs      # 引擎产物同步（GitHub Releases classic wasm → frontend/vendor/；先跑这个）
 node scripts/sync-models.mjs     # 模型元数据快照同步（models.dev → src-tauri/models.json）
+node scripts/i18n-catalog.cjs && python scripts/gen-i18n.py --write   # i18n 字典重建（改 T 表/新增 UI 键后；--check 只验漂移）
 ./dev.sh                          # debug 编译启动（Windows 用 Git Bash，或手动 npx @tauri-apps/cli dev）
 npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 sync-engine）
 ```
@@ -206,9 +207,15 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
   `172.20.x` 放行、`172.2.x`/`172.255.x` 拒绝，DNS 前缀伪装如 `10.evil.com` 拒绝）。改动时守住单测。
 - **实时轨迹（agent-event 事件流）**：run() 循环每步经 progress 回调 → `app.emit("agent-event")`
   → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`tool_start`/`tool_end`
-  （op、✓/✗、耗时、门拒绝详情）、`done`/`failed`。run id 由 lib.rs 注入每个事件（前端按它过滤归属），
+  （op、✓/✗、耗时、门拒绝详情）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。run id 由 lib.rs 注入每个事件（前端按它过滤归属），
   **丢 run id = 时间线 100% 失效**（历史事故）。长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
   展开全文），与 gp-thread 面板、trackAgent 卡三处呈现同一事实，改呈现须同步折叠语义。
+- **Agent 运行中预览（preview）四重新鲜度校验**：Rust 每次成功 moonviz_op ≥1.5s 推一帧全量 canonical，
+  前端 `schedulePreview`/`paintPreview` 同时校验 **run 归属 + preview_seq 序号 + generation + viewEpoch**——
+  旧 run 迟到帧、同 epoch 乱序 WASM 返回、终态/切项目后的残留帧一律丢弃；成功终态只 `invalidatePreview()`
+  **不 rollback**（rollback 仅用于澄清/零 ops/异常路径且经 serializeProject）。拖拽手势期间 preview 延后
+  （gestureActive 时重新 arm），pointerup 后恢复，防止 renderStage 重建销毁 pointer capture。
+  test_studio 检查 J 锚定这套结构（preview_seq 调度/generation 校验/终态不回滚/RAF 合帧）。
 - **澄清式多轮（CLARIFY-FIRST）**：用户提示词要求「先确认再生成」时，模型以纯文本回复提问
   （不调工具）→ 前端挂入 `#gp-thread` 对话面板，`agentThread.pending` 记住提问；用户回答后，
   前端把「原任务 + 提问 + 回答」拼成新指令重跑 agent。**设计取舍（当前为提示词级实现）**：
@@ -274,11 +281,22 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 
 - 只有**一个**内联 `<script>`，全局可变状态集中在文件顶部（`nodes/selected/mbtText/sessions/active/...`）。
 - **所有会改项目的操作必须经 `serializeProject(task)` 串行化**（`projectQueue` 链）。绕过它会产生竞态。
-- **i18n（七语言，键源=zh-CN）**：字典 `I18N_DICT`（`scripts/gen-i18n.py` 生成注入，~350 键 × 6 语言）；
-  `applyI18n()` 是**快照式**切换——I18N_ORIG WeakMap / dataset 存 zh-CN 原文，任何语言→任何语言都从快照出发
-  （当前 DOM 文本可能是上一语言译文，直接查键=简中的字典必失败）；切回简中=恢复快照。`L()` 是动态文案 choke 点
-  （toast/确认框/fillModelHints/THINK_LABEL 等出生即译），`I18N_RERENDER` 注册表让出生即译节点随 setLang 重渲染，
-  `i18nSoon()`/MutationObserver 是渲染出口兜底；原生菜单经 `set_menu_language`（`menu_t` 七语言标签表）。
+- **i18n（七语言，键源=zh-CN）——生成闭环**：字典键清单 `scripts/i18n-full.json` + 移植/新增翻译
+  `scripts/i18n-extra.json`（均由 `node scripts/i18n-catalog.cjs` 对账生成，live-only 键自动移植防丢译，
+  T 表重复键直接失败）；`python scripts/gen-i18n.py --write` 重建 `frontend/index.html` 的
+  `I18N_GENERATED_START/END` 标记块（`--check` 只校验漂移、CI 可用；原子写回 + 六语言键集合自检）。
+  **不要手改标记块内字典**——改 T 表/extra 后重跑生成器。`applyI18n()` 是**快照式**切换——I18N_ORIG
+  WeakMap / dataset 存 zh-CN 原文，任何语言→任何语言都从快照出发（当前 DOM 文本可能是上一语言译文，
+  直接查键=简中的字典必失败）；切回简中=恢复快照。`L()` 是动态文案 choke 点（toast/确认框/过滤器 label
+  等出生即译），带变量的用 `Lfmt('…{id}…',{id})` 模板键（拼好整句查字典永远查不中）；`I18N_RERENDER`
+  注册表让出生即译节点随 setLang 重渲染，`i18nSoon()`/MutationObserver 是渲染出口兜底。
+  **applyI18n 排除 `#stage`/`#decl-stage`**：画布 SVG 用户文本与 MBT 源码高亮是数据，不是 UI——
+  越界翻译会造成「画布显示≠mbtText」的显示漂移。原生菜单经 `set_menu_language`（`menu_t` 七语言标签表，
+  **元组方向必须是 `(译文, zh-CN key)`**——写反即静默回退简体，2026-09 真实事故）。系统确认框统一走
+  前端 `confirmDiscard()`（唯一 invoke 点，按钮/文案经 L()；deleteBoard 传自定义 ok/cancel），Rust
+  `confirm_discard`/`save_ddp`/`open_ddp`/`save_text_file` 的 label 参数为 `Option<String>` 回退中文，
+  **Rust 不持有第二套 locale 表**。多窗口偏好经 `storage` 事件白名单同步 `dd-lang`/`dd-theme`/`dd-mode`
+  （应用与持久化分层，防回写循环）。test_studio 检查 K 锚定以上结构。
   **事故登记：applyI18n 曾被文件尾部旧定义静默遮蔽**（后者胜出=无快照无简中恢复），test_studio 检查 I 现在
   禁止任何函数重复定义（变异验证过必红）。
 - 引擎命令的 payload 一律 b64：`utf8ToB64` / `b64ToUtf8`。

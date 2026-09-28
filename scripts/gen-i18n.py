@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
 """生成 deepDesign 全量 i18n 字典 JS：
-- 键 = zh-CN 原文（全量 UI 字符串清单 /tmp/i18n-full.json）
+- 键 = zh-CN 原文（scripts/i18n-full.json，由 scripts/i18n-catalog.cjs 对账维护）
 - zh-TW/zh-HK：简→繁字符映射 + 台湾/香港词汇覆盖（程序化全覆盖）
-- en/ja/ko/fr：T 表全量人工翻译 + 模式规则（X 失败： 等）合成
-输出 /tmp/i18n-data.js（注入 frontend/index.html 的字典段）
+- en/ja/ko/fr：T 表人工翻译 + scripts/i18n-extra.json（live-only 移植/新增键）
+  + 模式规则（X失败： 等）合成
+输出直接回写 frontend/index.html 的 I18N_GENERATED 标记块：
+  python scripts/gen-i18n.py --check   只校验（CI/审查用，漂移即退出码 1）
+  python scripts/gen-i18n.py --write   原子写回（tmp + replace）
 """
-import json,re
+import json,re,sys
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]
+FULL_IN=ROOT/'scripts'/'i18n-full.json'
+EXTRA_IN=ROOT/'scripts'/'i18n-extra.json'
+HTML_PATH=ROOT/'frontend'/'index.html'
+TMP_PATH=ROOT/'frontend'/'index.html.tmp'   # 原子写回暂存（字面常量，路径不含外部输入）
+MARK_START='/* I18N_GENERATED_START'
+MARK_END='/* I18N_GENERATED_END */'
+# cp936（GBK）控制台打不出日韩缺失 key 时以 ? 降级，不让 print 炸掉整个生成
+sys.stdout.reconfigure(errors='replace')
+WRITE='--write' in sys.argv
 
-d=json.load(open('/tmp/i18n-full.json'))
+d=json.load(open(FULL_IN,encoding='utf-8'))
+EXTRA={k:tuple(v) for k,v in json.load(open(EXTRA_IN,encoding='utf-8')).items()}
 keys=[k for k in d['all']]
 
 # ── 不翻译清单：语言名自身 / 协议示例 / 引擎 op 片段 ──
@@ -481,10 +496,7 @@ T={
 "清除当前画板的标注":("現在のボードの注釈を消去","현재 보드의 주석 지우기","Clear this board's annotations","Effacer les annotations"),
 "定义状态…":("状態を定義…","상태 정의…","Define state…","Définir un état…"),
 "请填写状态名，例如 pressed":("状態名を入力（例 pressed）","상태명 입력(예: pressed)","State name, e.g. pressed","Nom d'état, ex. pressed"),
-"请填写动作，例如 navigate_to:home 或 show_toast:你好":("アクションを入力（例 navigate_to:home / show_toast:こんにちは）","동작 입력(예: navigate_to:home / show_toast:안녕)","Action, e.g. navigate_to:home or show_toast:hello","Action, ex. navigate_to:home"),
-"DDP 中的 MBT 校验失败：":("DDP 内 MBT 検証失敗：","DDP 내 MBT 검증 실패:","MBT validation in DDP failed: ","Validation du MBT échouée : "),
-"DDP 导出失败：":("DDP 書き出し失敗：","DDP 내보내기 실패:","DDP export failed: ","Échec export DDP : "),
-"DDP 打开失败：":("DDP オープン失敗：","DDP 열기 실패:","DDP open failed: ","Échec ouverture DDP : "),
+"请填写动作，例如 navigate_to:home 或 show_toast:你好":("アクションを入力（例 navigate_to:home / show_toast:こんにちは）","동작 입력(예: navigate_to:home / show_toast:안녕)","Action, e.g. navigate_to:home or show_toast:hello","Action, par ex. navigate_to:home ou show_toast:bonjour"),
 "DDP 中的 MBT 校验失败：":("DDP 内 MBT 検証失敗：","DDP 내 MBT 검증 실패:","MBT validation in DDP failed: ","Validation du MBT échouée : "),
 "DDP 导出失败：":("DDP 書き出し失敗：","DDP 내보내기 실패:","DDP export failed: ","Échec export DDP : "),
 "DDP 打开失败：":("DDP オープン失敗：","DDP 열기 실패:","DDP open failed: ","Échec ouverture DDP : "),
@@ -524,55 +536,73 @@ T={
 "选择":("選択","선택","Select","Sélectionner"),
 "隐藏/显示可点击热区的绿色标注（点击交互不受影响）":("クリック可能ゾーンの緑表示を切替（クリック動作は不変）","클릭 가능 영역의 초록 표시 전환(클릭 동작은 불변)","Toggle green hotzone outlines (clicks unaffected)","Basculer les contours verts (clics inchangés)"),
 }
-# 模式规则（未列入 T 的）：X失败/不可用 等后缀
-def rule_translate(k,lang_idx):
-    # en idx=2 ja=0 ko=1 fr=3
-    m=re.match(r'^(DDP|MBT|SVG|HTML|保存|打开|导出|获取|校验|渲染|新窗口打开|撤销|重做)(失败|打开失败|导出失败|校验失败|渲染失败)(：|:)$',k)
+# 模式规则（未列入 T/EXTRA 的）：「X失败：」后缀——主语按语言本地化，
+# 不允许中文前缀污染（旧版直接拼中文 subj，生成「保存失败 failed:」）
+RULE_ASCII={'DDP':'DDP','MBT':'MBT','SVG':'SVG','HTML':'HTML'}
+RULE_ROOTS={
+ '保存':{'ja':'保存','ko':'저장','en':'Save','fr':'Enregistrer'},
+ '打开':{'ja':'オープン','ko':'열기','en':'Open','fr':'Ouvrir'},
+ '导出':{'ja':'書き出し','ko':'내보내기','en':'Export','fr':'Export'},
+ '获取':{'ja':'取得','ko':'가져오기','en':'Fetch','fr':'Récupérer'},
+ '校验':{'ja':'検証','ko':'검증','en':'Validate','fr':'Validation'},
+ '渲染':{'ja':'描画','ko':'렌더링','en':'Render','fr':'Rendu'},
+ '新窗口打开':{'ja':'新ウィンドウ','ko':'새 창','en':'New window','fr':'Nouvelle fenêtre'},
+}
+def rule_translate(k,lang):
+    m=re.fullmatch(r'(?P<root>.+?)失败(?P<colon>：|:)',k)
     if not m:return None
-    subj,verb=k.rstrip('：:'),''
-    table={'DDP':'DDP','MBT':'MBT','SVG':'SVG','HTML':'HTML',
-           '保存':{'ja':'保存','ko':'저장','en':'Save','fr':'Enregistrer'},
-           '打开':{'ja':'オープン','ko':'열기','en':'Open','fr':'Ouvrir'},
-           '导出':{'ja':'書き出し','ko':'내보내기','en':'Export','fr':'Export'},
-           '获取':{'ja':'取得','ko':'가져오기','en':'Fetch','fr':'Récupérer'},
-           '校验':{'ja':'検証','ko':'검증','en':'Validate','fr':'Validation'},
-           '渲染':{'ja':'描画','ko':'렌더링','en':'Render','fr':'Rendu'}}
-    names=['ja','ko','en','fr']
-    n=names[lang_idx]
-    if n=='ja':return f'{subj}に失敗：'
-    if n=='ko':return f'{subj} 실패:'
-    if n=='en':return f'{subj} failed: '
-    if n=='fr':return f'Échec {subj} : '
+    root=m.group('root')
+    if root in RULE_ASCII:subj=RULE_ASCII[root]
+    elif root in RULE_ROOTS:subj=RULE_ROOTS[root][lang]
+    else:return None
+    if lang=='ja':return f'{subj}に失敗：'
+    if lang=='ko':return f'{subj} 실패:'
+    if lang=='en':return f'{subj} failed: '
+    return f'Échec {subj} : '
 
+LANGS=('ja','ko','en','fr')
 out={'zh-TW':{},'zh-HK':{},'en':{},'ja':{},'ko':{},'fr':{}}
 missing=[]
 for k in keys:
     tw=s2t(k)
     out['zh-TW'][k]=tw
     out['zh-HK'][k]=to_hk(tw)
-    if k in T:
-        ja,ko,en,fr=T[k]
-        out['ja'][k]=ja;out['ko'][k]=ko;out['en'][k]=en;out['fr'][k]=fr
-    else:
-        r=None
-        for i in range(4):
-            r=rule_translate(k,i)
-        if r is None:
+    if k in T:vals=dict(zip(LANGS,T[k]))
+    elif k in EXTRA:vals=dict(zip(LANGS,EXTRA[k]))
+    else:vals=None
+    if vals is None:
+        # 模式规则按语言分别求值并写回；全部未命中才整体降级 zh（诚实缺译）
+        vals={lang:rule_translate(k,lang) for lang in LANGS}
+        if any(v is None for v in vals.values()):
             missing.append(k)
-            # en/ja/ko/fr 未收录：暂留 zh（诚实降级，后续补）
-            for L in ['ja','ko','en','fr']:out[L][k]=k
-# 输出 JS
+            vals={lang:(v if v is not None else k) for lang,v in vals.items()}
+    for lang in LANGS:out[lang][k]=vals[lang]
+# 六语言键集合一致性（生成侧自检：任何一条路径漏写都当场炸，不带病落盘）
+ksets=[set(o) for o in out.values()]
+assert all(ks==ksets[0] for ks in ksets),'生成字典六语言键集合不一致'
+
+# 输出 JS：替换 frontend/index.html 的 I18N_GENERATED 标记块（原子写回）
 def jsobj(m):
     items=','.join(f'{json.dumps(k,ensure_ascii=False)}:{json.dumps(v,ensure_ascii=False)}' for k,v in m.items())
     return '{'+items+'}'
-block=f'''I18N_DICT['zh-TW']={jsobj(out['zh-TW'])};
-I18N_DICT['zh-HK']={jsobj(out['zh-HK'])};
-I18N_DICT['en']={jsobj(out['en'])};
-I18N_DICT['ja']={jsobj(out['ja'])};
-I18N_DICT['ko']={jsobj(out['ko'])};
-I18N_DICT['fr']={jsobj(out['fr'])};
-'''
-open('/tmp/i18n-data.js','w').write(block)
-print('keys:',len(keys),'| tw/hk full | en/ja/ko/fr covered:',len(keys)-len(missing),'missing:',len(missing))
-json.dump(missing,open('/tmp/i18n-missing.json','w'),ensure_ascii=False,indent=1)
+n=len(keys)
+with open(HTML_PATH,'r',encoding='utf-8',newline='')as f:html=f.read()
+nl='\r\n' if '\r\n' in html else '\n'
+block=nl.join([
+    MARK_START+f' 字典：键=zh-CN 原文（全量 {n} 键 × 6 语言；scripts/gen-i18n.py --write 生成，勿手改） */',
+    '(function(){',
+    *[f"I18N_DICT['{lang}']={jsobj(out[lang])};" for lang in ('zh-TW','zh-HK','en','ja','ko','fr')],
+    '})();',
+    MARK_END,
+])
+s=html.find(MARK_START);e=html.find(MARK_END)
+if s<0 or e<s:sys.exit('FATAL frontend/index.html 缺 I18N_GENERATED 标记（先手动包裹现有注入块）')
+new=html[:s]+block+html[e+len(MARK_END):]
+if new==html:
+    print(f'up to date: {n} keys | fallback-zh missing: {len(missing)}');sys.exit(0)
+if not WRITE:
+    print(f'--check: 注入块与生成结果不一致（{n} keys，missing={len(missing)}）——用 --write 落盘');sys.exit(1)
+TMP_PATH.write_text(new,encoding='utf-8',newline='')
+TMP_PATH.replace(HTML_PATH)
+print(f'written: {n} keys | fallback-zh missing: {len(missing)}')
 for k in missing[:25]:print(' MISS:',k)

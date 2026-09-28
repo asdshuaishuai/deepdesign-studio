@@ -1,0 +1,242 @@
+{
+ "登录页": [
+  "ログインページ",
+  "로그인 페이지",
+  "Login Page",
+  "Page de connexion"
+ ],
+ "注册页": [
+  "サインアップページ",
+  "회원가입 페이지",
+  "Sign-up Page",
+  "Page d'inscription"
+ ],
+ "个人主页": [
+  "プロフィール",
+  "프로필 페이지",
+  "Profile Page",
+  "Page de profil"
+ ],
+ "设置页": [
+  "設定ページ",
+  "설정 페이지",
+  "Settings Page",
+  "Page de réglages"
+ ],
+ "列表-详情": [
+  "リスト詳細",
+  "목록-상세",
+  "List-Detail",
+  "Liste-Détail"
+ ],
+ "引导页": [
+  "オンボーディング",
+  "온보딩",
+  "Onboarding",
+  "Onboarding"
+ ],
+ "空状态页": [
+  "空状態ページ",
+  "빈 상태 페이지",
+  "Empty State",
+  "État vide"
+ ],
+ "Web 落地页": [
+  "Web ランディング",
+  "Web 랜딩",
+  "Web Landing",
+  "Landing Web"
+ ],
+ "Web 登录": [
+  "Web ログイン",
+  "Web 로그인",
+  "Web Login",
+  "Connexion Web"
+ ],
+ "Web 仪表盘": [
+  "Web ダッシュボード",
+  "Web 대시보드",
+  "Web Dashboard",
+  "Tableau Web"
+ ],
+ "PC 桌面应用": [
+  "PC デスクトップアプリ",
+  "PC 데스크톱 앱",
+  "PC Desktop App",
+  "App de bureau PC"
+ ],
+ "自适应落地页": [
+  "アダプティブランディング",
+  "어댑티브 랜딩",
+  "Adaptive Landing",
+  "Landing adaptatif"
+ ],
+ "登录页 v2": [
+  "ログインページ v2",
+  "로그인 페이지 v2",
+  "Login Page v2",
+  "Connexion v2"
+ ],
+ "模板 ": [
+  "テンプレート ",
+  "템플릿 ",
+  "Template ",
+  "Modèle "
+ ],
+ "上下文": [
+  "コンテキスト",
+  "컨텍스트",
+  "Context",
+  "Contexte"
+ ],
+ "工具调用": [
+  "ツール呼び出し",
+  "도구 호출",
+  "Tools",
+  "Appels d'outils"
+ ],
+ "结构化": [
+  "構造化",
+  "구조화",
+  "Structured",
+  "Structuré"
+ ],
+ "已启用 ": [
+  "有効化: ",
+  "활성화됨: ",
+  "Enabled: ",
+  "Activé : "
+ ],
+ "（使用之前保存的配置）": [
+  "（保存済みの設定を使用）",
+  " (저장된 설정 사용)",
+  " (using previously saved config)",
+  " (configuration enregistrée utilisée)"
+ ],
+ " 预设，补全 API Token 即可": [
+  " プリセット — API Token を入力すれば完了",
+  " 프리셋 — API Token만 채우면 됩니다",
+  " preset — just fill in the API Token",
+  " préréglage — renseignez le jeton API"
+ ],
+ "未保存的更改": [
+  "変更未保存",
+  "저장되지 않은 변경",
+  "Unsaved Changes",
+  "Modifications non enregistrées"
+ ],
+ "当前文档有未保存的更改（含源码草稿），确定退出吗？": [
+  "未保存の変更（ソース草案を含む）があります。終了しますか？",
+  "저장되지 않은 변경(소스 초안 포함)이 있습니다. 종료할까요?",
+  "This document has unsaved changes (including source draft). Quit anyway?",
+  "Ce document a des modifications non enregistrées (brouillon source inclus). Quitter ?"
+ ],
+ "当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。": [
+  "未保存の変更（ソース草案を含む）があります。新しいファイルを開くと破棄されます。",
+  "저장되지 않은 변경(소스 초안 포함)이 있습니다. 새 파일을 열면 버려집니다.",
+  "This document has unsaved changes (including source draft). Opening a new file will discard them.",
+  "Ce document a des modifications non enregistrées (brouillon source inclus). Ouvrir un autre fichier les ignorera."
+ ],
+ "当前文档有未保存的更改（含源码草稿），新建将丢弃这些更改。": [
+  "未保存の変更（ソース草案を含む）があります。新規作成で破棄されます。",
+  "저장되지 않은 변경(소스 초안 포함)이 있습니다. 새 프로젝트를 만들면 버려집니다.",
+  "This document has unsaved changes (including source draft). Creating a new project will discard them.",
+  "Ce document a des modifications non enregistrées (brouillon source inclus). Un nouveau projet les ignorera."
+ ],
+ "继续编辑": [
+  "編集を続ける",
+  "계속 편집",
+  "Keep Editing",
+  "Continuer l'édition"
+ ],
+ "放弃更改": [
+  "変更を破棄",
+  "변경 사항 버리기",
+  "Discard Changes",
+  "Abandonner les modifications"
+ ],
+ "删除画板": [
+  "ボードを削除",
+  "보드 삭제",
+  "Delete Board",
+  "Supprimer la planche"
+ ],
+ "删除画板 {id}？（⌘Z 可撤销）": [
+  "ボード {id} を削除？（⌘Z で取り消せます）",
+  "보드 {id} 삭제? (⌘Z 실행 취소)",
+  "Delete board {id}? (Undo with ⌘Z)",
+  "Supprimer la planche {id} ? (⌘Z pour annuler)"
+ ],
+ "至少保留一个画板": [
+  "少なくとも1つのボードを残してください",
+  "최소 하나의 보드는 남겨야 합니다",
+  "Keep at least one board",
+  "Gardez au moins une planche"
+ ],
+ "画板 {id} 已删除": [
+  "ボード {id} を削除しました",
+  "보드 {id} 삭제됨",
+  "Board {id} deleted",
+  "Planche {id} supprimée"
+ ],
+ "deepDesign 视觉文档": [
+  "deepDesign ビジュアル文書",
+  "deepDesign 비주얼 문서",
+  "deepDesign Visual Document",
+  "Document visuel deepDesign"
+ ],
+ "HTML 原型": [
+  "HTML プロトタイプ",
+  "HTML 프로토타입",
+  "HTML Prototype",
+  "Prototype HTML"
+ ],
+ "SVG 图形": [
+  "SVG グラフィック",
+  "SVG 그래픽",
+  "SVG Graphics",
+  "Graphique SVG"
+ ],
+ "刚刚": [
+  "たった今",
+  "방금",
+  "Just now",
+  "À l'instant"
+ ],
+ "{n} 分钟前": [
+  "{n} 分前",
+  "{n}분 전",
+  "{n} min ago",
+  "il y a {n} min"
+ ],
+ "{n} 小时前": [
+  "{n} 時間前",
+  "{n}시간 전",
+  "{n} h ago",
+  "il y a {n} h"
+ ],
+ "{n} 天前": [
+  "{n} 日前",
+  "{n}일 전",
+  "{n} d ago",
+  "il y a {n} j"
+ ],
+ "手机原型": [
+  "モバイル",
+  "모바일",
+  "Mobile",
+  "Mobile"
+ ],
+ "Web 页面": [
+  "Web ページ",
+  "웹 페이지",
+  "Web Pages",
+  "Pages Web"
+ ],
+ "桌面 / 自适应": [
+  "デスクトップ / アダプティブ",
+  "데스크톱 / 적응형",
+  "Desktop / Adaptive",
+  "Bureau / Adaptatif"
+ ]
+}

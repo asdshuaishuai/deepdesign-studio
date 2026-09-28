@@ -151,6 +151,30 @@ assert(mapCalls.length>0,'未能提取 nativeMenuAction 映射体调用目标（
 const missingMap=mapCalls.filter(n=>!defined.has(n)&&!bound.has(n)&&!GLOBALS.has(n)&&!KEYWORDS.has(n));
 assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函数：${missingMap}`);
 
+/* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
+assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
+assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');
+assert.match(script,/p\.seq<latestPreviewSeq/,'paintPreview 缺少 preview 序列校验');
+assert.match(script,/if\(!preview&&typeof invalidatePreview==='function'\)invalidatePreview\(\)/,'事实源提交未失效旧 preview');
+assert.match(script,/if\(terminalCommitted\)\{if\(typeof invalidatePreview==='function'\)invalidatePreview\(\);\}/,'Agent 成功终态仍可能无条件 rollback');
+assert.match(script,/boardDragRaf/,'画板拖拽缺少 RAF 合帧');
+assert.match(script,/let moved=false,dragRaf=0,lastX=/,'组件拖拽缺少 RAF 状态');
+
+/* 检查 K：i18n 闭环契约——生成标记/确认框收口/过滤器 label/菜单表方向/多窗口同步 */
+assert.match(script,/\/\* I18N_GENERATED_START/,'字典生成标记缺失（scripts/gen-i18n.py --write 无法回写 HTML）');
+assert.match(script,/\/\* I18N_GENERATED_END \*\//,'字典生成结束标记缺失');
+assert.equal((script.match(/invoke\('confirm_discard'/g)||[]).length,1,'confirm_discard 必须唯一经 confirmDiscard() helper 调用（绕过 helper 即漏翻译）');
+assert.match(script,/function confirmDiscard\(title,message,labels\)/,'confirmDiscard helper 结构变了（请同步检查 K）');
+assert.match(script,/okLabel:ok,cancelLabel:cancel/,'确认框按钮文案未参数化（非中文仍弹中文按钮）');
+assert.match(script,/filterLabel:L\('deepDesign 视觉文档'\)/,'DDP 对话框过滤器未本地化');
+assert.match(script,/htmlFilterLabel:L\('HTML 原型'\)/,'导出对话框过滤器未本地化');
+assert.match(script,/addEventListener\('storage',ev=>\{/,'多窗口偏好同步（storage 监听）缺失');
+assert.match(script,/dd-lang'&&ev\.newValue\)setLang\(ev\.newValue,false\)/,'语言跨窗口同步结构变了（请同步检查 K）');
+assert.match(script,/function Lfmt\(text,params\)/,'模板翻译助手 Lfmt 缺失（带变量文案整句查字典永远查不中）');
+assert.match(script,/p\.closest\('\.declview'\)\|\|p\.closest\('#stage'\)\|\|p\.closest\('#decl-stage'\)/,'applyI18n 未排除画布/源码区（用户与 MBT 内容会被误翻）');
+assert.match(script,/return L\('刚刚'\);/,'relTime 未走翻译 choke point（非中文时间残留）');
+assert(libRs.includes('("檔案","文件")')&&!libRs.includes('("文件","檔案")'),'zh-TW/HK 菜单表方向反了——menu_t 按 (译文, zh-CN 键) 匹配');
+
 /* 检查 I：函数不得重复定义。内联单文件无打包器/linter，`function applyI18n()`
  * 写两遍时后者静默遮蔽前者（2026-09 i18n 事故：带快照恢复的新实现被文件尾部的
  * 旧实现覆盖，切回简中永久失效）——vm 只执行其中之一，其余防线全部看不见。 */

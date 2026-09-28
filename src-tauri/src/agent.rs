@@ -1259,6 +1259,7 @@ pub async fn run(
     let mut step: usize = 0;
     let mut review_done = false;
     let mut last_preview = std::time::Instant::now();
+    let mut preview_seq: u64 = 0;
 
     loop {
         if step >= MAX_STEPS {
@@ -1431,7 +1432,8 @@ pub async fn run(
             if name == "moonviz_op" && ok && last_preview.elapsed() >= std::time::Duration::from_millis(1500) {
                 last_preview = std::time::Instant::now();
                 if let Some(m) = state.mbt.clone() {
-                    emit("preview", json!({"mbt_b64": b64_encode(&m)}));
+                    preview_seq += 1;
+                    emit("preview", json!({"mbt_b64": b64_encode(&m), "preview_seq": preview_seq}));
                 }
             }
             messages.push(json!({
