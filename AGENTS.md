@@ -200,6 +200,10 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 - **place 最终尺寸语法（0.1.6/#18）**：`place <ab> <comp> <id> [variant|-] [x] [y] [w] [h] [k=v ...]`
   ——门在**最终 bbox** 评估；提示词已教「知道最终尺寸就随 place 传入」（真实 run 111 次
   拒绝的根因整类消除，`place_final_size_gate_evaluates_final_bbox` 测试锚定）。
+- **闲置画板清扫（run 前后确定性执行）**：`sweep_idle_artboards` 以 `session_list_artboards` 的
+  nodes 计数 ≤1（空/仅根）判定闲置，总数 >1 才删（实时复核永不删到最后一块）；开始清上一轮
+  遗留、收尾清本轮未填充占位。list 宿主直调不记 ops，删除走 AgentGate 并记 ops；done 事件
+  携带 `cleanup`/`boards` 字段，前端轨迹以绿胶囊 `tl-final` 强标志呈现收尾。
 - **`INSTRUCTIONS` 与 `ENGINE_TEMPLATES` 必须与引擎同步**（`template_ids_match_engine` 测试锚定 id 集合，
   `prompt_avoids_apply_rejected_ops` 锚定新语法在场）。提示词漏一个模板 Agent 就永远不选它，
   多一个它就会猜不存在的 id。模板尺寸以引擎实际产出为准——`pc_app` 是 1280×800，不是提示词里曾写的 1440×900。
