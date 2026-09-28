@@ -180,7 +180,9 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   unflow the edge(s) first (unflow <ab> <target> <node>), then delete.
   A "template" op rejected with mbt_gate_block means that built-in template's content carries gate
   debt — do NOT retry it; build the screen with "create" + "place"/"update" instead.
-- keep ops gate-clean (violations → mbt_gate_block rejection, not tolerated debt). All changes go through moonviz_op only."#;
+- keep ops gate-clean (violations → mbt_gate_block rejection, not tolerated debt). All changes go through moonviz_op only.
+- never leave an empty placeholder artboard behind: if you create a board you end up not filling, delete-artboard it
+  before finishing. The workspace is swept for empty boards before and after every run regardless."#;
 
 fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
@@ -1189,6 +1191,60 @@ fn artboard_ids(mbt: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .collect()
 }
+/// 闲置画板清扫（确定性，零视觉语义）：session_list_artboards 的 nodes 计数
+/// ≤1（空文档/仅根节点）即视为闲置；画板总数 >1 时才删（实时复核，永不删到
+/// 只剩一块）。run 开始扫一次（清上一轮运行遗留的空占位），done 收尾扫一次
+/// （清本轮 Agent 创建却未填充的占位）。list 走宿主直调（清扫是宿主机制，
+/// 不记 ops）；删除走 moonviz_op 正常 AgentGate 并记 ops（终态/rebase 语义
+/// 与其他变更一致）。删除经由门校验，被拒（如最后一画板）即诚实跳过。
+async fn sweep_idle_artboards<'a>(
+    state: &mut EngineState<'_>,
+    emit: &(dyn Fn(&str, Value) + Send + Sync + 'a),
+    seq: &mut usize,
+) -> Vec<String> {
+    let Some(mbt) = state.mbt.clone() else { return vec![] };
+    let r = state.call("session_list_artboards", &mbt, "").await;
+    let Some(boards) = r.get("data").and_then(|v| v.as_array()).cloned() else {
+        return vec![];
+    };
+    let total = boards.len();
+    if total <= 1 {
+        return vec![];
+    }
+    let mut cleaned: Vec<String> = vec![];
+    for b in &boards {
+        let id = b.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let nodes = b.get("nodes").and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+        if id.is_empty() || nodes > 1 {
+            continue;
+        }
+        // 实时复核剩余数量：前序删除成功后不得删到只剩一块
+        if total.saturating_sub(cleaned.len()) <= 1 {
+            break;
+        }
+        *seq += 1;
+        let seq_n = *seq;
+        let op = format!("delete-artboard {id}");
+        emit("tool_start", json!({"seq": seq_n, "tool": "moonviz_op", "op": op}));
+        let t0 = std::time::Instant::now();
+        let r = state.moonviz_op(&op).await;
+        let ok = r.get("ok") == Some(&json!(true));
+        emit(
+            "tool_end",
+            json!({"seq": seq_n, "ok": ok, "ms": t0.elapsed().as_millis() as u64}),
+        );
+        if ok {
+            cleaned.push(id.to_string());
+        }
+    }
+    if !cleaned.is_empty() {
+        emit(
+            "assistant_text",
+            json!({"text": format!("🧹 清理闲置画板：{}", cleaned.join("、"))}),
+        );
+    }
+    cleaned
+}
 /// 主循环：chat → tool_calls → 引擎执行 → 回填 → 直至 assistant 总结或 maxSteps。
 pub async fn run(
     host: &EngineHost,
@@ -1260,6 +1316,12 @@ pub async fn run(
     let mut review_done = false;
     let mut last_preview = std::time::Instant::now();
     let mut preview_seq: u64 = 0;
+
+    // ── 闲置画板清扫（开始）：清上一轮运行遗留的空占位画板 ──
+    // 新项目（mbt None）与单画板文档天然跳过（总数 ≤1 不动）。
+    if state.mbt.is_some() {
+        let _ = sweep_idle_artboards(&mut state, &emit, &mut seq).await;
+    }
 
     loop {
         if step >= MAX_STEPS {
@@ -1360,6 +1422,14 @@ pub async fn run(
                     "ops": state.ops, "text": text,
                 });
             }
+            // ── 闲置画板清扫（收尾）：清本轮创建却未填充的占位画板 ──
+            // 在 ensure_render 之前执行，终态渲染包含删除结果。
+            let cleanup = if state.mbt.is_some() {
+                sweep_idle_artboards(&mut state, &emit, &mut seq).await
+            } else {
+                vec![]
+            };
+            let cleanup_json: Vec<Value> = cleanup.iter().map(|s| json!(s)).collect();
             state.ensure_render().await;
             // 走到这里说明 assistant 已给出自然总结——即便恰在第 MAX_STEPS 轮,
             // 语义是 done;max_turns 只属于循环耗尽仍无总结的路径（循环外兜底）
@@ -1369,7 +1439,11 @@ pub async fn run(
             }
             eprintln!("[agent] run end: stop={stop} ops={} text_len={}", state.ops.len(), text.len());
             emit("assistant_text", json!({"text": text}));
-            emit("done", json!({"stopReason": stop, "ops": state.ops.len()}));
+            let boards_n = artboard_ids(state.mbt.as_deref().unwrap_or("")).len();
+            emit(
+                "done",
+                json!({"stopReason": stop, "ops": state.ops.len(), "boards": boards_n, "cleanup": cleanup_json}),
+            );
             return json!({
                 "ok": state.mbt.is_some(),
                 "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
@@ -1377,6 +1451,8 @@ pub async fn run(
                 "ops": state.ops,
                 "revision": state.revision,
                 "stopReason": stop,
+                "boards": boards_n,
+                "cleanup": cleanup_json,
                 "text": text,
             });
         }

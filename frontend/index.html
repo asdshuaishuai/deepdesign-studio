@@ -342,6 +342,14 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 .tl-line.tl-err .tl-err-msg{color:#e05252}
 .tl-line .tl-ms{color:var(--tx3);font-size:9px}
 .tl-line.tl-done{color:var(--tx3);font-weight:600;margin-top:3px}
+/* 运行结束的强标志：全宽绿胶囊 + 徽标（区分澄清/完成/清理三种收尾语义） */
+.tl-final{margin-top:12px;padding:13px 16px;border-radius:14px;display:flex;gap:11px;align-items:center;
+  font-size:13.5px;font-weight:800;letter-spacing:.02em;color:#065F46;
+  background:linear-gradient(120deg,rgba(52,211,153,.28),rgba(167,243,208,.14));
+  border:1px solid rgba(16,185,129,.55);box-shadow:0 8px 28px rgba(16,185,129,.22);animation:tlFinalPop .35s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes tlFinalPop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+.tl-final-ic{width:24px;height:24px;border-radius:50%;background:#10B981;color:#fff;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 2px 10px rgba(16,185,129,.5)}
+body[data-mode="dark"] .tl-final{color:#D1FAE5;background:linear-gradient(120deg,rgba(16,185,129,.26),rgba(52,211,153,.1))}
 /* 中间产物视图 */
 .declview{font-family:ui-monospace;font-size:11px;line-height:1.6;color:#2d3748;white-space:pre-wrap;word-break:break-all;background:#fff;border:1px solid rgba(0,0,0,.09);border-radius:var(--r-lg);padding:11px;max-height:calc(100vh - 240px);overflow:auto}
 .decl-actions{display:flex;gap:6px;margin-top:8px}
@@ -2585,7 +2593,18 @@ function ensureTraceListener(){
       }
       return;
     }
-    if(p.type==='done'){appendTraceLine(box,`■ 完成（${p.ops} ops · ${p.stopReason}）`,'tl-done');return;}
+    if(p.type==='done'){
+      if(p.stopReason==='clarify'){appendTraceLine(box,'■ 需要澄清——在下方回答后再次生成','tl-done');return;}
+      const fin=document.createElement('div');
+      fin.className='tl-final';
+      const boardsTxt=p.boards?` · 画板 ${p.boards}`:'';
+      const cleanTxt=(Array.isArray(p.cleanup)&&p.cleanup.length)?` · 清理闲置画板 ${p.cleanup.length}`:'';
+      fin.innerHTML=`<span class="tl-final-ic">✔</span><span class="tl-final-tx">运行完成 · ${p.ops} ops${boardsTxt}${cleanTxt}</span>`;
+      box.appendChild(fin);
+      const sc=box.closest('.rpanel')||box.parentElement;
+      if(sc)sc.scrollTop=sc.scrollHeight;
+      return;
+    }
     if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
     if(p.type==='review'){appendTraceLine(box,'🔎 收尾审查：需求完整度 · 连线完整度 · 综合修复','tl-assist');return;}
   }).then(u=>{TRACE.un=u;}).catch(e=>console.warn('[trace] agent-event 监听注册失败（本窗口轨迹将空白）:',e));
