@@ -1207,6 +1207,7 @@ let zoom=1;
 let currentW=390,currentH=844;
 let flows=[],sessions={},active='',filePath='',placing=0;
 let mbtText='',mbtRevision=0,declDraftDirty=false;
+let projectEntry=''; // 项目起点页（文档 entry）：演示模式永远从这里开始（2026-09 用户定则）
 let projectDirty=false,fileLabelName='';
 let viewEpoch=0; // 项目状态代币：真实变更 +1；过期 agent 预览落地前比对丢弃（防显示失步）
 let selectionRaf=0;
@@ -1552,6 +1553,7 @@ function applyMbtResult(result,{reset=false,acceptDraft=false,preview=false}={})
   }
   sessions=next;if(!preview)flows=Array.isArray(result.flows)?result.flows:[];
   active=(!reset&&sessions[active])?active:((result.entry&&sessions[result.entry])?result.entry:(Object.keys(sessions)[0]||''));
+  projectEntry=(result.entry&&sessions[result.entry])?result.entry:projectEntry; // 起点页跟随文档 entry
   const current=sessions[active];
   baseCmd=current?'__mbt__':'';currentW=current?current.w:390;currentH=current?current.h:844;
   currentSvg=current?current.svg:'';nodes=current?current.nodes:[];selected=(!reset&&nodes.some(n=>n.id===selected))?selected:null;
@@ -2289,7 +2291,7 @@ function artboardMenu(x,y,id){
     {label:'→ 切换到此画板',action:()=>{if(id!==active)switchSession(id);}},
     {label:'⧉ 复制此画板',action:()=>duplicateBoard(id)},
     '-',
-    {label:'▶ 从此画板演示',action:()=>{if(id!==active)switchSession(id).then(()=>setMode('play'));else setMode('play');}},
+    {label:'▶ 从起点页演示',action:()=>setMode('play')},
     {label:'⌖ 复位画板位置',action:()=>{delete boardOffsets[id];const w=document.querySelector(frameSel(id));if(w){w.style.transform='';}renderFlowWires($('stage'));}},
     '-',
     {label:'🗑 删除此画板',kbd:'⇧⌘⌫',danger:true,action:()=>deleteBoard(id)},
@@ -2837,7 +2839,12 @@ function setMode(m){
   if(m!=='wireframe'&&m!=='hifi')closeAgentPop();
   ['wireframe','hifi','decl'].forEach(x=>{const b=$('mode-'+x);if(b)b.classList.toggle('on',x===m);});
   $('decl-stage').style.display=m==='decl'?'flex':'none';
-  if(m==='play'){if(!playStack.length||playStack[playStack.length-1]!==active)playStack=[active];renderStage();
+  if(m==='play'){
+    // 演示永远从起点页开始（2026-09 用户定则）：与当前选中/编辑画板无关。
+    // entry 缺失回退第一块画板；重入 play（已在演示中）不打断当前位置。
+    const startAb=(projectEntry&&sessions[projectEntry])?projectEntry:(Object.keys(sessions)[0]||active);
+    if(mode!=='play'){playStack=[startAb];if(active!==startAb){active=startAb;playApplySession(startAb);}}
+    renderStage();
     // interact 绑定异步预热：就绪后热区补挂（flows 热区已在 renderStage 同步挂好）；
     // 非 tap 触发器演示不支持——如实计数提示，不做静默隐身
     if(inkPaths.length)mountInkLayer(); // 批注随文档恢复：进演示即重放（moonviz#20 注入层）
