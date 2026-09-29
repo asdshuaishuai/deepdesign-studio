@@ -1153,6 +1153,14 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         </select>
       </label>
       <label style="font-size:10.5px;color:var(--tx3);align-self:end">等级经 reasoning_effort 下发（DeepSeek/Kimi/GLM-5.2+）；MiniMax 仅支持开关。GLM-5.3 不支持关闭。</label>
+      <label>步数上限
+        <select id="agent-max-steps">
+          <option value="200">200 步 · 轻量任务</option>
+          <option value="500" selected>500 步 · 常规（默认）</option>
+          <option value="1000">1000 步 · 复杂应用</option>
+          <option value="2000">2000 步 · 极限</option>
+        </select>
+      </label>
     </div>
     </div>
     <div class="settings-actions"><button title="closeSettings" class="tbtn" onclick="closeSettings()">取消</button><button class="tbtn pri" onclick="saveSettings()">保存设置</button></div>
@@ -3920,6 +3928,7 @@ function loadAgentConfig(){
     apiKey:slot.apiKey||'',
     model:slot.model||preset.model,
     thinkingLevel:slot.thinkingLevel,
+    maxSteps:([200,500,1000,2000].includes(Number(slot.maxSteps))?Number(slot.maxSteps):500),
   };
   agentConfig.thinkingLevel={on:'high'}[agentConfig.thinkingLevel]||(['auto','off','low','medium','high','max'].includes(agentConfig.thinkingLevel)?agentConfig.thinkingLevel:'auto');
 }
@@ -4083,6 +4092,7 @@ function openSettings(){
   // fillModelHints 随后钳到 auto 并写回——存储配置被静默降级
   restoreThinkingOptions($('agent-thinking'),agentConfig.thinkingLevel);
   $('agent-thinking').value=agentConfig.thinkingLevel||'auto';
+  $('agent-max-steps').value=String(agentConfig.maxSteps||500);
   // 下拉反映「真实启用的端点」：按 Base URL 反查服务商，对不上则显示自定义
   // ——设置哪个就显示哪个，不再与实际状态脱节
   const sel=$('provider-preset');
@@ -4100,7 +4110,7 @@ function switchSettings(w){
 }
 function closeSettings(){ $('settings-modal').style.display='none';$('settings-modal').setAttribute('aria-hidden','true'); }
   async function askFxSdk(instruction,runId){
-  const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto',run:runId||0};
+  const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto',max_steps:Number(agentConfig.maxSteps)||500,run:runId||0};
 
   const data=await window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:agentConfig.apiKey||''});
   if(!data||data.ok!==true){
@@ -4119,7 +4129,7 @@ function saveSettings(){
   loadFxProviders();
   // 表单写回当前选中的服务商槽位并启用——多服务商配置并存，互不覆盖
   const k=$('provider-preset').value||'custom';
-  fxProviders[k]={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto'};
+  fxProviders[k]={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto',maxSteps:Number($('agent-max-steps').value)||500};
   fxActiveKey=k;persistFxProviders();loadAgentConfig();
   // 保存反馈即面板关闭本身（2026-09 用户反馈）：不再弹「已保存并启用」toast
   closeSettings();

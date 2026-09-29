@@ -496,6 +496,8 @@ async fn invoke_fx_sdk(
     let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
     let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
+    // 步数上限：前端设置面板可调（默认 500；夹紧防异常值）
+    let max_steps = p.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(500) as usize;
     // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线；
     // 同一事件流落 JSONL 运行日志（app_data/logs/，保留 50 个），供事后诊断
     let run_id = p.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -535,7 +537,7 @@ async fn invoke_fx_sdk(
         }
     };
     let result =
-        agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress))
+        agent::run_with_steps(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress), max_steps)
             .await;
     if let (Some(dir), Some(file)) = (&journal, &journal_file) {
         journal_append(
