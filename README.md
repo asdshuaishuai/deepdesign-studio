@@ -34,15 +34,34 @@ Agent 基座为 Rust 进程内实现（`src-tauri/src/agent.rs`）——无 JS �
 LLM 走任意 OpenAI 兼容或 Anthropic 兼容端点（MiniMax 双协议支持），内置 13 个服务商预设，
 思考等级按各家官方方言模型感知降级；模型元数据由 models.dev 裁剪快照供给并契约锁定。
 
-## 开发
+## 构建
+
+前置依赖：**Rust**（Windows 必须 MSVC 工具链，脚本会自动把 GNU 默认定向到 MSVC，仅本进程）·
+**Node**（构建脚本与测试宿主）· Tauri CLI 无需全局安装（脚本经 npx 拉起）。
+仓库自包含——引擎是预编译 wasm 产物、DDP codec 已 vendored，无需 MoonBit 工具链或引擎源码。
 
 ```bash
-node scripts/sync-engine.mjs   # 拉取标准 wasm 引擎产物（首次必跑）
-./dev.sh                       # debug 编译并启动
+node scripts/sync-engine.mjs   # 1. 拉取标准 wasm 引擎产物（首次必跑，需 GitHub 连通；产物在场则只跑本地契约探针）
 ```
 
-前置：Rust + Tauri CLI + Node（构建期脚本与测试宿主）。仓库自包含——引擎是预编译
-wasm 产物、DDP codec 已 vendored，clone 后两步即可构建，无需 MoonBit 工具链或引擎源码。
+**开发运行**（debug 编译 + 启动；`tauri dev` 只 watch `src-tauri/`，改 `frontend/` 后在窗口按 Ctrl+R / ⌘R 刷新）
+
+| 平台 | 命令 |
+|------|------|
+| Windows CMD | `dev.bat`（加 `--fresh` 结束旧进程并清 WebView2 HTTP 缓存） |
+| macOS / Linux / Git Bash | `./dev.sh --fresh` |
+
+**Release 打包**
+
+| 平台 | 命令 |
+|------|------|
+| Windows CMD | `build.bat` |
+| 任意 | `npx @tauri-apps/cli build` |
+
+产物位置：Windows NSIS 安装包在 `src-tauri/target/release/bundle/nsis/`，裸二进制
+`src-tauri/target/release/deepdesign-studio.exe`；macOS 产出 `.app` / `.dmg`。
+打 tag `v*` 时 GitHub Actions 自动出全平台包，发布产物见
+[Releases](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest)。
 
 ## 测试
 
@@ -52,11 +71,6 @@ node test_studio.cjs          # 前端状态机冒烟 + wasm 产物契约
 ```
 
 引擎门测试：wasm 产物缺失时合法跳过；产物在场但宿主/编解码损坏时必须失败。
-
-## 打包产物
-
-- macOS：`.app` / `.dmg`；Windows：NSIS 安装包（GitHub Actions，打 tag `v*` 触发）
-- 发布产物见 [Releases](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest)
 
 ## 开源感谢
 
