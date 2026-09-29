@@ -547,7 +547,7 @@ body[data-theme="deep"] .pmain input{color:#e4e7ec}
 body[data-theme="deep"] .tpl-card{background:#1f2228;border-color:#2c313a}
 body[data-theme="deep"] .tpl-card .th{background:#17191e;border-color:#2c313a}
 body[data-theme="deep"] .nodecard,body[data-theme="deep"] .pchip{background:rgba(255,255,255,.06);border-color:#2c313a}
-/* #decl-stage 配色已由 --code-*/--stage-veil 主题变量接管（见文件头），无需 per-theme 覆盖 */
+/* #decl-stage 配色已由 --code-* / --stage-veil 主题变量接管（见文件头），无需 per-theme 覆盖 */
 
 /* Neu */
 body[data-theme="neu"]{
@@ -563,6 +563,8 @@ body[data-theme="neu"] .ctools,body[data-theme="neu"] .promptbar,body[data-theme
 body[data-theme="neu"] .compcell,body[data-theme="neu"] .flowrow,body[data-theme="neu"] .tpl-card,body[data-theme="neu"] .mode-btn.on,body[data-theme="neu"] .nodecard,body[data-theme="neu"] .pmain{box-shadow:-4px -4px 9px rgba(255,255,255,.85),4px 4px 9px rgba(163,177,198,.55);border:none}
 /* 激活工具钮：拟物底会盖掉基础 --acc 高亮（562 行平铺覆盖），这里显式找回主题色 */
 body[data-theme="neu"] .ctool.on{background:var(--acc);color:var(--acc-contrast,#fff);box-shadow:-3px -3px 8px rgba(255,255,255,.7),3px 3px 8px rgba(163,177,198,.5)}
+/* 主按钮/激活主题 chip：562 平铺同样抹掉主题底（浅色面板上白底白字=隐形）——同 ctool.on 显式找回 */
+body[data-theme="neu"] .tbtn.pri,body[data-theme="neu"] .prov-chip[data-theme-chip].on{background:var(--acc);color:var(--acc-contrast,#fff);border:none;box-shadow:-3px -3px 8px rgba(255,255,255,.7),3px 3px 8px rgba(163,177,198,.5)}
 body[data-theme="neu"] .pmain input,body[data-theme="neu"] .frow input,body[data-theme="neu"] .colorpair input{background:#e0e5ec;border:none;box-shadow:inset 2px 2px 5px rgba(163,177,198,.5),inset -2px -2px 5px rgba(255,255,255,.8)}
 body[data-theme="neu"] .mode-seg{background:#d8dee7;border:none}
 
