@@ -15,3 +15,5 @@ vendor/moonviz-ddp/target/
 vendor/moonviz-ddp/Cargo.lock
 .zcodeignore
 .zcode/
+# Mimosa 安全插件本机状态（扫描事件/会话基线/报告，不入库）
+.mimosa/
