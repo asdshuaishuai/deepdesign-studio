@@ -4,6 +4,8 @@ AI 原生原型设计工具的桌面客户端（Tauri 2）。基于 [MoonViz](ht
 
 **当前版本 v0.3.0** — [官网](https://asdshuaishuai.github.io/deepdesign-studio/) · [下载（GitHub Releases）](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest) · [引擎官网](https://asdshuaishuai.github.io/moonviz/) · [生态官网](https://asdshuaishuai.github.io/deeporca-site/)
 
+**开源协议 MIT** — 本仓库与上游 [MoonViz 引擎](https://github.com/asdshuaishuai/moonviz) 均以 MIT 开源，欢迎 Fork / Star / 提 Issue。
+
 ## 特性
 
 - **进程内 Agent**：Rust Agent 循环 × wasmtime 宿主——无 JS 运行时、无子进程桥。OpenAI / Anthropic 双协议，thinking 等级按 8 家厂商方言下发，13 个服务商预设（models.dev 快照本地化，离线可用）。
