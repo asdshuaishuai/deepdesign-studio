@@ -4121,7 +4121,8 @@ function saveSettings(){
   const k=$('provider-preset').value||'custom';
   fxProviders[k]={baseUrl:$('agent-base-url').value.trim(),apiKey:$('agent-api-key').value,model:$('agent-model').value.trim(),thinkingLevel:$('agent-thinking').value||'auto'};
   fxActiveKey=k;persistFxProviders();loadAgentConfig();
-  closeSettings();toast('已保存并启用「'+($('provider-preset').selectedOptions[0]&&$('provider-preset').selectedOptions[0].textContent||k)+'」端点配置');
+  // 保存反馈即面板关闭本身（2026-09 用户反馈）：不再弹「已保存并启用」toast
+  closeSettings();
 }
 async function fetchFxModels(){
   const baseUrl=$('agent-base-url').value.trim(), apiKey=$('agent-api-key').value.trim();
