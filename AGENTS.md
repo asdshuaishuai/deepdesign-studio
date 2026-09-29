@@ -56,7 +56,8 @@ node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（
 node scripts/sync-engine.mjs      # 引擎产物同步（GitHub Releases classic wasm → frontend/vendor/；先跑这个）
 node scripts/sync-models.mjs     # 模型元数据快照同步（models.dev → src-tauri/models.json）
 node scripts/i18n-catalog.cjs && python scripts/gen-i18n.py --write   # i18n 字典重建（改 T 表/新增 UI 键后；--check 只验漂移）
-./dev.sh                          # debug 编译启动（Windows 用 Git Bash，或手动 npx @tauri-apps/cli dev）
+./dev.sh                          # debug 编译启动（Windows 用 Git Bash）
+dev.bat                           # 同上的 CMD 原生版（免 Git Bash；--fresh 杀旧实例+清 WebView2 HTTP 缓存，绝不动 Local Storage）
 npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 sync-engine）
 ```
 
@@ -449,4 +450,6 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - 提交信息用 Conventional Commits + 英文 subject：`feat(agent): ...` / `fix(studio): ...` /
   `chore: ...`。scope 常用 `agent` / `studio` / `ui` / `engine` / `bundle`。
 - `docs/menus.md`：原生菜单 + 右键菜单的文案与动作映射，改菜单必读。
+- `docs/harmonyos-port.md` / `docs/linglong-package.md`：鸿蒙与玲珑包适配方案
+  （**仅方案未实施**，事实核查日期见文内；立项时先复核时效）。
 - `README.md`：架构速览与打包产物说明。
