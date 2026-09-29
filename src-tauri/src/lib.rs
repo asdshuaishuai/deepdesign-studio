@@ -50,7 +50,6 @@ async fn save_ddp(
     let mbt = std::str::from_utf8(&mbt_bytes).map_err(|_| "ddp_mbt_not_utf8".to_string())?;
     let ddp = encrypt_ddp(mbt, &password)?;
 
-    let via_dialog = path.as_deref().map(|p| p.trim().is_empty()).unwrap_or(true);
     let picked: Option<PathBuf> = match path {
         Some(p) if !p.trim().is_empty() => Some(PathBuf::from(p.trim().to_string())),
         _ => app

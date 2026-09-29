@@ -38,7 +38,6 @@
 
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::sync::PoisonError;
 use wasmtime::{Instance, Memory, Module, Store, Val};
 
 /// 引擎产物（编译期嵌入；由 scripts/sync-engine.mjs 拉取并做 sha512+契约探针）
@@ -586,6 +585,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::PoisonError;
     // 与 agent::tests 的引擎门测试共用同一把串行化门闩——epoch 测试会短暂
     // 持锁睡眠并对全局实例设 deadline，不与 hard_reset/缓存断言并发互踩
     use crate::agent::tests::engine_test_gate;
