@@ -449,4 +449,9 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - 提交信息用 Conventional Commits + 英文 subject：`feat(agent): ...` / `fix(studio): ...` /
   `chore: ...`。scope 常用 `agent` / `studio` / `ui` / `engine` / `bundle`。
 - `docs/menus.md`：原生菜单 + 右键菜单的文案与动作映射，改菜单必读。
+- `docs/harmonyos-port.md` / `docs/linglong-package.md`：鸿蒙与玲珑包适配方案
+  （**仅方案未实施**，事实核查日期见文内；立项时先复核时效）。
+- `docs/plan-cli-mcp.md`：**1.0 规划**（本分支跟进）——deepDesign Agent 能力抽象为专属
+  CLI + MCP 出口，让 Codex/Claude Code 直接驱动 deepDesign；前置是 deepdesign-core 拆分
+  （与鸿蒙方案共享同一前置）。
 - `README.md`：架构速览与打包产物说明。
