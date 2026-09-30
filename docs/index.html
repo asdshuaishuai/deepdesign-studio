@@ -330,13 +330,13 @@ code{font-family:var(--mono);font-size:.88em}
       </a>
     </div>
     <div class="dl-row">
-      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepDesign-Studio-windows-x64-setup.exe"><span>⬇ Windows<small>安装包 · x64</small></span></a>
-      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepDesign-Studio-macos-arm64.dmg"><span>⬇ macOS<small>dmg · Apple Silicon</small></span></a>
-      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepdesign-studio-linux-amd64.deb"><span>⬇ Linux<small>deb · x64</small></span></a>
-      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepDesign-Studio-x86_64.AppImage"><span>⬇ AppImage<small>x64 · 免安装</small></span></a>
-      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/com.deepcode.deepdesign-x86_64.layer"><span>⬇ 玲珑<small>linyaps layer</small></span></a>
+      <a class="dl" id="dl-win" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ Windows<small>安装包 · x64</small></span></a>
+      <a class="dl" id="dl-mac" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ macOS<small>dmg · Apple Silicon</small></span></a>
+      <a class="dl" id="dl-deb" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ Linux<small>deb · x64</small></span></a>
+      <a class="dl" id="dl-appimage" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ AppImage<small>x64 · 免安装</small></span></a>
+      <a class="dl" id="dl-layer" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ 玲珑<small>linyaps layer</small></span></a>
     </div>
-    <p class="dl-note">以上直链始终指向最新 Release。全部分发包见
+    <p class="dl-note">最新版本：<span id="dl-ver">加载中…</span>。全部分发包见
       <a href="https://github.com/asdshuaishuai/deepdesign-studio/releases" target="_blank" rel="noopener" style="text-decoration:underline">GitHub Releases</a>。</p>
     <div class="mini-foot">
       <a href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
@@ -518,6 +518,25 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 addEventListener('beforeunload', function(){ try{ window.scrollTo(0,0); }catch(e){} });
 if (!reduced){ scrollTo(0,0); update(); }
 else { document.querySelectorAll('.sc').forEach(function(s){ s.classList.add('live'); }); }
+</script>
+<script>
+(function(){
+  if(!window.fetch)return;
+  fetch('https://api.github.com/repos/asdshuaishuai/deepdesign-studio/releases/latest',{headers:{Accept:'application/vnd.github+json'}})
+    .then(function(r){return r.json()})
+    .then(function(rel){
+      var assets=rel.assets||[];
+      function find(sfx){for(var i=0;i<assets.length;i++){if(assets[i].name.indexOf(sfx,assets[i].name.length-sfx.length)!==-1)return assets[i].browser_download_url}return null}
+      function set(id,sfx){var a=document.getElementById(id);if(!a)return;var u=find(sfx);if(u)a.href=u;else a.style.opacity='.35'}
+      set('dl-win','-windows-x64-setup.exe');
+      set('dl-mac','-macos-arm64.dmg');
+      set('dl-deb','-linux-amd64.deb');
+      set('dl-appimage','-x86_64.AppImage');
+      set('dl-layer','-x86_64.layer');
+      var v=document.getElementById('dl-ver');
+      if(v)v.textContent=(rel.tag_name||'')+' · '+assets.length+' 个分发包';
+    }).catch(function(){});
+})();
 </script>
 </body>
 </html>
