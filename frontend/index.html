@@ -34,6 +34,10 @@ body[data-theme="glass"] ::-webkit-scrollbar-thumb:hover{background:rgba(255,255
 svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+/* Linux/WebKitGTK 专属：原生主题会把 caret/选区涂成系统色，显式接管；Win/mac 的 UA 行为本就正确
+   （color-scheme 声明见文件头 body 块） */
+html.linux input,html.linux textarea{caret-color:inherit}
+html.linux ::selection{background:var(--code-sel);color:var(--tx)}
 .mac-glass{background:rgba(255,255,255,.86);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
 
 /* ---------- 源码编辑器配色（跟随主题：浅色 GitHub-Light 风 / 深色 Tokyo-Night 风） ---------- */
@@ -81,10 +85,10 @@ body[data-mode="dark"] .mode-btn.on{background:rgba(255,255,255,.14);color:#fff;
 .mode-btn .ic{width:13px;height:13px;transform:translateY(.5px)}
 .filechip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:99px;background:rgba(0,0,0,.05);color:var(--tx2);font-size:10.5px;font-family:ui-monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Windows：decorations=false 后 topbar 即标题栏（拖拽区+窗控），去 macOS 红绿灯缩进 */
-html.win .topbar{padding-left:10px}
+html.win .topbar,html.linux.native .topbar{padding-left:10px}
 html.win .brand .logo{display:flex;align-items:center;justify-content:center}
 .winctl{display:none;gap:1px;margin-left:2px}
-html.win .winctl{display:flex}
+html.win .winctl,html.linux .winctl{display:flex}
 .wbtn{width:40px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--tx2);cursor:pointer;border-radius:var(--r-sm)}
 .wbtn:hover{background:rgba(0,0,0,.07);color:var(--tx)}
 .wbtn.close:hover{background:#e5484d;color:#fff}
@@ -743,6 +747,8 @@ body[data-mode="dark"][data-theme="mac"]{--panel:#242429;--panel-line:#3a3a40;--
 body[data-mode="dark"][data-theme="deep"]{--panel:#1e2027;--panel-line:#2a2e38;--panel-input:#191b21}
 body[data-mode="dark"][data-theme="neu"]{--panel:#262932;--panel-line:rgba(255,255,255,.09);--panel-input:#22252d}
 body[data-mode="dark"][data-theme="glass"]{--panel:rgba(16,12,40,.88);--panel-line:rgba(255,255,255,.18);--panel-input:rgba(255,255,255,.08)}
+/* win11 深色缺省会回退浅色 --panel-input:#FFFFFF（白底白字），补齐 Fluent 深色面板变量 */
+body[data-mode="dark"][data-theme="win11"]{--panel:#202020;--panel-line:rgba(255,255,255,.09);--panel-input:#2b2b2b}
 body[data-mode="dark"] .settings-box{box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05)}
 
 /* dark 浮层细节补漏（#decl-stage textarea 已由 --code-* 变量接管，见文件头） */
@@ -1106,7 +1112,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         </span>
       </label>
       <label>深色模式
-        <select id="app-mode" onchange="setAppMode(this.value)">
+        <select id="app-mode" onchange="pickAppMode(this.value)">
           <option value="light">🌙 关（浅色）</option>
           <option value="dark">☀️ 开（深色）</option>
         </select>
@@ -1197,9 +1203,14 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 const APP_VER='0.4.0-beta';
 let agentThread={pending:null}; // agent 澄清上下文（提问 → 用户回答 → 续跑）；置于测试切片起点
 const IS_TAURI=!!(window.__TAURI__&&window.__TAURI__.core);
+/* 平台检测：WebView2('Win32')/WKWebView('MacIntel')/WebKitGTK('Linux x86_64')
+ * 的 navigator.platform 均稳定；platform 为空时回退 UA。互斥判定避免误匹配。 */
 const IS_WIN=/Win/i.test(navigator.platform||navigator.userAgent);
+const IS_MAC=!IS_WIN&&/Mac/i.test(navigator.platform||navigator.userAgent);
+const IS_LINUX=!IS_WIN&&!IS_MAC&&/Linux|X11/i.test(navigator.platform||navigator.userAgent);
 if(IS_TAURI)document.documentElement.classList.add('native');
 if(IS_WIN)document.documentElement.classList.add('win');
+if(IS_LINUX)document.documentElement.classList.add('linux');
 /* Windows：快捷键文案本地化（⌘→Ctrl、⇧⌘→Ctrl+Shift、⌘⌫→Ctrl+Del）。
  * 键位行为本身两平台都可用（keydown 同时接受 metaKey/ctrlKey），这里只改显示。
  * 覆盖静态（弹窗/title/欢迎卡）与动态渲染（流程提示/右键菜单）：启动扫一遍 +
@@ -3871,6 +3882,10 @@ function setAppMode(m){
   applyAppMode(m);
   try{localStorage.setItem('dd-mode',m);}catch(_){ }
 }
+function pickAppMode(m){
+  try{localStorage.setItem('dd-mode-chosen','1');}catch(_){} // 用户主动选择：initTheme 的系统跟随不再触碰
+  setAppMode(m);
+}
 window.addEventListener('storage',ev=>{
   if(ev.key==='dd-lang'&&ev.newValue)setLang(ev.newValue,false);
   else if(ev.key==='dd-theme'&&ev.newValue)applyTheme(ev.newValue);
@@ -3890,9 +3905,23 @@ window.addEventListener('storage',ev=>{
     if(migrated)t='win11';
   }
   setTheme(t);
-  let m='light';
-  try{m=localStorage.getItem('dd-mode')||'light';}catch(_){}
+  // 深浅色：用户手动选择过（dd-mode-chosen）则完全尊重（全平台一致）。
+  // 未选择时：仅 Linux 跟随系统（deepin 桌面深色下默认 light 会产生主题冲突，
+  // 且 Rust 侧已回正 tao 对 prefer-dark 的覆盖——见 lib.rs setup）；
+  // Windows/macOS 维持旧版默认 light，不改变已验证平台的行为。
+  // 旧版每启动都会把默认 'light' 写进 dd-mode（并非用户选择），无 chosen 标记的存量值一律视为未选择。
+  let m=null;
+  try{
+    if(localStorage.getItem('dd-mode-chosen'))m=localStorage.getItem('dd-mode');
+  }catch(_){}
+  const MQ=IS_LINUX&&window.matchMedia?matchMedia('(prefers-color-scheme: dark)'):null;
+  if(!m)m=(MQ&&MQ.matches)?'dark':'light';
   setAppMode(m);
+  if(MQ){
+    const follow=()=>{let chosen=false;try{chosen=!!localStorage.getItem('dd-mode-chosen');}catch(_){}
+      if(!chosen)applyAppMode(MQ.matches?'dark':'light');};
+    MQ.addEventListener?MQ.addEventListener('change',follow):MQ.addListener(follow);
+  }
   refreshAppearanceControls();
 })();
 

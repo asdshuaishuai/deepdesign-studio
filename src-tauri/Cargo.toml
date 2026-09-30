@@ -29,6 +29,11 @@ wasmtime = "49.0.0"
 async-openai = { version = "0.42.0", default-features = false, features = ["chat-completion-types"] }
 tauri-plugin-single-instance = "2.5.0"
 
+# Linux 深浅色回正：读 gtk-theme-name 判断系统深色（deepin 下 XDG portal 不报深色，
+# tao 会把 gtk-application-prefer-dark-theme 强写为 false，详见 lib.rs setup 注释）
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 

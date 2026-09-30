@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=deepDesign Studio
+Name[zh_CN]=deepDesign Studio
+Comment=AI-native prototyping desktop studio
+Comment[zh_CN]=AI 原生原型设计工具
+Exec=/opt/apps/com.deepcode.deepdesign/files/bin/run.sh
+Icon=com.deepcode.deepdesign
+Terminal=false
+Categories=Development;Graphics;
+MimeType=application/x-ddp;
+StartupWMClass=deepDesign Studio
