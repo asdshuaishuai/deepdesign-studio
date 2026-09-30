@@ -165,6 +165,12 @@ code{font-family:var(--mono);font-size:.88em}
 #sc5 .btn-pri{background:var(--tx);color:#fff}
 #sc5 .btn-pri:hover{transform:translateY(-2px);box-shadow:0 14px 34px -12px rgba(0,0,0,.4)}
 #sc5 .soon{display:inline-block;margin-top:20px;font-size:11.5px;letter-spacing:.14em;color:var(--tx3);border:1px dashed var(--hair);border-radius:99px;padding:7px 16px}
+#sc5 .dl-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:22px}
+#sc5 .dl{display:inline-flex;align-items:center;gap:7px;padding:10px 18px;border:1px solid var(--hair);border-radius:10px;
+  font-size:13px;font-weight:600;background:#fff;transition:transform .18s var(--ease),box-shadow .18s var(--ease),border-color .18s}
+#sc5 .dl:hover{transform:translateY(-2px);border-color:var(--ink);box-shadow:0 12px 28px -14px rgba(0,0,0,.35)}
+#sc5 .dl small{display:block;font-size:10.5px;font-weight:400;color:var(--tx3)}
+#sc5 .dl-note{margin-top:12px;font-size:11.5px;color:var(--tx3)}
 #sc5 .mini-foot{position:absolute;bottom:26px;left:0;right:0;font-size:12px;color:var(--tx3);display:flex;justify-content:center;gap:20px;flex-wrap:wrap;padding:0 20px}
 #sc5 .mini-foot a:hover{color:var(--tx)}
 
@@ -323,7 +329,15 @@ code{font-family:var(--mono);font-size:.88em}
         GitHub 源码
       </a>
     </div>
-    <span class="soon">DOWNLOAD · COMING SOON</span>
+    <div class="dl-row">
+      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepDesign-Studio-windows-x64-setup.exe"><span>⬇ Windows<small>安装包 · x64</small></span></a>
+      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepDesign-Studio-macos-arm64.dmg"><span>⬇ macOS<small>dmg · Apple Silicon</small></span></a>
+      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepdesign-studio-linux-amd64.deb"><span>⬇ Linux<small>deb · x64</small></span></a>
+      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/deepDesign-Studio-x86_64.AppImage"><span>⬇ AppImage<small>x64 · 免安装</small></span></a>
+      <a class="dl" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest/download/com.deepcode.deepdesign-x86_64.layer"><span>⬇ 玲珑<small>linyaps layer</small></span></a>
+    </div>
+    <p class="dl-note">以上直链始终指向最新 Release。全部分发包见
+      <a href="https://github.com/asdshuaishuai/deepdesign-studio/releases" target="_blank" rel="noopener" style="text-decoration:underline">GitHub Releases</a>。</p>
     <div class="mini-foot">
       <a href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
       <a href="https://asdshuaishuai.github.io/moonviz/" target="_blank" rel="noopener">MoonViz 引擎</a>
