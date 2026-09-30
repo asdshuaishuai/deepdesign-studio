@@ -56,8 +56,13 @@ node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（
 node scripts/sync-engine.mjs      # 引擎产物同步（GitHub Releases classic wasm → frontend/vendor/；先跑这个）
 node scripts/sync-models.mjs     # 模型元数据快照同步（models.dev → src-tauri/models.json）
 node scripts/i18n-catalog.cjs && python scripts/gen-i18n.py --write   # i18n 字典重建（改 T 表/新增 UI 键后；--check 只验漂移）
-./dev.sh                          # debug 编译启动（Windows 用 Git Bash，或手动 npx @tauri-apps/cli dev）
+./dev.sh                          # debug 编译启动（Windows 用 Git Bash）
+dev.bat                           # 同上的 CMD 原生版（免 Git Bash；--fresh 杀旧实例+清 WebView2 HTTP 缓存，绝不动 Local Storage）
 npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 sync-engine）
+scripts/build-packages.sh --all   # 三格式打包：deb（标准 FHS）+ AppImage + 玲珑 layer → dist/
+                                  #   玲珑段需本机 ll-builder（linyaps）；嵌套容器内环境见 linglong/README-BUILD.md
+.github/workflows/release-all.yml # 全平台构建流：tag v* 触发，产物自动附 GitHub Release（固定名副本供官网直链）
+scripts/ci-install-linyaps.sh     # CI（ubuntu-24.04）上安装 linyaps 工具链
 ```
 
 仓库**没有配置 lint / formatter**（无 rustfmt.toml、clippy 配置、eslint、prettier）。
@@ -449,8 +454,11 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - 提交信息用 Conventional Commits + 英文 subject：`feat(agent): ...` / `fix(studio): ...` /
   `chore: ...`。scope 常用 `agent` / `studio` / `ui` / `engine` / `bundle`。
 - `docs/menus.md`：原生菜单 + 右键菜单的文案与动作映射，改菜单必读。
-- `docs/harmonyos-port.md` / `docs/linglong-package.md`：鸿蒙与玲珑包适配方案
-  （**仅方案未实施**，事实核查日期见文内；立项时先复核时效）。
+- `docs/harmonyos-port.md`：鸿蒙适配方案（**仅方案未实施**；Rust 侧工具链已在
+  Linux 就位：ohrs + aarch64-unknown-linux-ohos target）。
+- `docs/linglong-package.md` + `linglong/`：玲珑打包**已落地**——统一入口
+  `scripts/build-packages.sh --linglong`（layer 产线）/ `--deb --appimage`；
+  方案细节、嵌套环境注意事项与 deb→玲珑转换配方见 `linglong/README-BUILD.md`。
 - `docs/plan-cli-mcp.md`：**1.0 规划**（本分支跟进）——deepDesign Agent 能力抽象为专属
   CLI + MCP 出口，让 Codex/Claude Code 直接驱动 deepDesign；前置是 deepdesign-core 拆分
   （与鸿蒙方案共享同一前置）。

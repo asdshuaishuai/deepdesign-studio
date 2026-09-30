@@ -24,7 +24,11 @@ use async_openai::types::chat::{
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-const MAX_STEPS: usize = 200;
+/// Agent 步数上限：默认 500，用户可在设置面板调节（invoke 侧已夹紧 50–5000）。
+/// 收尾审查层仍占用末尾 REVIEW_STEPS 步预算。
+const MAX_STEPS_DEFAULT: usize = 500;
+const MAX_STEPS_MIN: usize = 50;
+const MAX_STEPS_MAX: usize = 5000;
 /// 单次引擎调用超时。必须**晚于**宿主的 epoch 中断预算（wasmtime_host::CALL_TIMEOUT
 /// 30s + tick 粒度 + 外层 5s 宽限）：这里先到点会把「引擎已中断/未提交」误报成
 /// engine_timeout，还可能与宿主竞态。45s 保证总能收到宿主的真实结果。
@@ -1256,6 +1260,22 @@ pub async fn run(
     thinking: &str,
     progress: Option<&(dyn Fn(Value) + Send + Sync)>,
 ) -> Value {
+    run_with_steps(host, instruction, mbt_b64, api_key, model, base_url, thinking, progress, MAX_STEPS_DEFAULT).await
+}
+
+/// 带用户可调步数上限的 run（invoke 侧传入前已夹紧；此处再守一道）
+pub async fn run_with_steps(
+    host: &EngineHost,
+    instruction: &str,
+    mbt_b64: Option<&str>,
+    api_key: &str,
+    model: &str,
+    base_url: &str,
+    thinking: &str,
+    progress: Option<&(dyn Fn(Value) + Send + Sync)>,
+    max_steps: usize,
+) -> Value {
+    let max_steps = max_steps.clamp(MAX_STEPS_MIN, MAX_STEPS_MAX);
     if api_key.trim().is_empty() {
         return json!({"ok": false, "error": "api_key_missing"});
     }
@@ -1324,7 +1344,7 @@ pub async fn run(
     }
 
     loop {
-        if step >= MAX_STEPS {
+        if step >= max_steps {
             break;
         }
         step += 1;
@@ -1396,7 +1416,7 @@ pub async fn run(
             // 确定性综合修复（逐画板 fix，幂等）→ 审查指令回注（需求完整度/连线完整度，
             // 由 LLM 在剩余预算内用工具自查补齐）→ continue 回主循环；审查后再次
             // done（文本=审查报告）走正常返回。预算不足/零产出/已审查均不触发。
-            let review_start = MAX_STEPS.saturating_sub(REVIEW_STEPS);
+            let review_start = max_steps.saturating_sub(REVIEW_STEPS);
             if !review_done && state.mbt.is_some() && !state.ops.is_empty() && step < review_start {
                 review_done = true;
                 emit("review", json!({}));
@@ -1433,7 +1453,7 @@ pub async fn run(
             state.ensure_render().await;
             // 走到这里说明 assistant 已给出自然总结——即便恰在第 MAX_STEPS 轮,
             // 语义是 done;max_turns 只属于循环耗尽仍无总结的路径（循环外兜底）
-            let stop = if text.trim().is_empty() && step + 1 >= MAX_STEPS { "max_turns" } else { "done" };
+            let stop = if text.trim().is_empty() && step + 1 >= max_steps { "max_turns" } else { "done" };
             if truncated && stop == "done" {
                 text.push_str("\n[输出因 max_tokens 预算被截断——内容可能不完整]");
             }

@@ -50,7 +50,6 @@ async fn save_ddp(
     let mbt = std::str::from_utf8(&mbt_bytes).map_err(|_| "ddp_mbt_not_utf8".to_string())?;
     let ddp = encrypt_ddp(mbt, &password)?;
 
-    let via_dialog = path.as_deref().map(|p| p.trim().is_empty()).unwrap_or(true);
     let picked: Option<PathBuf> = match path {
         Some(p) if !p.trim().is_empty() => Some(PathBuf::from(p.trim().to_string())),
         _ => app
@@ -385,6 +384,26 @@ pub fn run() {
         })
         .setup(|app| {
             build_native_menus(app.handle())?;
+            // Linux 深浅色回正：tao 建窗时按 XDG portal 结果强制写
+            // gtk-application-prefer-dark-theme，而 deepin 的 portal 不报深色
+            // （系统真值在 XSETTINGS 主题名，如 deepin-dark），WebKitGTK 的
+            // prefers-color-scheme 因此误报 light、前端跟随系统失效。
+            // 主题名含 "dark" 即 set_theme(Dark) 把 GTK 设置扳回真值。
+            #[cfg(target_os = "linux")]
+            {
+                use gtk::prelude::ObjectExt as _;
+                let prefer_dark = gtk::Settings::default()
+                    .map(|s| {
+                        let name: String = s.property("gtk-theme-name");
+                        name.to_lowercase().contains("dark")
+                    })
+                    .unwrap_or(false);
+                if prefer_dark {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.set_theme(Some(tauri::Theme::Dark));
+                    }
+                }
+            }
             // Windows：按主显示器分辨率比例定启动尺寸（82%×86%，clamp 到可见
             // 范围）并居中——任何分辨率下 UI 完全可见、与屏幕保持比例。
             // 窗口 visible:false（见 tauri.windows.conf.json）：尺寸就绪后再显示，
@@ -497,6 +516,8 @@ async fn invoke_fx_sdk(
     let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
     let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
+    // 步数上限：前端设置面板可调（默认 500；夹紧防异常值）
+    let max_steps = p.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(500) as usize;
     // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线；
     // 同一事件流落 JSONL 运行日志（app_data/logs/，保留 50 个），供事后诊断
     let run_id = p.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -536,7 +557,7 @@ async fn invoke_fx_sdk(
         }
     };
     let result =
-        agent::run(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress))
+        agent::run_with_steps(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress), max_steps)
             .await;
     if let (Some(dir), Some(file)) = (&journal, &journal_file) {
         journal_append(

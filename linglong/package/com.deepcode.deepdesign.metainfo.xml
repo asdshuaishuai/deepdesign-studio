@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.deepcode.deepdesign</id>
+  <name>deepDesign Studio</name>
+  <summary>AI-native prototyping desktop studio</summary>
+  <summary xml:lang="zh_CN">AI 原生原型设计工具</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>deepDesign Studio is a Tauri 2 desktop client for AI-native prototyping, powered by the pure-MoonBit MoonViz engine: the .mbt.md document is the single source of truth; both human canvas edits and Agent changes pass engine validation before writing back.</p>
+    <p xml:lang="zh_CN">deepDesign Studio 是 AI 原生原型设计工具的桌面客户端（Tauri 2）。基于纯 MoonBit 引擎 MoonViz：唯一事实源是 .mbt.md 文档，人类画布操作与 Agent 修改都必须经引擎校验后回写同一文档。</p>
+  </description>
+  <launchable type="desktop-id">com.deepcode.deepdesign.desktop</launchable>
+  <url type="homepage">https://asdshuaishuai.github.io/deepdesign-studio/</url>
+  <developer_name translatable="false">asdshuaishuai</developer_name>
+  <releases>
+    <release version="0.4.0" date="2026-09-29"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

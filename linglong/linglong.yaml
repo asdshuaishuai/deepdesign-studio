@@ -1,0 +1,37 @@
+version: "1"
+
+package:
+  id: com.deepcode.deepdesign
+  name: deepDesign Studio
+  version: 0.4.0.0
+  kind: app
+  description: >
+    AI 原生原型设计工具的桌面客户端（Tauri 2）。基于纯 MoonBit 引擎 MoonViz：
+    唯一事实源是 .mbt.md 文档，人类画布操作与 Agent 修改都必须经引擎校验后回写同一文档。
+  libs:
+    - /opt/apps/com.deepcode.deepdesign/files/lib/deepdesign
+
+command:
+  - /opt/apps/com.deepcode.deepdesign/files/bin/run.sh
+
+base: main:org.deepin.base/25.2.2/x86_64
+runtime: main:org.deepin.runtime.dtk/25.2.2/x86_64
+
+build: |
+  set -e
+  APPDIR=/opt/apps/com.deepcode.deepdesign/files
+  # 预构建产物直装：release 二进制在 deepin 25 (glibc 2.38) 构建，与 base 23 同代兼容
+  install -Dm755 /project/package/deepdesign-studio $APPDIR/bin/deepdesign-studio
+  mkdir -p $APPDIR/share/deepdesign-studio/frontend/vendor
+  cp -r /project/package/frontend/index.html $APPDIR/share/deepdesign-studio/frontend/
+  cp -r /project/package/frontend/vendor/. $APPDIR/share/deepdesign-studio/frontend/vendor/
+  # WebKitGTK 运行库随包携带（运行时层不保证 webkit2gtk-4.1 存在）
+  mkdir -p $APPDIR/lib
+  cp -a /project/package/lib/deepdesign/. $APPDIR/lib/
+  # WebKit 子进程 helper 与 exec 路径重定向 shim
+  cp -a /project/package/webkit-helpers $APPDIR/lib/webkit-helpers
+  install -m644 /project/package/redirect.so $APPDIR/lib/redirect.so
+  install -m755 /project/package/run.sh $APPDIR/bin/run.sh
+  install -Dm644 /project/package/com.deepcode.deepdesign.desktop $APPDIR/share/applications/com.deepcode.deepdesign.desktop
+  install -Dm644 /project/package/com.deepcode.deepdesign.png $APPDIR/share/icons/hicolor/512x512/apps/com.deepcode.deepdesign.png
+  install -Dm644 /project/package/com.deepcode.deepdesign.metainfo.xml $APPDIR/share/metainfo/com.deepcode.deepdesign.metainfo.xml
