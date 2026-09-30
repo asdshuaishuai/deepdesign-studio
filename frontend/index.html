@@ -38,6 +38,7 @@ svg.ic{width:15px;height:15px;stroke:currentColor;stroke-width:1.7;fill:none;str
 
 /* ---------- 源码编辑器配色（跟随主题：浅色 GitHub-Light 风 / 深色 Tokyo-Night 风） ---------- */
 body{
+  color-scheme:light;
   --code-bg:#FCFDFF;--code-tx:#2B3442;--code-line:rgba(15,23,42,.14);--code-caret:#1F6FEB;
   --code-sel:rgba(0,122,255,.18);--code-ph:#9AA6B8;
   --tok-comment:#8A94A6;--tok-string:#0A7D33;--tok-number:#B3541E;
@@ -48,6 +49,7 @@ body{
   --veil-card:rgba(255,255,255,.75);--tail-bg:rgba(255,255,255,.9);
 }
 body[data-mode="dark"],body[data-theme="deep"],body[data-theme="glass"],body[data-mode="dark"][data-theme="win11"]{
+  color-scheme:dark;
   --code-bg:#0F1420;--code-tx:#D6DEEC;--code-line:#232A38;--code-caret:#fff;
   --code-sel:rgba(90,140,255,.35);--code-ph:#5A6270;
   --tok-comment:#6B7A93;--tok-string:#9ECE6A;--tok-number:#FF9E64;
@@ -586,6 +588,18 @@ body[data-theme="glass"] .compcell,body[data-theme="glass"] .flowrow,body[data-t
 body[data-theme="glass"] .mode-btn.on{background:rgba(139,123,255,.4);color:#fff}
 body[data-theme="glass"] .pmain,body[data-theme="glass"] .compsearch,body[data-theme="glass"] .frow input,body[data-theme="glass"] .colorpair input,body[data-theme="glass"] .declview{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22);color:#f4f2ff}
 body[data-theme="glass"] .pmain input{color:#f4f2ff}
+/* 原生 <select> 的半透明背景在 WebView2（浅色系统主题）下会按白色系统画布合成，闭合控件成白块；
+   弹出 option 列表也不跟随页面暗色 → 白底 + 浅字冲色。玻璃主题的 --panel-input 恰是半透明白，
+   故 select 改「实色 --base 打底 + 半透明 tint 叠背景图层」的分层画法（整体不透明，合成到什么画布都不变色），
+   option 显式配色兜底。 */
+body[data-theme="glass"] select,
+body[data-mode="dark"][data-theme="glass"] select{
+  background-color:var(--base,#2a2350);
+  background-image:linear-gradient(var(--panel-input,rgba(255,255,255,.1)),var(--panel-input,rgba(255,255,255,.1)));
+  color:var(--tx);
+}
+body[data-theme="glass"] select option,
+body[data-mode="dark"][data-theme="glass"] select option{background:#251e52;color:var(--tx)}
 body[data-theme="glass"] .canvas-scroll{background-image:radial-gradient(circle,rgba(255,255,255,.08) 1px,transparent 1px)}
 
 /* Win11 Fluent — Windows 11 Mica 风（系统默认主题之一，Windows 上自动选中） */
