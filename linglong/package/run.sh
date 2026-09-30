@@ -4,7 +4,8 @@
 set -e
 SELF="$(readlink -f "$0")"
 PREFIX="$(dirname "$(dirname "$SELF")")"          # .../files
-LIB="$PREFIX/lib/deepdesign"
+# 库目录自适应：deb/AppImage 布局 lib/deepdesign/，玲珑布局 lib/
+if [ -d "$PREFIX/lib/deepdesign" ]; then LIB="$PREFIX/lib/deepdesign"; else LIB="$PREFIX/lib"; fi
 
 export LD_LIBRARY_PATH="$LIB:/runtime/lib/x86_64-linux-gnu:/runtime/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # WebKit 硬编码 /usr helper 路径重定向到随包目录（TAURI_DEPS 指映射前缀）

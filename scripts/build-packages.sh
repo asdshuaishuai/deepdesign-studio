@@ -39,6 +39,8 @@ die() { printf '\033[1;31m[packages]\033[0m %s\n' "$*" >&2; exit 1; }
 cd "$ROOT"
 if [ ! -x src-tauri/target/release/deepdesign-studio ] || [ "$REBUILD" = 1 ]; then
   log "building release binary (cargo build --release) ..."
+  # 本地工具链环境（可选：PKG_CONFIG_PATH 等；真机系统安装时无需）
+  [ -f "$HOME/.local/opt/tauri-env.sh" ] && source "$HOME/.local/opt/tauri-env.sh"
   (cd src-tauri && cargo build --release)
 fi
 [ -f frontend/vendor/moonviz.wasm ] || { log "syncing engine wasm ..."; node scripts/sync-engine.mjs; }
@@ -61,14 +63,14 @@ ensure_webkit_bundle() {
   curl -4 -sL -o "$work/Packages.gz" "$repo/dists/crimson/release/main/binary-amd64/Packages.gz"
   gzip -d -f "$work/Packages.gz"
   local pkgs=(
-    libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libsoup-3.0-0 libgtk-3-0
-    libglib2.0-0 libpango-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 libharfbuzz0b
-    libatk1.0-0 libdbus-1-3 zlib1g libx11-6 libxext6 libxrender1 libxcb1
+    libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libsoup-3.0-0
+    libglib2.0-0 
+    libdbus-1-3 zlib1g libx11-6 libxext6 libxrender1 libxcb1
     libatomic1 libavif15 libenchant-2-2 libflite1 libgstreamer-plugins-base1.0-0
     libgstreamer-plugins-bad1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good
     libhyphen0 libmanette-0.2-0 libsecret-1-0 libwoff1 libxslt1.1
     libevdev2 libgav1-0 libgstreamer-gl1.0-0 libgudev-1.0-0 libyuv0
-    bubblewrap xdg-dbus-proxy libpangocairo-1.0-0 libcairo-gobject2
+    bubblewrap xdg-dbus-proxy 
   )
   local p file
   for p in "${pkgs[@]}"; do
