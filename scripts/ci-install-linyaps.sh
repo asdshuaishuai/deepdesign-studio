@@ -21,7 +21,7 @@ for f in \
   "linglong/linglong-bin_1.14.3-1_amd64.deb" \
   "linglong-box/linglong-box_2.3.4-1_amd64.deb" \
   "linglong/linglong-builder_1.14.3-1_amd64.deb" \
-  "y/yaml-cpp/libyaml-cpp0.7_0.8.0-1deepin4_amd64.deb"; do
+  "y/yaml-cpp/libyaml-cpp0.7_0.7.0+dfsg-8deepin0_amd64.deb"; do
   curl -4 -fsSL --retry 3 -o pkg.deb "$BASE/$f" || { echo "  !! fetch failed: $f"; continue; }
   sudo dpkg -x pkg.deb /usr/local/linglong
   ok=$((ok+1))
