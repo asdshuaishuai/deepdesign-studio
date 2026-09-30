@@ -102,37 +102,29 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-release
-          V="${GITHUB_REF_NAME#v}"
           # Windows
           if compgen -G "src-tauri/target/release/bundle/nsis/*.exe" > /dev/null; then
             cp src-tauri/target/release/bundle/nsis/*.exe \
-               "dist-release/deepDesign-Studio-${V}-windows-x64-setup.exe"
-            cp src-tauri/target/release/bundle/nsis/*.exe \
-               dist-release/deepDesign-Studio-windows-x64-setup.exe
+               "dist-release/deepDesign-Studio-${GITHUB_REF_NAME}-windows-x64-setup.exe"
           fi
           # macOS
           if compgen -G "src-tauri/target/release/bundle/dmg/*.dmg" > /dev/null; then
             cp src-tauri/target/release/bundle/dmg/*.dmg \
-               "dist-release/deepDesign-Studio-${V}-macos-arm64.dmg"
-            cp src-tauri/target/release/bundle/dmg/*.dmg \
-               dist-release/deepDesign-Studio-macos-arm64.dmg
+               "dist-release/deepDesign-Studio-${GITHUB_REF_NAME}-macos-arm64.dmg"
           fi
           # Linux
           [ -f "dist/${PKG_NAME}.deb" ] || true
           for f in dist/*.deb; do
-            [ -f "$f" ] && cp "$f" "dist-release/deepdesign-studio-${V}-linux-amd64.deb" \
-                         && cp "$f" dist-release/deepdesign-studio-linux-amd64.deb
+            [ -f "$f" ] && cp "$f" "dist-release/deepdesign-studio-${GITHUB_REF_NAME}-linux-amd64.deb"
           done
           for f in dist/*.AppImage; do
-            [ -f "$f" ] && cp "$f" "dist-release/deepDesign-Studio-${V}-x86_64.AppImage" \
-                         && cp "$f" dist-release/deepDesign-Studio-x86_64.AppImage
+            [ -f "$f" ] && cp "$f" "dist-release/deepDesign-Studio-${GITHUB_REF_NAME}-x86_64.AppImage"
           done
           for f in linglong/*.layer; do
             [ -f "$f" ] || continue
             case "$f" in
-              *binary*) cp "$f" "dist-release/com.deepcode.deepdesign-${V}_x86_64.layer"
-                        cp "$f" dist-release/com.deepcode.deepdesign-x86_64.layer ;;
-              *develop*) cp "$f" "dist-release/com.deepcode.deepdesign-${V}_x86_64_develop.layer" ;;
+              *binary*) cp "$f" "dist-release/com.deepcode.deepdesign-${GITHUB_REF_NAME}_x86_64.layer" ;;
+              *develop*) cp "$f" "dist-release/com.deepcode.deepdesign-${GITHUB_REF_NAME}_x86_64_develop.layer" ;;
             esac
           done
           ls -la dist-release
