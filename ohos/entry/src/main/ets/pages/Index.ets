@@ -1,12 +1,20 @@
 // deepDesign Studio —— 鸿蒙原生交互层（ArkUI）
-//
-// 架构：后端 = Rust（wasmtime 引擎宿主 + Agent 循环，经 NAPI 暴露）；
-//       前端 = ArkUI 原生组件（本文件），替代 ArkWeb/HTML 方案。
-// 布局对标桌面版：顶栏 / 左侧面板（图层·AI组件·流程）/ 中央画布 / 右侧属性 / 底部 Agent 指令条。
-// 状态管理：@State 本地态；核心数据后续由 Rust core 经 NAPI 推送。
+// 后端 = Rust（NAPI，见 core/CoreBridge）；UI = ArkUI 原生组件。
+// 布局对标桌面版：顶栏 / 左侧面板 / 中央画布 / 右侧属性 / 底部 Agent 指令条。
 
 import { coreVersion, corePing } from '../core/CoreBridge';
 import { xiaoyiAI } from '../ai/XiaoyiProvider';
+import { appStore, Board } from '../model/AppStore';
+
+interface Tpl {
+  title: string;
+  kind: string;
+  sub: string;
+  width: number;
+  height: number;
+}
+
+type ProbeResultAlias = import('../ai/XiaoyiProvider').ProbeResult;
 
 const BG = '#f2f3f7';
 const TX = '#1c1c1e';
@@ -19,22 +27,33 @@ const ACC = '#007aff';
 struct Index {
   @State coreVersion: string = '...';
   @State corePong: string = '';
-  @State selectedTab: number = 0;       // 0 图层 1 AI组件 2 流程
+  @State selectedTab: number = 0;
   @State promptText: string = '';
   @State aiBackend: string = '探测中…';
-  @State boards: number = 0;
+  @State boards: Board[] = appStore.boards;
+  @State showSettings: boolean = false;
+  @State themeDark: boolean = false;
+  tpls: Tpl[] = [
+    { title: '登录页', kind: 'mobile', sub: 'mobile · 390 × 844', width: 390, height: 844 },
+    { title: 'Web 登录', kind: 'web', sub: 'web · 1280 × 800', width: 1280, height: 800 },
+    { title: '自适应落地页', kind: 'adaptive', sub: 'adaptive · 1280 × 800', width: 1280, height: 800 }
+  ];
 
   aboutToAppear(): void {
-    // NAPI 链路自检：Rust core 经 .so 直达 ArkTS
     try {
       this.coreVersion = coreVersion();
       this.corePong = corePing('handshake');
     } catch (e) {
-      this.coreVersion = `NAPI load failed: ${(e as Error).message}`;
+      this.coreVersion = 'NAPI 未加载（签名后启用）';
     }
     xiaoyiAI.probe().then((r: ProbeResultAlias) => {
       this.aiBackend = r.available ? r.backend : '不可用（云端回退）';
     });
+  }
+
+  addTpl(t: Tpl): void {
+    appStore.addBoard(t.title, t.kind, t.width, t.height);
+    this.boards = appStore.boards.slice();
   }
 
   build() {
@@ -46,38 +65,62 @@ struct Index {
           .fontColor(TX2).margin({ left: 5 })
         Text('v0.4.0-β · harmonyos').fontSize(10).fontColor(TX2).margin({ left: 10 })
         Blank()
-        Text(`core: ${this.corePong === '' ? this.coreVersion : this.corePong}`)
-          .fontSize(10).fontColor(TX2).maxLines(1)
+        Text(`core: ${this.coreVersion}`).fontSize(10).fontColor(TX2)
+          .maxLines(2).textAlign(TextAlign.End)
+        Button('设置')
+          .fontSize(12).backgroundColor(PANEL).fontColor(TX)
+          .border({ width: 1, color: BG }).borderRadius(6).height(28)
+          .margin({ left: 10 })
+          .onClick(() => { this.showSettings = true })
       }
       .width('100%').height(46).padding({ left: 14, right: 14 })
       .backgroundColor(PANEL).alignItems(VerticalAlign.Center)
 
       // ---- 主体三栏 ----
       Row() {
-        // 左侧面板
         Column() {
-          Text('未命名项目').fontSize(13).fontWeight(600).fontColor(TX)
+          Text(appStore.projectName).fontSize(13).fontWeight(600).fontColor(TX)
             .margin({ bottom: 8 })
           Row() {
             Text('+ 新建').fontSize(12).fontColor(ACC)
+              .onClick(() => { this.addTpl(this.tpls[0]) })
             Blank()
             Text('打开…').fontSize(12).fontColor(TX2)
           }.width('100%')
 
           Row({ space: 12 }) {
-            this.tabBtn('图层', 0)
-            this.tabBtn('AI 组件', 1)
-            this.tabBtn('流程', 2)
+            Text('图层').fontSize(12).fontWeight(this.selectedTab === 0 ? 700 : 400)
+              .fontColor(this.selectedTab === 0 ? ACC : TX2)
+              .onClick(() => { this.selectedTab = 0 })
+            Text('AI 组件').fontSize(12).fontWeight(this.selectedTab === 1 ? 700 : 400)
+              .fontColor(this.selectedTab === 1 ? ACC : TX2)
+              .onClick(() => { this.selectedTab = 1 })
+            Text('流程').fontSize(12).fontWeight(this.selectedTab === 2 ? 700 : 400)
+              .fontColor(this.selectedTab === 2 ? ACC : TX2)
+              .onClick(() => { this.selectedTab = 2 })
           }.margin({ top: 12, bottom: 6 })
 
           if (this.selectedTab === 0) {
-            Row() {
-              Text('画布页面').fontSize(11).fontColor(TX2)
-              Blank()
-              Text(`${this.boards}`).fontSize(11).fontColor(TX2)
-            }.width('100%').margin({ top: 8 })
-            Text('无画板 — 点下方模板卡或 Prompt 生成').fontSize(11).fontColor(TX2)
-              .margin({ top: 10 })
+            List({ space: 4 }) {
+              ForEach(this.boards, (b: Board) => {
+                ListItem() {
+                  Column() {
+                    Row() {
+                      Text(b.name).fontSize(11).fontColor(TX)
+                      Blank()
+                      Text(`${this.boards.length}`).fontSize(11).fontColor(TX2)
+                    }.width('100%')
+                    Text(`${b.kind} · ${b.width} × ${b.height}`)
+                      .fontSize(10).fontColor(TX2).margin({ top: 2 })
+                  }.width('100%').padding(6)
+                }
+              }, (b: Board) => b.id)
+            }
+            .width('100%').height(160)
+            if (this.boards.length === 0) {
+              Text('无画板 — 点下方模板卡或 Prompt 生成').fontSize(11).fontColor(TX2)
+                .margin({ top: 10 })
+            }
           } else if (this.selectedTab === 1) {
             Text('AI 组件库（拖入画布复用）').fontSize(11).fontColor(TX2).margin({ top: 10 })
           } else {
@@ -91,15 +134,23 @@ struct Index {
 
         // 中央画布
         Column() {
-          Text('未打开画板').fontSize(12).fontColor(TX2)
+          Text(this.boards.length > 0 ? `${this.boards.length} 个画板` : '未打开画板')
+            .fontSize(12).fontColor(TX2)
           Column() {
             Text('从 deepDesign 开始').fontSize(18).fontWeight(700).fontColor(TX)
             Text('选择模板即刻开始，或按 Ctrl+K 直接对 Agent 下令').fontSize(12)
               .fontColor(TX2).margin({ top: 8 })
             Row({ space: 12 }) {
-              this.tplCard('登录页', 'mobile · 390 × 844')
-              this.tplCard('Web 登录', 'web · 1280 × 800')
-              this.tplCard('自适应落地页', 'adaptive · 1280 × 800')
+              ForEach(this.tpls, (t: Tpl) => {
+                Column() {
+                  Text(t.title).fontSize(12).fontWeight(600).fontColor(TX)
+                  Text(t.sub).fontSize(10).fontColor(TX2).margin({ top: 4 })
+                }
+                .width(120).height(80).justifyContent(FlexAlign.Center)
+                .backgroundColor(PANEL).borderRadius(8)
+                .shadow({ radius: 6, color: 'rgba(0,0,0,0.08)' })
+                .onClick(() => { this.addTpl(t) })
+              }, (t: Tpl) => t.title)
             }.margin({ top: 24 })
           }
           .justifyContent(FlexAlign.Center)
@@ -153,25 +204,4 @@ struct Index {
     }
     .width('100%').height('100%').backgroundColor(BG)
   }
-
-  @Builder
-  tabBtn(label: string, idx: number) {
-    Text(label)
-      .fontSize(12).fontWeight(this.selectedTab === idx ? 700 : 400)
-      .fontColor(this.selectedTab === idx ? ACC : TX2)
-      .onClick(() => { this.selectedTab = idx })
-  }
-
-  @Builder
-  tplCard(title: string, sub: string) {
-    Column() {
-      Text(title).fontSize(12).fontWeight(600).fontColor(TX)
-      Text(sub).fontSize(10).fontColor(TX2).margin({ top: 4 })
-    }
-    .width(120).height(80).justifyContent(FlexAlign.Center)
-    .backgroundColor(PANEL).borderRadius(8)
-    .shadow({ radius: 6, color: 'rgba(0,0,0,0.08)' })
-  }
 }
-
-type ProbeResultAlias = import('../ai/XiaoyiProvider').ProbeResult;
