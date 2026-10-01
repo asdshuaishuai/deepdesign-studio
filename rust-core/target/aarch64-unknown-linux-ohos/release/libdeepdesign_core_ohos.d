@@ -1,0 +1,1 @@
+/home/superShuai/code/deepdesign-studio/rust-core/target/aarch64-unknown-linux-ohos/release/libdeepdesign_core_ohos.so: /home/superShuai/code/deepdesign-studio/rust-core/build.rs /home/superShuai/code/deepdesign-studio/rust-core/src/lib.rs

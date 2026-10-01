@@ -30,7 +30,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "914a755b7c2d4af2bdcff7ce1739e2db9a1b81a9b07123d8015786ae03c0980d"
 
 [[package]]
-name = "deepdesign-core"
+name = "deepdesign_core"
 version = "0.4.0-beta"
 dependencies = [
  "napi-build-ohos",

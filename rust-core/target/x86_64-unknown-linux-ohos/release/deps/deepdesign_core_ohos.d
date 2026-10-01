@@ -1,0 +1,7 @@
+/home/superShuai/code/deepdesign-studio/rust-core/target/x86_64-unknown-linux-ohos/release/deps/deepdesign_core_ohos.d: src/lib.rs
+
+/home/superShuai/code/deepdesign-studio/rust-core/target/x86_64-unknown-linux-ohos/release/deps/libdeepdesign_core_ohos.so: src/lib.rs
+
+src/lib.rs:
+
+# env-dep:CARGO_PKG_VERSION=0.4.0-beta
