@@ -7,6 +7,21 @@
 
 use napi_derive_ohos::napi;
 
+// 设备上 stderr 不可见：panic 详情打进 hilog（tag hilog_rs），崩溃时结合 faultlog 定位
+#[used]
+#[link_section = ".init_array"]
+static __CORE_CTOR: extern "C" fn() = {
+    extern "C" fn __core_init() {
+        std::panic::set_hook(Box::new(|info| {
+            let loc = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+            let msg = format!("deepdesign_core PANIC: {} @ {}", info, loc);
+            hilog_binding::error(msg.as_str(), None);
+        }));
+        hilog_binding::info("deepdesign_core: module loaded", None);
+    }
+    __core_init
+};
+
 #[napi]
 pub fn core_version() -> String {
     format!("deepdesign-core-ohos {} (engine: moonviz wasm, host: wasmtime)", env!("CARGO_PKG_VERSION"))

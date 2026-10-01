@@ -5,6 +5,9 @@
   "main": "",
   "author": "",
   "license": "",
-  "dependencies": {}
+  "dependencies": {
+    "libdeepdesign_core.so": "file:./src/main/cpp/types/libdeepdesign_core",
+    "libentry.so": "file:./src/main/cpp/types/libentry"
+  }
 }
 

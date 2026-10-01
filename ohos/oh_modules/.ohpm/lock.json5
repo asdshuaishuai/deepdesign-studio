@@ -31,7 +31,16 @@
     },
     "entry": {
       "name": "entry",
-      "dependencies": {},
+      "dependencies": {
+        "libdeepdesign_core.so": {
+          "specifier": "file:entry/src/main/cpp/types/libdeepdesign_core",
+          "version": "file:entry/src/main/cpp/types/libdeepdesign_core"
+        },
+        "libentry.so": {
+          "specifier": "file:entry/src/main/cpp/types/libentry",
+          "version": "file:entry/src/main/cpp/types/libentry"
+        }
+      },
       "devDependencies": {},
       "dynamicDependencies": {},
       "maskedByOverrideDependencyMap": false
@@ -58,6 +67,22 @@
     },
     "libdeepdesign_core@file:../rust-core/libdeepdesign_core.tgz": {
       "storePath": "oh_modules/.ohpm/libdeepdesign_core@fbufyva+9ajlo6srkfcwadwoavfsrfj4dx8cdkdux2w=",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "libdeepdesign_core.so@file:entry/src/main/cpp/types/libdeepdesign_core": {
+      "storePath": "entry/src/main/cpp/types/libdeepdesign_core",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "libentry.so@file:entry/src/main/cpp/types/libentry": {
+      "storePath": "entry/src/main/cpp/types/libentry",
       "dependencies": {},
       "dynamicDependencies": {},
       "dev": false,

@@ -1,0 +1,6 @@
+{
+  "name": "libdeepdesign_core.so",
+  "types": "./index.d.ts",
+  "version": "0.4.0",
+  "description": "deepDesign core (Rust NAPI) type declarations"
+}

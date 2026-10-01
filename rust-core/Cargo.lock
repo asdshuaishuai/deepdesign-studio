@@ -33,6 +33,7 @@ checksum = "914a755b7c2d4af2bdcff7ce1739e2db9a1b81a9b07123d8015786ae03c0980d"
 name = "deepdesign_core"
 version = "0.4.0-beta"
 dependencies = [
+ "hilog-binding",
  "napi-build-ohos",
  "napi-derive-ohos",
  "napi-ohos",
@@ -125,6 +126,12 @@ dependencies = [
  "pin-project-lite",
  "slab",
 ]
+
+[[package]]
+name = "hilog-binding"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf58f8f173db8cfd133793f581a31503b65b5a05f8028592380936bccd751fc8"
 
 [[package]]
 name = "libloading"

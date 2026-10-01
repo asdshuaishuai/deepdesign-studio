@@ -45,7 +45,9 @@ struct Index {
       this.coreVersion = coreVersion();
       this.corePong = corePing('handshake');
     } catch (e) {
-      this.coreVersion = 'NAPI 未加载（签名后启用）';
+      const msg = (e instanceof Error) ? e.message : String(e);
+      this.coreVersion = `NAPI 未加载（${msg}）`;
+      console.error(`[deepdesign] core load failed: ${msg}`);
     }
     xiaoyiAI.probe().then((r: ProbeResultAlias) => {
       this.aiBackend = r.available ? r.backend : '不可用（云端回退）';

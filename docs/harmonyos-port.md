@@ -135,3 +135,48 @@ window.__TAURI__ ??= {
   修复路径：`devecocli auth login` 登录华为账号 → `devecocli signature generate`
   生成调试签名材料 → build-profile.json5 填入 signingConfigs → 构建签名 HAP 安装。
   该步骤需要华为账号登录，属于一次性人工操作，之后 CI 可复用签名材料。
+
+## 12. NAPI 链路打通实录（2026-10-01，M1 完成）
+
+**结论：Rust NAPI core 已在 2in1 模拟器上真实加载并返回数据**（顶栏
+`core: deepdesign-core-ohos 0.4.0-beta (engine: moonviz wasm, host: wasmtime)`）。
+
+### 根因（三层叠加，逐层剥开）
+
+1. **HAP 未签名 → native 库不解压**（§11 遗留）。修复：不用华为账号，改用
+   **SDK 自带的 OpenHarmony 调试密钥本地签发**——`toolchains/lib/` 下的
+   `OpenHarmony.p12`（密码 123456）+ `OpenHarmonyProfileDebug.pem` +
+   `UnsgnedDebugProfileTemplate.json`。流程：抽取模板内嵌证书 → 拼 3 级证书链
+   （leaf+cacert+rootcacert）→ `hap-sign-tool sign-profile` 签发定制 profile
+   （bundleName=com.deepcode.deepdesign、有效期至 2050）→ `sign-app` 签 HAP。
+   已封装进 `ohos/ohos-run.sh --install`，全程免账号。
+2. **so 陈旧**：rust-libs 里的 x86_64 so 是 crate 改名前的产物，NAPI 注册名是
+   `deepdesign_core_ohos` ≠ import 期待名。重编替换后消除。
+3. **导出名大小写（真正根因）**：napi-ohos 的 `#[napi]` 默认把 rust snake_case
+   转成 **camelCase** 导出——`core_version` 注册为 **`coreVersion`**。ArkTS 侧
+   一直按 snake_case 调用，永远 undefined。d.ts 声明与 ArkTS 调用改 camelCase
+   后一次打通。
+
+### 排障方法论（复用价值）
+
+- `hilog` 里应用 console 输出的 tag 是 **A03d00/JSAPP**（不是 JSAPP）
+- JCE 断链（玲珑容器内 JDK）：`$JAVA_HOME/conf/security/policy/unlimited/*.policy`
+  是指向 /etc 的死链，需写实体文件 `grant { permission javax.crypto.CryptoAllPermission; };`
+- 设备端 dlopen 探针：交叉编译 30 行 C（`--target=x86_64-linux-ohos`）push 到
+  /data/local/tmp 执行，可验证依赖/注册符号；注意 shell 命名空间看不到
+  /system/lib64/platformsdk，报 `libark_jsruntime.so` 缺失属预期，不代表 app 进程失败
+- 插桩 napi-ohos（`[patch.crates-io]` 指向本地 fork + hilog-binding）可确认
+  `napi_register_module_v1` 是否被 runtime 调用、回调表长度；插桩日志若含
+  `format!` 注意 napi_derive 生成的名字带**尾随 \0**，拼进 CString 会 panic
+- panic 穿越 `extern "C"` 会 SIGABRT 且 stderr 不可见：rust 侧 ctor 里
+  `std::panic::set_hook` 把 panic 详情打进 hilog 是必备基建
+- 对照实验：同 app 内放一个官方模板结构的 C++ NAPI 模块（entry.cpp），
+  C++ 通/Rust 不通即可把问题锁进 so 差异——本次即靠它定位到命名大小写
+- `JSON.stringify` 会跳过函数属性，`{}` 不代表对象为空；用 `typeof` 逐属性探测
+- 模拟器为 undebuggable 版（hdc smode 失败），shell 无 root，读
+  /data/log/faultlog 需用 `hdc file recv`（faultlogger 目录可拉）
+
+### 遗留
+
+- `opt-level=3, lto=false`（原 `z+fat-lto` 在 napi-ohos 生态有 panic 风险，保守起见未开）
+- C++ 对照模块 entry.cpp/libentry.so 保留在工程中作回归探针
