@@ -261,3 +261,16 @@ PCEMU 镜像上表现不稳，全屏后布局破碎，已回退为 resize 行为
 （elementFromPoint），开关 `INPUT_FORWARD`（真机原生分发正常时可关）。
 另：模拟器存在 **Meta 键粘滞**（uitest 键盘注入后 Meta 不释放，
 点击被当窗口拖动手势），`uitest uiInput keyEvent 1251` 清除。
+
+## 16. deveco 工具链实测结论（2026-10-02）
+
+**`devecocli ui` 是 PC 模拟器交互验证的正确通道**（uitest/uinput/XTest 均不可靠）：
+- `ui layout`：dump 完整 UI 树，**ArkWeb 内部 DOM 节点可见**（heading/button/
+  staticText 带物理坐标）——找点击目标的唯一可靠手段
+- `ui click/drag/text`：click/drag 实测有效（建板成功、元素选中 +
+  属性面板激活 + 悬浮 Agent 行内编辑弹出——完整交互链验证通过）
+- **`ui text` 触发 IME 会让 web_render 渲染挂起 → 应用黑屏**
+  （进程存活，force-stop 重开恢复）——镜像级 bug，真人 IME 输入同样有此风险
+- `devecocli log --bundle-name`：按应用过滤日志（含 JS console/hilog）
+- `ui screenshot`、`window`、`device sqlite3`、`emulator scene/battery` 等
+  按需可用；`skills list/find` 内置 43 个鸿蒙技能（崩溃分析/NAPI 内存等）
