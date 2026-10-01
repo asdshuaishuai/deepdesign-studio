@@ -12,7 +12,22 @@
 import { http } from '@kit.NetworkKit';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
+import { fileIo as fs, picker } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
+
+interface SaveFileResult {
+  savedTo: string;
+}
+
+interface FxResult {
+  content: string;
+  reasoning: string;
+  usage: Object | null;
+}
+
+interface FxError {
+  error: string;
+}
 
 export class CommandDispatch {
   private context: common.UIAbilityContext | null = null;
@@ -38,12 +53,7 @@ export class CommandDispatch {
         this.context?.terminateSelf();
         return Promise.resolve(null);
       case 'model_registry':
-        return this.context!.resourceManager.getRawFileContent('models.json')
-          .then((data: Uint8Array) => {
-            const dec = new util.TextDecoder('utf-8');
-            return JSON.parse(dec.decodeToString(data)) as Object;
-          })
-          .catch(() => null);
+        return this.loadModelRegistry();
       case 'save_text_file':
         return this.saveTextFile(args);
       case 'invoke_fx_sdk':
@@ -53,34 +63,49 @@ export class CommandDispatch {
     }
   }
 
+  private loadModelRegistry(): Promise<Object | null> {
+    const ctx = this.context;
+    if (!ctx) return Promise.resolve(null);
+    return ctx.resourceManager.getRawFileContent('models.json').then((data: Uint8Array) => {
+      const dec = util.TextDecoder.create('utf-8');
+      return JSON.parse(dec.decodeToString(data)) as Object;
+    }).catch((): Object | null => null);
+  }
+
   private confirmDiscard(): Promise<Object | null> {
     return new Promise<Object | null>((resolve) => {
       promptAction.showDialog({
         title: '未保存的更改',
         message: '当前文档有未保存的更改，确定丢弃吗？',
         buttons: [{ text: '继续编辑', color: '#007aff' }, { text: '放弃更改', color: '#e5484d' }]
-      }).then((r) => resolve(r.index === 1)).catch(() => resolve(false));
+      }).then((r: promptAction.ShowDialogSuccessResponse): void => resolve(r.index === 1))
+        .catch((): void => resolve(false));
     });
   }
 
   private saveTextFile(args: Record<string, Object>): Promise<Object | null> {
-    // args: { name, contentsB64 } → 写入用户文档目录
+    // args: { name, contentsB64 } → DocumentViewPicker 另存为
     const name = String(args['name'] ?? 'export.txt');
     const b64 = String(args['contentsB64'] ?? '');
     return new Promise<Object | null>((resolve) => {
-      this.context?.startAbilityForResult({
-        action: 'ohos.want.action.selectFile', // 文档选择器（另存为）
-        type: 'application/*',
-        parameters: { saveFile: true, name: name }
-      } as Record<string, Object>).then((r) => {
-        const uri = (r.result as Record<string, string>)['uri'];
-        if (!uri) { resolve(null); return; }
-        const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        const f = fs.openSync(uri, fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
-        fs.writeSync(f.fd, bin.buffer as ArrayBuffer);
-        fs.closeSync(f);
-        resolve({ savedTo: uri });
-      }).catch(() => resolve(null));
+      const saveOpts = new picker.DocumentSaveOptions();
+      saveOpts.newFileNames = [name];
+      const docPicker = new picker.DocumentViewPicker();
+      docPicker.save(saveOpts).then((uris: Array<string>): void => {
+        if (!uris || uris.length === 0 || !uris[0]) { resolve(null); return; }
+        const uri = uris[0];
+        try {
+          const helper = new util.Base64Helper();
+          const bin: Uint8Array = helper.decodeSync(b64);
+          const f = fs.openSync(uri, fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+          fs.writeSync(f.fd, bin.buffer as ArrayBuffer);
+          fs.closeSync(f);
+          const out: SaveFileResult = { savedTo: uri };
+          resolve(out);
+        } catch (e) {
+          resolve(null);
+        }
+      }).catch((): void => resolve(null));
     });
   }
 
@@ -88,7 +113,7 @@ export class CommandDispatch {
   private invokeFx(args: Record<string, Object>): Promise<Object | null> {
     return new Promise<Object | null>((resolve) => {
       const payload = JSON.parse(String(args['payload'] ?? '{}')) as Record<string, Object>;
-      const apiKey = String(args['apiKey'] ?? args['apiKey'] ?? '');
+      const apiKey = String(args['apiKey'] ?? '');
       let baseUrl = String(payload['baseUrl'] ?? args['baseUrl'] ?? 'https://api.deepseek.com');
       if (!/^https?:\/\//.test(baseUrl)) baseUrl = 'https://' + baseUrl;
       if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
@@ -110,22 +135,24 @@ export class CommandDispatch {
         expectDataType: http.HttpDataType.STRING,
         readTimeout: 300000,
         connectTimeout: 30000
-      }).then((resp) => {
+      }).then((resp: http.HttpResponse): void => {
         try {
           const j = JSON.parse(String(resp.result)) as Record<string, Object>;
           const choices = (j['choices'] as Array<Record<string, Object>>) ?? [];
           const msg = choices[0]?.['message'] as Record<string, string> | undefined;
-          resolve({
+          const out: FxResult = {
             content: msg?.['content'] ?? '',
             reasoning: msg?.['reasoning_content'] ?? '',
             usage: j['usage'] ?? null
-          });
+          };
+          resolve(out);
         } finally {
           req.destroy();
         }
-      }).catch((e: Error) => {
+      }).catch((e: Error): void => {
         req.destroy();
-        resolve({ error: e.message });
+        const out: FxError = { error: e.message };
+        resolve(out);
       });
     });
   }

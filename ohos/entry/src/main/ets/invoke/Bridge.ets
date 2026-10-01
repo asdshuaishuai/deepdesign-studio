@@ -1,19 +1,25 @@
 // ArkTS 桥：javaScriptProxy 暴露给 WebView 的对象（invokeAsync/win/onEvent）
 // 持有分发器与 WebviewController（回投句柄由 Index.ets 注入）。
+import { webview } from '@kit.ArkWeb';
 import { CommandDispatch } from './Dispatch';
 import { Invoker } from './Invoker';
 
 class HarmonyBridgeImpl {
   private invoker: Invoker;
-  private controller: webviewController.WebviewController | null = null;
+  private controller: webview.WebviewController | null = null;
 
   constructor() {
     this.invoker = new Invoker(new CommandDispatch());
   }
 
-  attachController(c: webviewController.WebviewController): void {
+  attachController(c: webview.WebviewController): void {
     this.controller = c;
     this.invoker.attachController(c);
+  }
+
+  // 宿主注册窗口控制（min/max/close → 原生 window API）
+  setWinHandler(h: (action: string) => void): void {
+    this.invoker.winHandler = h;
   }
 
   invokeAsync(rid: string, cmd: string, argsJson: string): void {
@@ -21,7 +27,6 @@ class HarmonyBridgeImpl {
   }
 
   win(action: string): void {
-    // 窗口控制转发给宿主 Ability（Index.ets 的 winCtl 等价）
     this.invoker.win(action);
   }
 

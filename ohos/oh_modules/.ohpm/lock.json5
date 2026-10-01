@@ -73,16 +73,16 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "libdeepdesign_core.so@file:entry/src/main/cpp/types/libdeepdesign_core": {
-      "storePath": "entry/src/main/cpp/types/libdeepdesign_core",
+    "libentry.so@file:entry/src/main/cpp/types/libentry": {
+      "storePath": "entry/src/main/cpp/types/libentry",
       "dependencies": {},
       "dynamicDependencies": {},
       "dev": false,
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "libentry.so@file:entry/src/main/cpp/types/libentry": {
-      "storePath": "entry/src/main/cpp/types/libentry",
+    "libdeepdesign_core.so@file:entry/src/main/cpp/types/libdeepdesign_core": {
+      "storePath": "entry/src/main/cpp/types/libdeepdesign_core",
       "dependencies": {},
       "dynamicDependencies": {},
       "dev": false,

@@ -1,15 +1,20 @@
 // ArkTS 侧 Invoker：分发 + 控制器回投
+import { webview } from '@kit.ArkWeb';
 import { CommandDispatch } from './Dispatch';
+import { coreVersion, corePing } from '../core/CoreBridge';
 
 export class Invoker {
   private dispatch: CommandDispatch;
-  private controller: webviewController.WebviewController | null = null;
+  private controller: webview.WebviewController | null = null;
+  private eventListeners: Map<string, string> = new Map(); // event -> callbackId
+  // 宿主（Index.ets/EntryAbility）注册的窗口控制处理器：min/max/close
+  winHandler: ((action: string) => void) | null = null;
 
   constructor(dispatch: CommandDispatch) {
     this.dispatch = dispatch;
   }
 
-  attachController(c: webviewController.WebviewController): void {
+  attachController(c: webview.WebviewController): void {
     this.controller = c;
   }
 
@@ -39,6 +44,17 @@ export class Invoker {
     });
   }
 
+  // 前端 winctl：窗口控制转发（Bridge.win → 这里 → 宿主注册的 handler）
+  win(action: string): void {
+    if (this.winHandler) {
+      this.winHandler(action);
+    }
+  }
+
+  onEvent(event: string, callbackId: string): void {
+    this.eventListeners.set(event, callbackId);
+  }
+
   private resolveBack(rid: string, ok: boolean, json: string): void {
     if (!this.controller) return;
     const safe = json.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
@@ -46,4 +62,3 @@ export class Invoker {
       `window.__harmony.resolve('${rid}', ${ok}, '${safe}')`).catch(() => {});
   }
 }
-
