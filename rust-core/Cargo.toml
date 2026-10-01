@@ -1,0 +1,18 @@
+[package]
+name = "deepdesign-core"
+version = "0.4.0-beta"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi-ohos = { version = "1.0", default-features = false, features = ["napi8", "async"] }
+napi-derive-ohos = "1.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+
+[build-dependencies]
+napi-build-ohos = "1.0"
