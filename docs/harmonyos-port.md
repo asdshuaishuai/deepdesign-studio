@@ -180,3 +180,45 @@ window.__TAURI__ ??= {
 
 - `opt-level=3, lto=false`（原 `z+fat-lto` 在 napi-ohos 生态有 panic 风险，保守起见未开）
 - C++ 对照模块 entry.cpp/libentry.so 保留在工程中作回归探针
+
+## 13. 原版前端 ArkWeb 承载（2026-10-02，M1.5 完成）
+
+**结论：frontend/index.html 以 ArkWeb 全屏承载，UI/交互与桌面版一字不差；
+moonviz wasm 引擎在模拟器上完整工作（建板/模板/图层树/画布渲染/命令流）。**
+
+### 架构
+
+原生壳（窗口/生命周期/签名分发）+ ArkWeb 全屏（原版前端）+ invoke 管线
+（`__TAURI__` shim → `harmonyBridge`(javaScriptProxy) → Dispatch/NAPI core）。
+前端以 `IS_TAURI=true` 原生模式启动，命令经 shim 进 ArkTS：系统能力走 OHOS
+原生实现，引擎/加密类走 Rust NAPI core（camelCase 导出，见 §12）。
+
+### 关键点（复用价值）
+
+- **离线包必须用自定义 https 域名 + onInterceptRequest 全量回供**：
+  `$rawfile` 加载的 `resource://` 页面，其 fetch/XHR/wasm 子请求**不触发
+  onInterceptRequest**（静态资源可以，动态请求不行）。改为
+  `https://appassets.deepdesign.local/` 域名 + 拦截器按路径回 rawfile 字节，
+  fetch(wasm) 即刻恢复。这是 ArkWeb 离线包标准解法。
+- `javaScriptOnDocumentStart` 注入 shim（ScriptItem.scriptRules=['*']）；
+  `javaScriptProxy` 暴露 harmonyBridge；`onConsole` 桥接前端 console。
+- 该镜像上 ArkTS 侧 `hilog.info` 不可见（疑似 release 域日志策略），
+  **console.error（A03d00/JSAPP）是可靠通道**；web_render 进程日志巨量会
+  触发 LOGS OVER PROC QUOTA 丢日志——UI overlay 直显探针最可靠。
+- **模拟器 Meta 键粘滞**：uitest 键盘事件后 Meta 置位不释放，后续点击被
+  当作窗口拖动手势拦截（web 收不到触摸）。`uitest uiInput keyEvent 1251`
+  注入 Meta up 清除。真人不走此通道，不受影响。
+
+### 实测证据（截图 + 探针）
+
+- `{"tauri":true,"bridge":true,"eng":"dot"}`（shim/proxy/引擎三通）
+- 引擎绿点 8-10ms；模板缩略图由 wasm 真实生成
+- quickStart('login')：图层树 9 元素、画布渲染、rev 12、
+  命令流 `HUMAN · template login <id> 390 844`
+
+### 下一步（P2）
+
+- Dispatch 补 `save_ddp/open_ddp/list_ddp_projects/rebase_agent_ops`
+  （依赖 rust-core 下沉 DDP/agent 能力）
+- 悬浮 Agent / 一键生成 走 invoke_fx_sdk（云端 LLM）或端侧小艺
+- 真人手测：画布拖拽/改文字/导出 DDP/设置对话框
