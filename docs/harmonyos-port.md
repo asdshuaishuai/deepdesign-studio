@@ -222,3 +222,25 @@ moonviz wasm 引擎在模拟器上完整工作（建板/模板/图层树/画布�
   （依赖 rust-core 下沉 DDP/agent 能力）
 - 悬浮 Agent / 一键生成 走 invoke_fx_sdk（云端 LLM）或端侧小艺
 - 真人手测：画布拖拽/改文字/导出 DDP/设置对话框
+
+## 14. DDP 全链路 + 端到端冒烟（2026-10-02）
+
+**rust-core 下沉 DDP 编解码（与桌面版同一 vendored moonviz-ddp，.ddp 两端互通）**：
+- NAPI 导出 `ddpEncrypt/ddpDecrypt`（camelCase，b64 进出）；纯逻辑独立 `ddp`
+  模块 + `--no-default-features` host 测试（4/4：带密码往返/DDP2 无密码/
+  错密码拒绝/大文档）
+- OHOS 交叉编译要点：zstd-sys 需 `CC_<target>`/`CFLAGS_<target>`/`AR_<target>`
+  指向 OHOS clang；getrandom/argon2 直接编过
+- `hilog-binding` 限定 `cfg(target_env = "ohos")`（host 测试不链接 OHOS 系统库；
+  注意 ohos target 的 `target_os` 仍是 "linux"）
+
+**Dispatch 补齐桌面命令面**：save_ddp（NAPI 加密 + DocumentViewPicker 另存）、
+open_ddp（选文件 → 解密，口令错回 `needPassword` 重试语义）、list_ddp_projects
+（目录扫描，沙箱外目录报错由前端容错）、invoke_fx_sdk 补 models 列表分支、
+open_project_window（单窗口聚焦语义）。rebase_agent_ops 待 wasmtime 宿主下沉。
+
+**端到端冒烟（JS 注入驱动，绕开 uitest 触摸通道限制）**：建板 → 图层树 9 元素
+→ 画布渲染登录页 → rev 12 → 命令流 `HUMAN · template login <id> 390 844` →
+设置对话框开关，全部通过；DDP roundtrip 装机自测 `ddp:ok`。
+
+**装机**：`ohos-run.sh --install`（本地签名免账号）。

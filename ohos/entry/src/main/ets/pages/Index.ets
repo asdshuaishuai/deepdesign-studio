@@ -10,7 +10,7 @@ import { window } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { harmonyBridge } from '../invoke/Bridge';
-import { coreVersion } from '../core/CoreBridge';
+import { coreVersion, ddpEncrypt, ddpDecrypt } from '../core/CoreBridge';
 
 const RAW_PREFIX = 'https://appassets.deepdesign.local/';
 
@@ -50,10 +50,15 @@ struct Index {
     harmonyBridge.attachController(this.controller);
     try {
       this.coreTag = coreVersion();
-      console.error('[core] ' + this.coreTag);
+      // DDP NAPI 自测（roundtrip）：通过则静默，失败进探针/日志
+      const enc = ddpEncrypt('IyBCb2FyZAoKaGVsbG8=', 'selftest');
+      const dec = ddpDecrypt(enc, 'selftest');
+      this.coreTag += (dec === 'IyBCb2FyZAoKaGVsbG8=') ? ' · ddp:ok' : ' · ddp:mismatch';
     } catch (e) {
-      console.error('[core-fail] ' + (e as Error).message);
+      this.coreTag += ' · ddp:FAIL';
+      console.error('[ddp-selftest] ' + (e as Error).message);
     }
+    console.error('[core] ' + this.coreTag);
   }
 
   private onWin(action: string): void {
@@ -112,9 +117,10 @@ struct Index {
             }
           })
           .onPageEnd(() => {
-            this.controller.runJavaScript(
-              `JSON.stringify({url: location.href, tauri: !!window.__TAURI__, bridge: !!(window.harmonyBridge&&window.harmonyBridge.invokeAsync), eng: (document.getElementById('eng-dot')||{}).className, qs: typeof quickStart})`)
-              .then((v: string): void => { this.probeInfo = v; console.error('[page] ' + v); })
+            // 就绪状态采集（只读）：异常时探针 overlay 才会显示
+            const probe = `JSON.stringify({tauri: !!window.__TAURI__, bridge: !!(window.harmonyBridge&&window.harmonyBridge.invokeAsync), eng: (document.getElementById('eng-dot')||{}).className, qs: typeof quickStart, ddp: typeof window.__HARMONY__})`;
+            this.controller.runJavaScript(probe)
+              .then((v: string): void => { this.probeInfo = v; console.error('[ready] ' + v); })
               .catch((e: Error): void => console.error('[js-err] ' + e.message));
           })
           .onConsole((e) => {
