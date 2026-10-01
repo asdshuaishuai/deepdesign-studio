@@ -390,3 +390,22 @@ meta 不能用 device-width。
 
 **实测**：文字图标原生大小清晰 ✓ 三栏+右侧属性/Agent 追踪完整 ✓
 深色主题跟随（darkMode Auto）✓ 点击建板/图层树/属性面板无回归 ✓
+
+## 22. 竖屏手机形态纠偏——resize 横屏（2026-10-02）
+
+**问题**：打开是竖屏手机比例窗口（画面竖条居中）。
+
+**排查**：`maximize()` 对本 app 给的是**竖屏手机比例最大化**
+（窗口 rect 1260×2720 + 0.589 兼容缩放）——模拟器把 app 归类为手机应用。
+试验矩阵：deviceTypes 加 2in1/tablet → 更糟（竖屏 letterbox）；
+orientation landscape/auto_rotation → 无效。全回滚 + 弃 maximize、
+改 `resize(1620,1080)`（restore 后）→ **横屏正常**（rect 3185×2080）。
+
+**镜像限制**：Mode=102（手机兼容容器）下 resize 值被钳制，
+窗口固定占屏约 60%（0.589 缩放），应用侧无法再放大——这是 PCEMU 对
+手机 app 的强制兼容行为。**真机 HarmonyOS PC 分发时 deviceTypes 加
+"2in1" 即可原生铺满**（真机无兼容容器；模拟器上加 2in1 反触发
+letterbox，故模拟器阶段保持 phone）。
+
+**验证**：横屏窗口、三栏完整、文字图标清晰、点模板卡建板 +
+画布渲染 + 命令流记录全部正常。

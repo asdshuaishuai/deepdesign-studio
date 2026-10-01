@@ -156,11 +156,9 @@ struct Index {
       // 前端顶栏 □ 按钮：自由窗口最大化 ↔ 还原（系统语义，不碎裂）
       this.maximized = !this.maximized;
       if (this.maximized) {
-        w.maximize(window.MaximizePresentation.EXIT_IMMERSIVE).catch((): void => {});
+        w.resize(1620, 1080).catch((): void => {});  // 横屏全幅（vp）
       } else {
-        w.restore().then((): void => {
-          w.resize(1360, 900);
-        }).catch((): void => {});
+        w.resize(1200, 800).catch((): void => {});
       }
     } else if (action.startsWith('title:')) {
       // 标题由前端 document.title 自管，原生侧无需处理

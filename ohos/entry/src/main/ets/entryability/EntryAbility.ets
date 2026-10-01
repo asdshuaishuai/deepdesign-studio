@@ -51,12 +51,18 @@ export default class EntryAbility extends UIAbility {
       } catch (e) {
         hilog.warn(DOMAIN, 'deepdesign', 'setWindowDecorVisible unsupported: %{public}s', JSON.stringify(e));
       }
-      // 2in1 桌面体验：启动即最大化（保持自由窗口形态，标题栏/ dock 悬停显示）；
-      // 前端 □ 按钮可切换（maximize/restore 均为系统自由窗口语义，不碎裂）
+      // PC 桌面形态：直接 resize 横屏全幅（vp）。
+      // 不用 maximize()——系统对本 app 按手机应用归类，maximize 会给
+      // 竖屏手机比例的最大化窗口（1260x2720 + 0.589 缩放），画面竖条居中。
       try {
-        mainWindow.maximize(window.MaximizePresentation.EXIT_IMMERSIVE);
+        // 先退出系统最大化态（Mode=102 下 resize 会被钳制），再设横屏全幅
+        mainWindow.restore().then((): void => {
+          mainWindow.resize(1620, 1080);
+        }).catch((): void => {
+          mainWindow.resize(1620, 1080);
+        });
       } catch (e) {
-        mainWindow.resize(900, 600);
+        mainWindow.resize(1200, 800);
       }
       mainWindow.setWindowLimits({
         minWidth: 980, minHeight: 640,
