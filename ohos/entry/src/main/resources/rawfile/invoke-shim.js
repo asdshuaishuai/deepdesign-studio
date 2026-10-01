@@ -57,7 +57,7 @@
 
   var currentWindow = {
     minimize: function () { if (window.harmonyBridge) window.harmonyBridge.win('minimize'); },
-    maximize: function () { /* 系统按钮 */ },
+    maximize: function () { if (window.harmonyBridge) window.harmonyBridge.win('maximize'); },
     close: function () { if (window.harmonyBridge) window.harmonyBridge.win('close'); },
     setTitle: function (t) { document.title = t; if (window.harmonyBridge) window.harmonyBridge.win('title:' + t); },
     show: function () {}, hide: function () {}, destroy: function () {},

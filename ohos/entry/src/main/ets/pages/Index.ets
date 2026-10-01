@@ -13,6 +13,8 @@ import { harmonyBridge } from '../invoke/Bridge';
 import { coreVersion, ddpEncrypt, ddpDecrypt } from '../core/CoreBridge';
 
 const RAW_PREFIX = 'https://appassets.deepdesign.local/';
+// synthetic 输入转发开关（模拟器镜像缺输入派发；真机若原生正常可置 false）
+const INPUT_FORWARD = true;
 
 function mimeOf(path: string): string {
   if (path.endsWith('.wasm')) return 'application/wasm';
@@ -61,12 +63,21 @@ struct Index {
     console.error('[core] ' + this.coreTag);
   }
 
+  private maximized: boolean = false;
+
   private onWin(action: string): void {
     if (!this.winObj) return;
     if (action === 'minimize') {
       this.winObj.minimize();
     } else if (action === 'close') {
       this.winObj.destroyWindow().catch(() => {});
+    } else if (action === 'maximize') {
+      // 前端顶栏 □ 按钮：自由窗口 ↔ 全屏切换
+      this.maximized = !this.maximized;
+      this.winObj.setFullScreen(this.maximized).catch((): void => {});
+      if (!this.maximized) {
+        this.winObj.resize(1360, 900);
+      }
     } else if (action.startsWith('title:')) {
       // 标题由前端 document.title 自管，原生侧无需处理
     }
@@ -123,6 +134,19 @@ struct Index {
               .then((v: string): void => { this.probeInfo = v; console.error('[ready] ' + v); })
               .catch((e: Error): void => console.error('[js-err] ' + e.message));
           })
+          // 模拟器镜像缺陷兜底：PC 形态 web_render 下触摸/鼠标不派发给 ArkWeb 内部，
+          // ArkUI 层捕获坐标后转发为 synthetic 鼠标事件（elementFromPoint+click）。
+          // 真机 ArkWeb 若原生分发正常，可在 Index 顶部 INPUT_FORWARD=false 关闭。
+          .onTouch((e) => {
+            if (e.type === TouchType.Down || e.type === TouchType.Up) {
+              if (!INPUT_FORWARD) return;
+              const x = Math.round(e.touches[0].x);
+              const y = Math.round(e.touches[0].y);
+              const type = e.type === TouchType.Down ? 'mousedown' : 'mouseup';
+              const js = `(function(){try{const el=document.elementFromPoint(${x},${y});if(!el)return;const o={bubbles:true,cancelable:true,clientX:${x},clientY:${y},button:0,view:window};el.dispatchEvent(new MouseEvent('${type}',o));el.dispatchEvent(new PointerEvent('pointer${type === 'mousedown' ? 'down' : 'up'}',o));if('${type}'==='mouseup'){el.dispatchEvent(new MouseEvent('click',o));}}catch(e){}})()`;
+              this.controller.runJavaScript(js).catch((): void => {});
+            }
+          })
           .onConsole((e) => {
             hilog.info(0x0000, 'deepdesign-web', '%{public}s', e.message);
             return false;
@@ -140,15 +164,5 @@ struct Index {
       }
     }
     .width('100%').height('100%').backgroundColor('#f4f4f6')
-    .overlay(this.probeOverlay(), { align: Alignment.Top })
-  }
-
-  @Builder
-  probeOverlay() {
-    if (this.probeInfo !== '' && (this.probeInfo.includes('bad') || this.probeInfo.includes(':false') || this.probeInfo.includes('"err"'))) {
-      Text(this.probeInfo)
-        .fontSize(8).fontColor('#e5484d').maxLines(3)
-        .padding(4).backgroundColor('rgba(255,255,255,0.85)')
-    }
   }
 }

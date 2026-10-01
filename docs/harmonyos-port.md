@@ -244,3 +244,20 @@ open_project_window（单窗口聚焦语义）。rebase_agent_ops 待 wasmtime �
 设置对话框开关，全部通过；DDP roundtrip 装机自测 `ddp:ok`。
 
 **装机**：`ohos-run.sh --install`（本地签名免账号）。
+
+## 15. 双层标题栏修复 + 点击问题处置（2026-10-02）
+
+**双层标题栏**：自由窗口默认带系统标题栏（与前端顶栏重复）——
+`mainWindow.setWindowDecorVisible(false)` 隐藏。窗口控制由前端顶栏
+（— □ ×）经 shim → harmonyBridge.win → Index.onWin 驱动原生 API
+（minimize/close 已通；maximize 切 setFullScreen——注意该 API 在
+PCEMU 镜像上表现不稳，全屏后布局破碎，已回退为 resize 行为）。
+
+**点击问题**：模拟器 PC 形态（web_render + ozone headless 架构）下，
+触摸/鼠标事件不派发给 ArkWeb 内部——键盘可进（WebSendKeyEvent），
+触摸经 WMS 记录（uitest touchItem）但不达 web；XTest/uinput 各通道
+均无法穿透。应用侧兜底：ArkUI `onTouch` 捕获 Down/Up 坐标 →
+`runJavaScript` 转 synthetic MouseEvent+PointerEvent+click
+（elementFromPoint），开关 `INPUT_FORWARD`（真机原生分发正常时可关）。
+另：模拟器存在 **Meta 键粘滞**（uitest 键盘注入后 Meta 不释放，
+点击被当窗口拖动手势），`uitest uiInput keyEvent 1251` 清除。
