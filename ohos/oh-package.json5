@@ -2,6 +2,7 @@
   "modelVersion": "26.0.0",
   "description": "Please describe the basic information.",
   "dependencies": {
+    "libdeepdesign_core": "file:../rust-core/libdeepdesign_core.tgz",
   },
   "devDependencies": {
     "@ohos/hypium": "1.0.25",

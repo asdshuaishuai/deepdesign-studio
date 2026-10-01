@@ -10,7 +10,12 @@
   "modules": {
     ".": {
       "name": "",
-      "dependencies": {},
+      "dependencies": {
+        "libdeepdesign_core": {
+          "specifier": "file:../rust-core/libdeepdesign_core.tgz",
+          "version": "file:../rust-core/libdeepdesign_core.tgz"
+        }
+      },
       "devDependencies": {
         "@ohos/hypium": {
           "specifier": "1.0.25",
@@ -48,6 +53,14 @@
       "dependencies": {},
       "dynamicDependencies": {},
       "dev": true,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "libdeepdesign_core@file:../rust-core/libdeepdesign_core.tgz": {
+      "storePath": "oh_modules/.ohpm/libdeepdesign_core@fbufyva+9ajlo6srkfcwadwoavfsrfj4dx8cdkdux2w=",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": false,
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     }
