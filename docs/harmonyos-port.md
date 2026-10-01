@@ -368,3 +368,25 @@ PC（2in1，本工程目标形态）的正确逻辑是**鼠标与硬件键盘原
    PC 真人硬件键盘不触发软键盘）✓
 3. Enter（keyEvent 2076 = 2048+28）→ `AGENT · text <板> welcome_title
    "把标题改成蓝色"` 命令流真实执行 ✓
+
+## 21. 屏幕自适应与图标可读性（2026-10-02）
+
+**问题**："打开之后压缩在一起看不清楚"——原版是桌面页面无 viewport meta，
+ArkWeb 按 mobile 视口（~980px 布局视口）渲染再整体缩放进窗口；
+还原态窄窗时缩到 ~0.23 倍，文字图标全部糊作一团。
+
+**根因链**：ArkWeb 的 devicePixelRatio（2.25）与系统 density（3.25）
+不一致——`width=device-width` 会被二次缩放（1387 CSS 塞进 960vp 再缩 0.69），
+meta 不能用 device-width。
+
+**修复（三层）**：
+1. 桌面 UA（`.userAgent(Chrome/desktop)`）——避免 mobile 渲染路径
+2. shim documentStart 注入 viewport meta，width = 宿主注入的窗口 vp 宽
+   （占位符 `__DD_VIEWPORT_W__`，ArkTS 读取 shim 后按屏 vp 替换）：
+   **1 CSS px = 1 vp，无缩放**，字体/图标原生大小；窄窗横向滚动
+   （桌面浏览器自然行为），绝不压缩
+3. `onAreaChange`（最大化/还原/手动 resize）动态改 meta——
+   Chromium 重新应用布局视口，随时 1:1
+
+**实测**：文字图标原生大小清晰 ✓ 三栏+右侧属性/Agent 追踪完整 ✓
+深色主题跟随（darkMode Auto）✓ 点击建板/图层树/属性面板无回归 ✓

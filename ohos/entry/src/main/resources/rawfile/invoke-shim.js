@@ -9,6 +9,19 @@
   'use strict';
   if (window.__TAURI__) return; // 真 Tauri 环境（桌面）不注入
 
+  // PC 视口修正：原版为桌面页面无 viewport meta。ArkWeb 的 devicePixelRatio
+  // 与系统 density 不一致，device-width 会被二次缩放——改由宿主把窗口实际
+  // vp 宽写入 __DD_VIEWPORT_W__（shim 注入前替换占位符），viewport 固定为
+  // 该值：1 CSS px = 1 vp（无缩放，字体/图标原生大小）；窄于该值的窗口
+  // 横向滚动（桌面浏览器自然行为），绝不压缩。
+  try {
+    var w = window.__DD_VIEWPORT_W__ || 960;
+    var m = document.createElement('meta');
+    m.setAttribute('name', 'viewport');
+    m.setAttribute('content', 'width=' + w + ', initial-scale=1');
+    (document.head || document.documentElement).appendChild(m);
+  } catch (e) {}
+
   var seq = 0;
   var pending = {};            // rid -> resolve
   var listeners = {};          // event -> [fn]

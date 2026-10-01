@@ -49,7 +49,17 @@ struct Index {
     // shim 必须在页面任何脚本执行前注入（documentStart），故先读后渲染 Web
     ctx.resourceManager.getRawFileContent('invoke-shim.js').then((buf: Uint8Array) => {
       const dec = util.TextDecoder.create('utf-8');
-      this.shimJs = dec.decodeToString(buf);
+      let js = dec.decodeToString(buf);
+      // 视口修正：按屏幕 vp 宽填充（1 CSS px = 1 vp，无 ArkWeb dpr 二次缩放）；
+      // 窗口更窄时页面横向滚动而非压缩
+      let vpW = 960;
+      try {
+        const d = display.getDefaultDisplaySync();
+        // 全屏/最大化形态按屏 vp；还原态窗口更窄时由 onAreaChange 修正
+        vpW = Math.round(d.width / d.densityPixels);
+      } catch (err) { /* 默认 960 */ }
+      js = js.replace('__DD_VIEWPORT_W__ || 960', String(vpW));
+      this.shimJs = js;
     }).catch((e: Error) => {
       hilog.error(0x0000, 'deepdesign', 'read shim failed: %{public}s', e.message);
     });
@@ -106,6 +116,7 @@ struct Index {
   private inputTargetX: number = 0;
   private inputTargetY: number = 0;
   private inputController: TextInputController = new TextInputController();
+  private lastVpW: number = 0;
 
   /** 浮层提交：写回 web 输入元素（native setter + input 事件），execute 时派发 Enter */
   private submitNativeInput(execute: boolean): void {
@@ -164,6 +175,8 @@ struct Index {
           .javaScriptAccess(true)
           .domStorageAccess(true)
           .fileAccess(true)
+          // PC 形态：桌面 UA（避免 ArkWeb 按 mobile 视口 980px 布局再整体缩小）
+          .userAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 deepDesignPC')
           .zoomAccess(false)
           .overviewModeAccess(true)
           .darkMode(WebDarkMode.Auto)
@@ -235,6 +248,16 @@ struct Index {
               // 输入元素不转发点击（web IME 在部分形态会挂起渲染）——改走原生输入浮层；
               // 其余元素正常合成鼠标事件
               const js = `(function(){try{var s=document.documentElement.clientWidth/${vpW};var x=Math.round(${x}*s),y=Math.round(${y}*s);var el=document.elementFromPoint(x,y);if(!el)return;var t=(el.tagName||'').toUpperCase();if(t==='INPUT'||t==='TEXTAREA'||el.isContentEditable){if(window.harmonyBridge&&window.harmonyBridge.nativeInput){window.harmonyBridge.nativeInput(x,y,String(el.value||el.placeholder||''));}return;}var o={bubbles:true,cancelable:true,clientX:x,clientY:y,button:0,view:window};el.dispatchEvent(new MouseEvent('${type}',o));el.dispatchEvent(new PointerEvent('pointer${type === 'mousedown' ? 'down' : 'up'}',o));if('${type}'==='mouseup'){el.dispatchEvent(new MouseEvent('click',o));}}catch(e){}})()`;
+              this.controller.runJavaScript(js).catch((): void => {});
+            }
+          })
+          .onAreaChange((oldArea: Area, newArea: Area) => {
+            // 窗口实际宽度变化（最大化/还原/手动 resize）→ 视口跟随：
+            // 动态改 meta，Chromium 重新应用布局视口（1 CSS px = 1 vp）
+            const vpW = Math.round(Number(newArea.width));
+            if (vpW > 0 && vpW !== this.lastVpW) {
+              this.lastVpW = vpW;
+              const js = `(function(){try{var m=document.querySelector('meta[name=viewport]');if(m){m.setAttribute('content','width=${vpW}, initial-scale=1');}window.__DD_VIEWPORT_W__=${vpW};}catch(e){}})()`;
               this.controller.runJavaScript(js).catch((): void => {});
             }
           })
