@@ -5,6 +5,8 @@
 #   ./ohos-run.sh --install  模拟器已运行时：构建 HAP 并安装启动 deepDesign 壳
 set -e
 source "$HOME/.local/opt/tauri-env.sh"    # DEVECO_CLI_CLT_PATH / OHOS_NDK_HOME / JAVA_HOME / PATH
+# Emulator 自带 Qt/qemu 库解析（devecocli spawn 环境缺 libatomic 时兜底）
+export LD_LIBRARY_PATH="$HOME/deveco-clt/emulator/lib:$HOME/.local/opt/tauri-deps/usr/lib/x86_64-linux-gnu:$HOME/.local/opt/tauri-deps/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 PROJ="$HOME/code/deepdesign-studio/ohos"
 HAP_SRC="$PROJ/entry/build/default/outputs/default/entry-default-unsigned.hap"
 
