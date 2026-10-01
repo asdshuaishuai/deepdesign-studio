@@ -59,6 +59,8 @@
     minimize: function () { if (window.harmonyBridge) window.harmonyBridge.win('minimize'); },
     maximize: function () { if (window.harmonyBridge) window.harmonyBridge.win('maximize'); },
     close: function () { if (window.harmonyBridge) window.harmonyBridge.win('close'); },
+    // decor 隐藏后的桌面手感：顶栏空白区拖动 = 移动窗口；双击 = 最大化切换
+    startDragging: function () { if (window.harmonyBridge) window.harmonyBridge.win('move'); },
     setTitle: function (t) { document.title = t; if (window.harmonyBridge) window.harmonyBridge.win('title:' + t); },
     show: function () {}, hide: function () {}, destroy: function () {},
     setFullscreen: function () {}, isFullscreen: function () { return Promise.resolve(false); },
@@ -92,4 +94,32 @@
 
   // 原生模式标记（前端据此启用 native UI）
   window.__HARMONY__ = true;
+
+  // ---- 顶栏原生窗口手感（decor 隐藏后）----
+  // 顶栏空白区：mousedown 拖动 = 移动窗口；双击 = 最大化切换。
+  // 只挂在 .topbar 空白区（target 直命中 topbar 本身，避开按钮/输入）。
+  function setupTopbarDragging() {
+    var tb = document.querySelector('.topbar, header, #topbar');
+    if (!tb) { setTimeout(setupTopbarDragging, 500); return; }
+    var lastClick = 0;
+    tb.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return;
+      // 只在直接点中顶栏容器（非子控件）时生效
+      if (e.target !== tb) return;
+      var now = Date.now();
+      if (now - lastClick < 350) {
+        // 双击：最大化切换
+        if (window.harmonyBridge) window.harmonyBridge.win('maximize');
+        lastClick = 0;
+        return;
+      }
+      lastClick = now;
+      if (window.harmonyBridge) window.harmonyBridge.win('move');
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupTopbarDragging);
+  } else {
+    setupTopbarDragging();
+  }
 })();

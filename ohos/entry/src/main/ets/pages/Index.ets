@@ -66,30 +66,45 @@ struct Index {
     probeLocalAi().then((ok: boolean): void => {
       this.coreTag += ok ? ' · 端侧AI:就绪' : ' · 端侧AI:不可用';
       console.error('[local-ai] ready=' + ok);
-      this.showBadge(this.coreTag);
+      this.showBadge(this.coreTag, ok ? 8000 : 0);  // 正常 8s 自隐；异常常驻可点掉
     });
   }
 
-  /** 状态徽章：注入 web 页面内部显示（overlay 会被同层渲染的 Web 盖住） */
-  private showBadge(text: string): void {
-    const js = `(function(){try{let b=document.getElementById('harmony-badge');if(!b){b=document.createElement('div');b.id='harmony-badge';b.style.cssText='position:fixed;top:2px;left:50%;transform:translateX(-50%);font-size:9px;color:#8e8e93;background:rgba(255,255,255,0.75);padding:1px 8px;border-radius:9px;z-index:2147483647;pointer-events:none';document.body.appendChild(b);}b.textContent=${JSON.stringify(text)};}catch(e){}})()`;
+  /** 状态徽章：右上角小字（不遮挡顶栏操作区），点击消失；诊断默认 8s 自动隐藏 */
+  private showBadge(text: string, autoHideMs: number = 0): void {
+    const js = `(function(){try{
+      var old=document.getElementById('harmony-badge');if(old){old.remove();}
+      var b=document.createElement('div');b.id='harmony-badge';
+      b.style.cssText='position:fixed;top:38px;right:10px;font-size:10px;color:#6b6b70;background:rgba(255,255,255,0.9);border:1px solid rgba(0,0,0,0.08);padding:2px 8px;border-radius:8px;z-index:2147483647;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.12)';
+      b.textContent=${JSON.stringify(text)};
+      b.onclick=function(){b.remove();};
+      document.body.appendChild(b);
+      if(${autoHideMs}>0){setTimeout(function(){var e=document.getElementById('harmony-badge');if(e)e.remove();},${autoHideMs});}
+    }catch(e){}})()`;
     this.controller.runJavaScript(js).catch((): void => {});
   }
 
   private maximized: boolean = false;
 
   private onWin(action: string): void {
-    if (!this.winObj) return;
+    const w = this.winObj;
+    if (!w) return;
     if (action === 'minimize') {
-      this.winObj.minimize();
+      w.minimize();
     } else if (action === 'close') {
-      this.winObj.destroyWindow().catch(() => {});
+      w.destroyWindow().catch(() => {});
+    } else if (action === 'move') {
+      // 顶栏空白区拖动热区：交给系统窗口管理（decor 隐藏后的原生手感）
+      w.startMoving().catch((): void => {});
     } else if (action === 'maximize') {
-      // 前端顶栏 □ 按钮：自由窗口 ↔ 全屏切换
+      // 前端顶栏 □ 按钮：自由窗口最大化 ↔ 还原（系统语义，不碎裂）
       this.maximized = !this.maximized;
-      this.winObj.setFullScreen(this.maximized).catch((): void => {});
-      if (!this.maximized) {
-        this.winObj.resize(1360, 900);
+      if (this.maximized) {
+        w.maximize(window.MaximizePresentation.EXIT_IMMERSIVE).catch((): void => {});
+      } else {
+        w.restore().then((): void => {
+          w.resize(1360, 900);
+        }).catch((): void => {});
       }
     } else if (action.startsWith('title:')) {
       // 标题由前端 document.title 自管，原生侧无需处理
@@ -106,6 +121,11 @@ struct Index {
           .fileAccess(true)
           .zoomAccess(false)
           .overviewModeAccess(true)
+          .darkMode(WebDarkMode.Auto)
+          .forceDarkAccess(false)
+          .verticalScrollBarAccess(true)
+          .horizontalScrollBarAccess(false)
+          .overScrollMode(OverScrollMode.NEVER)
           .javaScriptProxy({
             object: harmonyBridge,
             name: 'harmonyBridge',
@@ -144,7 +164,7 @@ struct Index {
             // 就绪状态采集（只读）+ 徽章首显（探测完成后更新内容）
             const probe = `JSON.stringify({tauri: !!window.__TAURI__, bridge: !!(window.harmonyBridge&&window.harmonyBridge.invokeAsync), eng: (document.getElementById('eng-dot')||{}).className, qs: typeof quickStart})`;
             this.controller.runJavaScript(probe)
-              .then((v: string): void => { this.probeInfo = v; console.error('[ready] ' + v); this.showBadge(this.coreTag); })
+              .then((v: string): void => { this.probeInfo = v; console.error('[ready] ' + v); })
               .catch((e: Error): void => console.error('[js-err] ' + e.message));
           })
           // 模拟器镜像缺陷兜底：PC 形态 web_render 下触摸/鼠标不派发给 ArkWeb 内部，

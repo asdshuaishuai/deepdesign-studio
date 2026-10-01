@@ -45,11 +45,19 @@ export default class EntryAbility extends UIAbility {
       // 2in1/PC 桌面形态：窗口 1360x900（与桌面版一致），最小 980x640
       const mainWindow = windowStage.getMainWindowSync();
       // 前端顶栏自带窗口控制（shim → harmonyBridge.win → Index.onWin），
-      // 系统标题栏去掉避免双层；内容全屏沉浸
-      mainWindow.setWindowDecorVisible(false);
-      // 单位统一 vp：初始 1360x900（前端顶栏自带窗口控制，经
-      // shim → harmonyBridge.win → Index.onWin 驱动原生窗口 API）
-      mainWindow.resize(1360, 900);
+      // 系统标题栏去掉避免双层；容错：个别形态不支持 decor 隐藏时保留系统栏
+      try {
+        mainWindow.setWindowDecorVisible(false);
+      } catch (e) {
+        hilog.warn(DOMAIN, 'deepdesign', 'setWindowDecorVisible unsupported: %{public}s', JSON.stringify(e));
+      }
+      // 2in1 桌面体验：启动即最大化（保持自由窗口形态，标题栏/ dock 悬停显示）；
+      // 前端 □ 按钮可切换（maximize/restore 均为系统自由窗口语义，不碎裂）
+      try {
+        mainWindow.maximize(window.MaximizePresentation.EXIT_IMMERSIVE);
+      } catch (e) {
+        mainWindow.resize(1360, 900);
+      }
       mainWindow.setWindowLimits({
         minWidth: 980, minHeight: 640,
         maxWidth: 3840, maxHeight: 2160,

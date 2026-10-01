@@ -296,3 +296,26 @@ PCEMU 镜像上表现不稳，全屏后布局破碎，已回退为 resize 行为
   HarmonyOS NEXT 真机自动就绪
 - 状态徽章注入 web 页面内显示（ArkUI overlay 会被同层渲染的 Web 盖住）：
   `core 版本 · ddp:ok · 端侧AI:状态`
+
+## 18. deveco 全量审查与 UX 修复（2026-10-02）
+
+**审查工具链**：`check arkts`（12 文件 17 警告）+ `check lint`（2 错误）+
+`ui layout`（ArkWeb DOM 树逐节点坐标审计）+ `ui screenshot` 视觉对比。
+（`check compat` 仅 macOS/Windows，linux 不支持）
+
+**修复清单**：
+1. 窗口启动即最大化（`maximize(EXIT_IMMERSIVE)`，保持自由窗口形态）——
+   此前 1360×900 在 960vp 虚拟屏上会裁掉右侧属性面板/Agent 追踪
+2. 前端 □ 按钮 → `maximize()/restore()` 系统语义（原 setFullScreen 在
+   PCEMU 上布局碎裂）；move → `startMoving()`（顶栏空白拖动窗口）
+3. 顶栏原生手感：shim 注入 mousedown 拖动 + 双击最大化热区
+   （`e.target === topbar` 才触发，避开子控件）
+4. 状态徽章：顶中遮顶栏文字 → 右上角、点击关闭、正常信息 8s 自动隐藏
+5. Web UX 属性：darkMode(Auto) 跟随系统深色、竖向滚动条开、
+   overScroll NEVER（防橡皮筋）、zoomAccess 关（防滚轮误触）
+6. `setWindowDecorVisible` 容错（个别形态不支持时保留系统栏）
+7. lint 两处 await-thenable 误报（dynamic import ESObject 用 Promise 包装）
+
+**验证**（devecocli ui 实测）：最大化形态下模板卡建板 ✓、
+元素拖拽（命令流 HUMAN · move + 悬浮 Agent 编辑条弹出）✓、
+右侧属性面板完整显示 ✓、无双层标题栏/残留系统按钮 ✓。

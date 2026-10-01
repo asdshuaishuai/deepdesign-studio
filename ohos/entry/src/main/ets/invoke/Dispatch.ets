@@ -327,13 +327,16 @@ export class CommandDispatch {
    * 端侧系统 AI（localChatModel）执行 Agent 指令——鸿蒙体系下的默认执行者。
    * 返回 undefined = 端侧不可用（模块缺失/模型未就绪），调用方降级。
    */
-  private async localAgent(payload: Record<string, Object>): Promise<Object | null | undefined> {
-    let mod: ESObject = null;
-    try {
-      mod = await import('../ai/LocalChatBridge');
-    } catch (e) {
+  private localAgent(payload: Record<string, Object>): Promise<Object | null | undefined> {
+    const loadMod: Promise<ESObject> = import('../ai/LocalChatBridge') as Promise<ESObject>;
+    return loadMod.then((mod: ESObject): Promise<Object | null | undefined> => {
+      return this.runLocalAgent(mod, payload);
+    }).catch((): Object | null | undefined => {
       return undefined;  // 系统无 DataAugmentationKit
-    }
+    });
+  }
+
+  private async runLocalAgent(mod: ESObject, payload: Record<string, Object>): Promise<Object | null | undefined> {
     try {
       const instruction = String(payload['instruction'] ?? '');
       const mbtB64 = String(payload['mbt_b64'] ?? '');
