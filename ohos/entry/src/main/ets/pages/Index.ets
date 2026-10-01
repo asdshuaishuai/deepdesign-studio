@@ -15,8 +15,11 @@ import { coreVersion, ddpEncrypt, ddpDecrypt } from '../core/CoreBridge';
 import { probeLocalAi } from '../ai/LocalChatProbe';
 
 const RAW_PREFIX = 'https://appassets.deepdesign.local/';
-// synthetic 输入转发开关（模拟器镜像缺输入派发；真机若原生正常可置 false）
-const INPUT_FORWARD = true;
+// 输入模式：PC/2in1（本工程目标形态）鼠标与硬件键盘原生直达 web——转发关闭。
+// phone 觢格或特殊镜像输入派发缺陷时才置 true（触摸合成转发 + 输入浮层兜底）。
+// 注：模拟器自动化注入前须清 Meta 粘滞（uitest uiInput keyEvent 1251），
+//     否则点击被当作窗口拖动手势——历史上曾误判为"派发缺陷"。
+const INPUT_FORWARD = false;
 
 function mimeOf(path: string): string {
   if (path.endsWith('.wasm')) return 'application/wasm';
