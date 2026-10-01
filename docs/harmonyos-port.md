@@ -122,3 +122,16 @@ window.__TAURI__ ??= {
 - developer.huawei.com ArkTS API（`@ohos.web.webview` 模块：javaScriptProxy /
   runJavaScript）
 - "Tauri 无 OHOS 目标、无成熟社区 port"为 2026-09-29 检索结论，立项前复核
+
+## 11. 模拟器实测记录（2026-10-01）
+
+- 环境：devecocli 1.3.4 + CLT 26.0.0.851(linux-x64) + DeepDesignPC(2in1) 模拟器
+  （HarmonyOS 7.0.0.107, x86_64, 3120×2080）
+- 已打通：ArkUI 原生壳（1360×900 桌面窗口/deepDesign 标题/最大化修复/全量布局）
+  构建→装机→启动→前端渲染全部成功；HAP 内 libs/{arm64-v8a,x86_64}/ 含
+  libc++_shared 与 libdeepdesign_core.so（externalNativeOptions+CMake 集成生效）
+- 未通：NAPI import 返回 undefined。`bm dump` 显示安装后 `nativeLibraryPath: ""`——
+  **模拟器安装器对完全未签名（unsigned）HAP 不做 native 库解压登记**。
+  修复路径：`devecocli auth login` 登录华为账号 → `devecocli signature generate`
+  生成调试签名材料 → build-profile.json5 填入 signingConfigs → 构建签名 HAP 安装。
+  该步骤需要华为账号登录，属于一次性人工操作，之后 CI 可复用签名材料。

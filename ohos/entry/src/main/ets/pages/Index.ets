@@ -33,6 +33,7 @@ struct Index {
   @State boards: Board[] = appStore.boards;
   @State showSettings: boolean = false;
   @State themeDark: boolean = false;
+  @State selectedBoard: Board | null = null;
   tpls: Tpl[] = [
     { title: '登录页', kind: 'mobile', sub: 'mobile · 390 × 844', width: 390, height: 844 },
     { title: 'Web 登录', kind: 'web', sub: 'web · 1280 × 800', width: 1280, height: 800 },
@@ -134,27 +135,56 @@ struct Index {
 
         // 中央画布
         Column() {
-          Text(this.boards.length > 0 ? `${this.boards.length} 个画板` : '未打开画板')
-            .fontSize(12).fontColor(TX2)
-          Column() {
-            Text('从 deepDesign 开始').fontSize(18).fontWeight(700).fontColor(TX)
-            Text('选择模板即刻开始，或按 Ctrl+K 直接对 Agent 下令').fontSize(12)
-              .fontColor(TX2).margin({ top: 8 })
-            Row({ space: 12 }) {
-              ForEach(this.tpls, (t: Tpl) => {
-                Column() {
-                  Text(t.title).fontSize(12).fontWeight(600).fontColor(TX)
-                  Text(t.sub).fontSize(10).fontColor(TX2).margin({ top: 4 })
-                }
-                .width(120).height(80).justifyContent(FlexAlign.Center)
-                .backgroundColor(PANEL).borderRadius(8)
-                .shadow({ radius: 6, color: 'rgba(0,0,0,0.08)' })
-                .onClick(() => { this.addTpl(t) })
-              }, (t: Tpl) => t.title)
-            }.margin({ top: 24 })
+          if (this.boards.length > 0) {
+            Scroll() {
+              Column({ space: 12 }) {
+                ForEach(this.boards, (b: Board) => {
+                  Column() {
+                    Row() {
+                      Text(b.name).fontSize(13).fontWeight(600).fontColor(TX)
+                      Blank()
+                      Text(`${b.kind} · ${b.width} × ${b.height}`).fontSize(10).fontColor(TX2)
+                    }.width('100%')
+                    // 画板缩略占位（按声明比例的迷你预览）
+                    Column() {
+                      Text(b.name).fontSize(10).fontColor(TX2)
+                    }
+                    .width(b.width > b.height ? 160 : 100)
+                    .height(b.width > b.height ? 100 : 160)
+                    .backgroundColor(PANEL).borderRadius(6)
+                    .border({ width: 1, color: BG })
+                  }
+                  .width('100%').padding(12).backgroundColor(PANEL).borderRadius(10)
+                  .shadow({ radius: 6, color: 'rgba(0,0,0,0.08)' })
+                  .onClick(() => { this.selectedBoard = b })
+                }, (b: Board) => b.id)
+              }.width('100%').padding(12)
+            }
+            .layoutWeight(1).scrollBar(BarState.Auto)
+          } else {
+            Column() {
+              Text('未打开画板').fontSize(12).fontColor(TX2)
+              Column() {
+                Text('从 deepDesign 开始').fontSize(18).fontWeight(700).fontColor(TX)
+                Text('选择模板即刻开始，或按 Ctrl+K 直接对 Agent 下令').fontSize(12)
+                  .fontColor(TX2).margin({ top: 8 })
+                Row({ space: 12 }) {
+                  ForEach(this.tpls, (t: Tpl) => {
+                    Column() {
+                      Text(t.title).fontSize(12).fontWeight(600).fontColor(TX)
+                      Text(t.sub).fontSize(10).fontColor(TX2).margin({ top: 4 })
+                    }
+                    .width(120).height(80).justifyContent(FlexAlign.Center)
+                    .backgroundColor(PANEL).borderRadius(8)
+                    .shadow({ radius: 6, color: 'rgba(0,0,0,0.08)' })
+                    .onClick(() => { this.addTpl(t) })
+                  }, (t: Tpl) => t.title)
+                }.margin({ top: 24 })
+              }
+              .justifyContent(FlexAlign.Center)
+              .width('100%').height('100%')
+            }
           }
-          .justifyContent(FlexAlign.Center)
-          .width('100%').height('100%')
         }
         .layoutWeight(1).height('100%').backgroundColor(BG)
         .alignItems(HorizontalAlign.Center)
