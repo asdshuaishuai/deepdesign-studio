@@ -11,7 +11,7 @@
 //   ✓ open_project_window —— 单窗口模式：聚焦自身
 
 import { http } from '@kit.NetworkKit';
-import { promptAction } from '@kit.ArkUI';
+import { window } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
@@ -132,13 +132,25 @@ export class CommandDispatch {
   }
 
   private confirmDiscard(): Promise<Object | null> {
+    // promptAction.showDialog 已弃用 → UIContext.showAlertDialog（经主窗口取 UIContext）
     return new Promise<Object | null>((resolve) => {
-      promptAction.showDialog({
-        title: '未保存的更改',
-        message: '当前文档有未保存的更改，确定丢弃吗？',
-        buttons: [{ text: '继续编辑', color: '#007aff' }, { text: '放弃更改', color: '#e5484d' }]
-      }).then((r: promptAction.ShowDialogSuccessResponse): void => resolve(r.index === 1))
-        .catch((): void => resolve(false));
+      const ctx = this.context;
+      if (!ctx) { resolve(false); return; }
+      window.getLastWindow(ctx).then((w: window.Window): void => {
+        w.getUIContext().showAlertDialog({
+          title: '未保存的更改',
+          message: '当前文档有未保存的更改，确定丢弃吗？',
+          primaryButton: {
+            value: '继续编辑',
+            action: (): void => resolve(false)
+          },
+          secondaryButton: {
+            value: '放弃更改',
+            fontColor: '#e5484d',
+            action: (): void => resolve(true)
+          }
+        });
+      }).catch((): void => resolve(false));
     });
   }
 

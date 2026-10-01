@@ -56,7 +56,7 @@ export default class EntryAbility extends UIAbility {
       try {
         mainWindow.maximize(window.MaximizePresentation.EXIT_IMMERSIVE);
       } catch (e) {
-        mainWindow.resize(1360, 900);
+        mainWindow.resize(900, 600);
       }
       mainWindow.setWindowLimits({
         minWidth: 980, minHeight: 640,

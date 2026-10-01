@@ -319,3 +319,32 @@ PCEMU 镜像上表现不稳，全屏后布局破碎，已回退为 resize 行为
 **验证**（devecocli ui 实测）：最大化形态下模板卡建板 ✓、
 元素拖拽（命令流 HUMAN · move + 悬浮 Agent 编辑条弹出）✓、
 右侧属性面板完整显示 ✓、无双层标题栏/残留系统按钮 ✓。
+
+## 19. 审查收尾：弃用清零 + IME 黑屏应用层规避（2026-10-02）
+
+**弃用警告清零**（`check arkts` deprecated 计数 = 0）：
+- `promptAction.showDialog` → `window.getLastWindow().getUIContext().showAlertDialog`
+  （primaryButton/secondaryButton，语义不变：放弃=resolve(true)）
+- `getContext(this)` → `this.getUIContext().getHostContext()`（缓存 abilityCtx
+  供拦截器复用）
+- 剩余「Function may throw」为 lint 提示（代码已在 try-catch 内）；
+  INTERNET 权限警告为误报（module.json5 已声明）
+
+**IME 黑屏应用层规避（原生输入浮层）**：
+- onTouch 合成转发前检测目标：INPUT/TEXTAREA/contentEditable → 不派发点击
+  （避免 web focus+IME），改调 `harmonyBridge.nativeInput(x,y,placeholder)`
+- Index 原生浮层：TextInput + 取消/填入/⏎执行；提交用 native setter +
+  input/change 事件写回，执行时派发 Enter keydown（触发 gp-input 的
+  runGlobalPrompt / ap-input 的 sendAgent——inline handler 对
+  dispatchEvent 同样生效）
+- **坐标换算**：touch 的 vp 坐标 × (clientWidth/vpW) → web CSS 坐标
+  （web CSS viewport 与组件 vp 宽解耦，窄窗仍渲染桌面布局，不换算必错位）
+
+**实测证据链**（还原态窗口，devecocli ui 驱动）：
+点 gp-input → 浮层弹出（placeholder 正确带入）→ `ui text` 输入
+「生成一个手机注册页」（**原生 IME 无黑屏**）→ ⏎执行 → 浮层关闭、
+指令条回填、**AGENT 命令流 `template register 390 844` 执行、画布渲染出
+注册页（Create Account 表单）**——输入到生成全链路通。
+
+**已知限制**：模拟器自动化触摸在最大化形态下不达 ArkUI onTouch
+（镜像输入派发随窗口形态不稳定）；真人鼠标/触摸不受影响。

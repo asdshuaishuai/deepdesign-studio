@@ -7,8 +7,10 @@ export class Invoker {
   private dispatch: CommandDispatch;
   private controller: webview.WebviewController | null = null;
   private eventListeners: Map<string, string> = new Map(); // event -> callbackId
-  // 宿主（Index.ets/EntryAbility）注册的窗口控制处理器：min/max/close
+  // 宿主（Index.ets/EntryAbility）注册的窗口控制处理器：min/max/close/move
   winHandler: ((action: string) => void) | null = null;
+  // 原生输入处理器（web 输入元素被点中 → Index 弹原生浮层）
+  nativeInputHandler: ((x: number, y: number, current: string) => void) | null = null;
 
   constructor(dispatch: CommandDispatch) {
     this.dispatch = dispatch;
@@ -53,6 +55,12 @@ export class Invoker {
 
   onEvent(event: string, callbackId: string): void {
     this.eventListeners.set(event, callbackId);
+  }
+
+  nativeInput(x: number, y: number, current: string): void {
+    if (this.nativeInputHandler) {
+      this.nativeInputHandler(x, y, current);
+    }
   }
 
   private resolveBack(rid: string, ok: boolean, json: string): void {

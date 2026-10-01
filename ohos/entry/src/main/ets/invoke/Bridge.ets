@@ -17,9 +17,14 @@ class HarmonyBridgeImpl {
     this.invoker.attachController(c);
   }
 
-  // 宿主注册窗口控制（min/max/close → 原生 window API）
+  // 宿主注册窗口控制（min/max/close/move → 原生 window API）
   setWinHandler(h: (action: string) => void): void {
     this.invoker.winHandler = h;
+  }
+
+  // 宿主注册原生输入处理器（web 输入元素被点中 → 原生浮层接替，规避 web IME 挂起）
+  setNativeInputHandler(h: (x: number, y: number, current: string) => void): void {
+    this.invoker.nativeInputHandler = h;
   }
 
   invokeAsync(rid: string, cmd: string, argsJson: string): void {
@@ -28,6 +33,10 @@ class HarmonyBridgeImpl {
 
   win(action: string): void {
     this.invoker.win(action);
+  }
+
+  nativeInput(x: number, y: number, current: string): void {
+    this.invoker.nativeInput(x, y, current);
   }
 
   onEvent(event: string, callbackId: string): string {
