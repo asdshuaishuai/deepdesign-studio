@@ -42,6 +42,10 @@ export default class EntryAbility extends UIAbility {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
         return;
       }
+      // 2in1/PC 桌面形态：窗口 1360x900（与桌面版一致），最小 980x640
+      const mainWindow = windowStage.getMainWindowSync();
+      mainWindow.resize(1360, 900);
+      mainWindow.setWindowLimits({ minWidth: 980, minHeight: 640, maxWidth: 2560, maxHeight: 1600 });
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
     });
   }

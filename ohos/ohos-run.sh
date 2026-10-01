@@ -22,8 +22,10 @@ case "${1:-}" in
     echo "→ 构建 HAP（hvigor，ArkTS）..."
     (cd "$PROJ" && devecocli build)
     echo "→ 安装并启动 ..."
-    devecocli run --project-path "$PROJ" || {
-      SER="$(devecocli device list | grep -oE '127\.0\.0\.1:[0-9]+' | head -1)"
+    export PATH="$HOME/deveco-clt/sdk/default/openharmony/toolchains:$PATH"  # hdc
+    (cd "$PROJ" && devecocli run) || {
+      SER="$(hdc list targets | grep -E '^127' | head -1)"
+      echo "→ 降级 hdc 装机 (target=$SER) ..."
       [ -n "$SER" ] && hdc -t "$SER" install -r "$HAP_SRC" \
         && hdc -t "$SER" shell aa start -a EntryAbility -b com.deepcode.deepdesign
     }
