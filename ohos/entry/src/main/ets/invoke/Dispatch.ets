@@ -21,6 +21,14 @@ interface FxModels {
   models: string[];
 }
 
+interface AgentResult {
+  ok: boolean;
+  ops: string[];
+  text: string;
+  stopReason: string;
+  mbtB64: string;
+}
+
 interface CmdError {
   error: string;
 }
@@ -290,11 +298,80 @@ export class CommandDispatch {
     });
   }
 
-  /** invoke_fx_sdk：Agent 聊天/模型列表（OpenAI 兼容端点）。 */
+  // MoonViz op 动词白名单（提取端侧模型回复中的可执行行）
+  private static OP_VERBS: string[] = [
+    'template', 'create', 'text', 'set', 'move', 'resize', 'style', 'delete', 'delete-artboard',
+    'rename', 'add', 'remove', 'update', 'flow', 'link', 'align', 'group', 'order',
+    'list', 'list-templates', 'lint', 'critique', 'query', 'states', 'flows', 'export-svg'
+  ];
+
+  /** 从端侧模型回复中提取 MoonViz op 命令行。 */
+  private static extractOps(text: string): string[] {
+    const ops: string[] = [];
+    const lines = text.split('\n');
+    for (const raw of lines) {
+      const line = raw.trim()
+        .replace(/^[-*\d.\s]+/, '')
+        .replace(/^`+|`+$/g, '')
+        .trim();
+      if (!line || line.length > 200) continue;
+      const head = line.split(/\s+/)[0].toLowerCase();
+      if (CommandDispatch.OP_VERBS.includes(head)) {
+        ops.push(line);
+      }
+    }
+    return ops;
+  }
+
+  /**
+   * 端侧系统 AI（localChatModel）执行 Agent 指令——鸿蒙体系下的默认执行者。
+   * 返回 undefined = 端侧不可用（模块缺失/模型未就绪），调用方降级。
+   */
+  private async localAgent(payload: Record<string, Object>): Promise<Object | null | undefined> {
+    let mod: ESObject = null;
+    try {
+      mod = await import('../ai/LocalChatBridge');
+    } catch (e) {
+      return undefined;  // 系统无 DataAugmentationKit
+    }
+    try {
+      const instruction = String(payload['instruction'] ?? '');
+      const mbtB64 = String(payload['mbt_b64'] ?? '');
+      let mbt = '';
+      if (mbtB64) {
+        const helper = new util.Base64Helper();
+        mbt = util.TextDecoder.create("utf-8").decodeToString(helper.decodeSync(mbtB64));
+      }
+      const text: string | null = await mod.chatOnce(instruction, mbt);
+      if (text === null) return undefined;
+      const ops = CommandDispatch.extractOps(text);
+      const out: AgentResult = {
+        ok: true, ops: ops, text: text.trim(), stopReason: 'end', mbtB64: mbtB64
+      };
+      return out;
+    } catch (e) {
+      return undefined;
+    }
+  }
+
+  /** invoke_fx_sdk：Agent 聊天/模型列表。默认执行者 = 端侧系统 AI（免 key、本地化），
+   *  用户显式配置云端 key 时走 OpenAI 兼容端点。 */
   private invokeFx(args: Record<string, Object>): Promise<Object | null> {
     return new Promise<Object | null>((resolve) => {
       const payload = JSON.parse(String(args['payload'] ?? '{}')) as Record<string, Object>;
       const apiKey = String(args['apiKey'] ?? '');
+      const fromPayload = String(payload['api_key'] ?? '');
+      const mode = String(payload['mode'] ?? '');
+
+      if (mode !== 'models' && !apiKey.trim() && !fromPayload.trim()) {
+        // 默认执行者：系统级端侧 AI
+        this.localAgent(payload).then((r: Object | null | undefined): void => {
+          if (r !== undefined) { resolve(r); return; }
+          const out: CmdError = { error: 'local_ai_unavailable: 端侧模型不可用，请在设置中配置云端 API Key' };
+          resolve(out);
+        });
+        return;
+      }
       let baseUrl = String(payload['baseUrl'] ?? args['baseUrl'] ?? 'https://api.deepseek.com');
       if (!/^https?:\/\//.test(baseUrl)) baseUrl = 'https://' + baseUrl;
       if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);

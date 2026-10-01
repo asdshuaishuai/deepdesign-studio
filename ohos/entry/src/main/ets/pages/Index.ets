@@ -11,6 +11,7 @@ import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { harmonyBridge } from '../invoke/Bridge';
 import { coreVersion, ddpEncrypt, ddpDecrypt } from '../core/CoreBridge';
+import { probeLocalAi } from '../ai/LocalChatProbe';
 
 const RAW_PREFIX = 'https://appassets.deepdesign.local/';
 // synthetic 输入转发开关（模拟器镜像缺输入派发；真机若原生正常可置 false）
@@ -61,6 +62,18 @@ struct Index {
       console.error('[ddp-selftest] ' + (e as Error).message);
     }
     console.error('[core] ' + this.coreTag);
+    // 系统级端侧 AI（localChatModel）就绪探测——Agent 默认执行者可用性
+    probeLocalAi().then((ok: boolean): void => {
+      this.coreTag += ok ? ' · 端侧AI:就绪' : ' · 端侧AI:不可用';
+      console.error('[local-ai] ready=' + ok);
+      this.showBadge(this.coreTag);
+    });
+  }
+
+  /** 状态徽章：注入 web 页面内部显示（overlay 会被同层渲染的 Web 盖住） */
+  private showBadge(text: string): void {
+    const js = `(function(){try{let b=document.getElementById('harmony-badge');if(!b){b=document.createElement('div');b.id='harmony-badge';b.style.cssText='position:fixed;top:2px;left:50%;transform:translateX(-50%);font-size:9px;color:#8e8e93;background:rgba(255,255,255,0.75);padding:1px 8px;border-radius:9px;z-index:2147483647;pointer-events:none';document.body.appendChild(b);}b.textContent=${JSON.stringify(text)};}catch(e){}})()`;
+    this.controller.runJavaScript(js).catch((): void => {});
   }
 
   private maximized: boolean = false;
@@ -128,10 +141,10 @@ struct Index {
             }
           })
           .onPageEnd(() => {
-            // 就绪状态采集（只读）：异常时探针 overlay 才会显示
-            const probe = `JSON.stringify({tauri: !!window.__TAURI__, bridge: !!(window.harmonyBridge&&window.harmonyBridge.invokeAsync), eng: (document.getElementById('eng-dot')||{}).className, qs: typeof quickStart, ddp: typeof window.__HARMONY__})`;
+            // 就绪状态采集（只读）+ 徽章首显（探测完成后更新内容）
+            const probe = `JSON.stringify({tauri: !!window.__TAURI__, bridge: !!(window.harmonyBridge&&window.harmonyBridge.invokeAsync), eng: (document.getElementById('eng-dot')||{}).className, qs: typeof quickStart})`;
             this.controller.runJavaScript(probe)
-              .then((v: string): void => { this.probeInfo = v; console.error('[ready] ' + v); })
+              .then((v: string): void => { this.probeInfo = v; console.error('[ready] ' + v); this.showBadge(this.coreTag); })
               .catch((e: Error): void => console.error('[js-err] ' + e.message));
           })
           // 模拟器镜像缺陷兜底：PC 形态 web_render 下触摸/鼠标不派发给 ArkWeb 内部，

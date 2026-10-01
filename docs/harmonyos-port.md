@@ -274,3 +274,25 @@ PCEMU 镜像上表现不稳，全屏后布局破碎，已回退为 resize 行为
 - `devecocli log --bundle-name`：按应用过滤日志（含 JS console/hilog）
 - `ui screenshot`、`window`、`device sqlite3`、`emulator scene/battery` 等
   按需可用；`skills list/find` 内置 43 个鸿蒙技能（崩溃分析/NAPI 内存等）
+
+## 17. 系统级端侧 AI 作为 Agent 默认执行者（2026-10-02）
+
+**分层执行策略**（`invoke_fx_sdk` 分发）：
+1. **默认 = 系统级端侧 AI**（`localChatModel` / Data Augmentation Kit，
+   API 20+；免 API key、数据本地化）——`init()` 就绪后 `chat()` 生成
+   MoonViz op 命令流，白名单提取后按桌面契约
+   `{ok, ops[], text, stopReason, mbt_b64}` 返回，前端 wasm 引擎重放
+2. 用户显式配置云端 key → OpenAI 兼容端点（chat + models）
+3. 端侧不可用 → 结构化提示「端侧模型不可用，请在设置中配置云端 API Key」
+
+**工程要点**：
+- OpenHarmony SDK 不含 Data Augmentation Kit——自建 ambient d.ts
+  （`declare module '@kit.DataAugmentationKit'`）+ **动态 import 独立模块**
+  （LocalChatBridge）：系统无该模块时加载失败被 catch 优雅降级，
+  静态 import 会让整个页面模块加载失败
+- init/chat 全部带超时护栏（init 10s / chat 30s）——模拟器无模型管理
+  应用时 init 会挂起，无护栏则 Agent 永久无响应
+- PCEMU 镜像实测 `端侧AI:不可用`（无模型管理服务，符合预期）；
+  HarmonyOS NEXT 真机自动就绪
+- 状态徽章注入 web 页面内显示（ArkUI overlay 会被同层渲染的 Web 盖住）：
+  `core 版本 · ddp:ok · 端侧AI:状态`
