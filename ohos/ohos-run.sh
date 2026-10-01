@@ -30,7 +30,7 @@ case "${1:-}" in
     echo "✓ deepDesign 壳已启动（ArkWeb 加载 rawfile/index.html）"
     ;;
   *)
-    echo "→ 启动模拟器 DeepDesignPhone（协议已置 agree）..."
-    exec devecocli emulator start DeepDesignPhone
+    echo "→ 启动 PC 模拟器 DeepDesignPC (2in1)（协议已置 agree）..."
+    exec devecocli emulator start DeepDesignPC
     ;;
 esac
