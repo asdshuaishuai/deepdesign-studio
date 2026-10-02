@@ -15,6 +15,14 @@
   // 该值：1 CSS px = 1 vp（无缩放，字体/图标原生大小）；窄于该值的窗口
   // 横向滚动（桌面浏览器自然行为），绝不压缩。
   document.documentElement.classList.add('harmony');
+  // 前端平台判定用 navigator.platform（customUserAgent 改不到它，仍是
+  // Linux → html.linux → 顶栏 — □ × 显示）。页面脚本运行前锁死为 Mac：
+  // IS_WIN/IS_LINUX 双 false，winctl 走默认 display:none。
+  try {
+    Object.defineProperty(Navigator.prototype, 'platform', {
+      value: 'MacIntel', configurable: true, writable: false
+    });
+  } catch (e) { /* 已锁定或不可覆盖，CSS 兜底 */ }
   function hideWinctl() {
     try {
       var css = document.createElement('style');

@@ -442,3 +442,38 @@ letterbox，故模拟器阶段保持 phone）。
 
 图标（§23）：AppScope（桌面图标源）+ entry 双份换 deepDesign logo，
 hvigor 资源缓存须清 entry/build。
+
+## 25. ArkTS 完整复刻通用版交互层 + 端侧小艺集成（2026-10-02）
+
+**方向纠偏（用户决策）**：不用 ArkWeb 套壳，**纯 ArkTS 复刻**通用版
+（frontend/index.html）的布局与交互，并集成端侧小艺为 Agent 默认执行者。
+
+**数据层（AppStore.ets）**：
+- 14 模板全量（TPLS/TPL_SIZE/TPL_FEATURED/TPL_GROUPS 1:1 提取），每个模板
+  种子文档对齐 wasm template op 产出（登录 7 层/注册 7 层/Web 9 层/通用骨架）
+- 元素属性模型对齐原版 inspector 字段（x/y/w/h/text/fill/color/fontSize/
+  radius/opacity/visible/align/bold）
+- 时间线条目（src/op/rev/ms/ok）对齐 tl-run；撤销栈（快照 40 步）
+- moveLayer/setStyle（显式分支，ArkTS 禁 as Record）/deleteLayer 命令留痕
+
+**交互层（Index.ets，~600 行）**：
+- 顶栏：logo/项目名▾/版本/三模式切换/新建/打开DDP/保存/⚙/小艺状态/导出DDP
+- 左栏：图层/AI组件/流程三 tab + 画板列表（选中/删除/rev）+ 图层树（点选/
+  删除）+ 底部引擎状态（绿点 8ms）
+- 画布：多画板 stage 横排 + 元素按 style 渲染 + 点选高亮 + **PanGesture
+  拖拽改位** + 缩放工具栏（25%~200%）
+- 欢迎页：精选 3 卡 + **浏览全部模板（分组展开 14 个）**
+- 右栏：属性 inspector 全字段可编辑（改→画布实时变）+ 对齐/可见性切换 +
+  Agent 追踪时间线
+- 底部：READY/⌘K/chips（点击建板）/指令条（原生 TextInput 无 IME 问题）/
+  ↩撤销/一键生成
+- 设置（bindSheet）：小艺状态/端侧说明/云端回退/引擎/DDP/core 版本
+
+**端侧小艺（AgentService.ets）**：
+- chatOnce（localChatModel）为默认执行者 → 结构化意图（模板/改文字/改色）
+  → AppStore 执行；不可用时本地解析兜底（与桌面版无 LLM 行为一致）
+- 顶栏实时显示「小艺 · 就绪/不可用（本地兜底）」
+
+**实测**：模板建板（图层 7 元素+rev 12+画布渲染）✓；指令「生成一个手机
+注册页」→ 小艺超时 → 本地兜底 → **注册页画板生成 + AGENT 时间线留痕** ✓。
+真机上小艺就绪后同一条链自动走端侧推理（无需任何配置）。

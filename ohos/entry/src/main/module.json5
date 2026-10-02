@@ -8,6 +8,7 @@
       { "name": "ohos.permission.INTERNET" }
     ],
     "deviceTypes": [
+      "2in1",
       "phone"
     ],
     "deliveryWithInstall": true,
