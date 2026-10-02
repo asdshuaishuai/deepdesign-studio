@@ -51,6 +51,13 @@ export default class EntryAbility extends UIAbility {
       } catch (e) {
         hilog.warn(DOMAIN, 'deepdesign', 'setWindowDecorVisible unsupported: %{public}s', JSON.stringify(e));
       }
+      // 右上系统三键（容器 modal 按钮）与前端顶栏 — □ × 重叠：隐藏系统三键，
+      // 前端按钮为唯一窗口控制（shim → harmonyBridge.win → Index.onWin）
+      try {
+        mainWindow.setWindowTitleButtonVisible(false, false, false);
+      } catch (e) {
+        hilog.warn(DOMAIN, 'deepdesign', 'setWindowTitleButtonVisible unsupported: %{public}s', JSON.stringify(e));
+      }
       // PC 桌面形态：直接 resize 横屏全幅（vp）。
       // 不用 maximize()——系统对本 app 按手机应用归类，maximize 会给
       // 竖屏手机比例的最大化窗口（1260x2720 + 0.589 缩放），画面竖条居中。

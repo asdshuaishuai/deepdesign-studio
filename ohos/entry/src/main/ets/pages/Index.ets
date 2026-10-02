@@ -155,10 +155,18 @@ struct Index {
     } else if (action === 'maximize') {
       // 前端顶栏 □ 按钮：自由窗口最大化 ↔ 还原（系统语义，不碎裂）
       this.maximized = !this.maximized;
+      // 兼容容器（Mode=102）钳制一切窗口尺寸 API（resize/maximize/
+      // setFullScreen/layoutFullScreen 均无效）——web 层 Fullscreen API 触发
+      // 容器重排（1.0 缩放原大清晰）；退出时 exitFullscreen + resize 尝试恢复
       if (this.maximized) {
-        w.resize(1620, 1080).catch((): void => {});  // 横屏全幅（vp）
+        this.controller.runJavaScript(
+          '(function(){try{document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen()}catch(e){}})()'
+        ).catch((): void => {});
       } else {
-        w.resize(1200, 800).catch((): void => {});
+        this.controller.runJavaScript(
+          '(function(){try{document.exitFullscreen&&document.fullscreenElement&&document.exitFullscreen()}catch(e){}})()'
+        ).catch((): void => {});
+        w.resize(1620, 1080).catch((): void => {});
       }
     } else if (action.startsWith('title:')) {
       // 标题由前端 document.title 自管，原生侧无需处理

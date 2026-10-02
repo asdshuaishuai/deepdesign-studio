@@ -409,3 +409,21 @@ letterbox，故模拟器阶段保持 phone）。
 
 **验证**：横屏窗口、三栏完整、文字图标清晰、点模板卡建板 +
 画布渲染 + 命令流记录全部正常。
+
+## 23. 三键重叠/最大化/图标三项修复（2026-10-02）
+
+1. **右上角重叠**：系统容器三键（EnhanceMaximize/Minimize）与前端顶栏
+   — □ × 重叠——`setWindowDecorVisible(false)` 只藏装饰条，
+   `setWindowTitleButtonVisible(false, false, false)` 才是三键开关。
+   隐藏后前端按钮为唯一窗口控制（UI 与桌面版一致）。
+2. **最大化**：兼容容器（Mode=102）钳制一切窗口尺寸 API（resize/
+   maximize/setFullScreen/layoutFullScreen 全无效）。改 **web 层
+   Fullscreen API**：□ 触发 requestFullscreen → 容器重排
+   （0.589 缩放 → 1.0 原大清晰）；退出时 exitFullscreen + resize 尝试。
+   真机 PC 无容器钳制，deviceTypes 加 2in1 即原生最大化。
+3. **图标**：模板 1×1 占位图全套替换——前端 favicon（64×64 logo）
+   → entry + AppScope 的 startIcon/foreground（6076B），background
+   生成 #1c1e22 深色 1×1。注意 AppScope/resources/base/media 才是
+   桌面图标来源；hvigor 有资源缓存，改图标须 rm -rf entry/build。
+
+**验证**：容器三键 0 残留 ✓ 前端 — □ × 唯一显示 ✓ HAP 内图标 6076B ✓
