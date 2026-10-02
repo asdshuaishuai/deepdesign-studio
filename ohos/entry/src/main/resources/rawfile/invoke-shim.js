@@ -14,6 +14,22 @@
   // vp 宽写入 __DD_VIEWPORT_W__（shim 注入前替换占位符），viewport 固定为
   // 该值：1 CSS px = 1 vp（无缩放，字体/图标原生大小）；窄于该值的窗口
   // 横向滚动（桌面浏览器自然行为），绝不压缩。
+  document.documentElement.classList.add('harmony');
+  function hideWinctl() {
+    try {
+      var css = document.createElement('style');
+      // 系统标题栏负责窗口控制——前端顶栏 — □ × 隐藏（仅鸿蒙）。
+      // 双保险：UA 已不含 Linux/Win 标识（IS_LINUX/IS_WIN=false，
+      // winctl 默认 display:none），此 CSS 兜底。
+      css.textContent = 'html.harmony .winctl{display:none!important}';
+      (document.head || document.documentElement).appendChild(css);
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', hideWinctl);
+  } else {
+    hideWinctl();
+  }
   try {
     var w = window.__DD_VIEWPORT_W__ || 960;
     var m = document.createElement('meta');

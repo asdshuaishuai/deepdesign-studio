@@ -44,20 +44,8 @@ export default class EntryAbility extends UIAbility {
       }
       // 2in1/PC 桌面形态：窗口 1360x900（与桌面版一致），最小 980x640
       const mainWindow = windowStage.getMainWindowSync();
-      // 前端顶栏自带窗口控制（shim → harmonyBridge.win → Index.onWin），
-      // 系统标题栏去掉避免双层；容错：个别形态不支持 decor 隐藏时保留系统栏
-      try {
-        mainWindow.setWindowDecorVisible(false);
-      } catch (e) {
-        hilog.warn(DOMAIN, 'deepdesign', 'setWindowDecorVisible unsupported: %{public}s', JSON.stringify(e));
-      }
-      // 右上系统三键（容器 modal 按钮）与前端顶栏 — □ × 重叠：隐藏系统三键，
-      // 前端按钮为唯一窗口控制（shim → harmonyBridge.win → Index.onWin）
-      try {
-        mainWindow.setWindowTitleButtonVisible(false, false, false);
-      } catch (e) {
-        hilog.warn(DOMAIN, 'deepdesign', 'setWindowTitleButtonVisible unsupported: %{public}s', JSON.stringify(e));
-      }
+      // 使用系统标题栏（原生三键 + 拖动 + 双击最大化）；前端顶栏的
+      // — □ × 由 shim 注入 CSS 隐藏（html.harmony .winctl{display:none}）
       // PC 桌面形态：直接 resize 横屏全幅（vp）。
       // 不用 maximize()——系统对本 app 按手机应用归类，maximize 会给
       // 竖屏手机比例的最大化窗口（1260x2720 + 0.589 缩放），画面竖条居中。

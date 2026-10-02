@@ -427,3 +427,18 @@ letterbox，故模拟器阶段保持 phone）。
    桌面图标来源；hvigor 有资源缓存，改图标须 rm -rf entry/build。
 
 **验证**：容器三键 0 残留 ✓ 前端 — □ × 唯一显示 ✓ HAP 内图标 6076B ✓
+
+## 24. 方案反转：系统标题栏 + 隐藏前端三键（2026-10-02，用户决策）
+
+弃「隐藏系统栏保前端按钮」方案，改为：**系统标题栏负责窗口控制**
+（原生三键/拖动/双击最大化，兼容容器下行为最可靠），**前端顶栏
+— □ × 在鸿蒙隐藏**（原版文件不动）：
+- EntryAbility 不再调 setWindowDecorVisible(false)/
+  setWindowTitleButtonVisible(false...)——系统标题栏恢复默认
+- UA 用 Mac 桌面标识：前端 IS_WIN/IS_LINUX 均 false → 不加
+  html.win/linux class → .winctl 走默认 display:none（零 CSS 依赖）
+- shim 注入 `html.harmony .winctl{display:none!important}` 兜底
+  （DOMContentLoaded 后插 head——documentStart 时 head 未建会丢）
+
+图标（§23）：AppScope（桌面图标源）+ entry 双份换 deepDesign logo，
+hvigor 资源缓存须清 entry/build。

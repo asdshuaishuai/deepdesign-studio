@@ -182,7 +182,7 @@ struct Index {
           .domStorageAccess(true)
           .fileAccess(true)
           // PC 形态：桌面 UA（避免 ArkWeb 按 mobile 视口 980px 布局再整体缩小）
-          .userAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 deepDesignPC')
+          .userAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 deepDesignPC')
           .zoomAccess(false)
           .overviewModeAccess(true)
           .darkMode(WebDarkMode.Auto)
