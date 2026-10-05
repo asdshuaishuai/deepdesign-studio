@@ -11,11 +11,15 @@
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# 打包线版本（deb/AppImage/玲珑产物命名）取自 linglong.yaml，刻意保持纯数字四段，
-# 与 semver-prerelease 显示版本（0.4.0-beta）分轨："-beta" 进 deb revision 会让
-# 0.4.0-beta > 0.4.0，逆转后续正式版的升级序；数字段 0.4.0.0 保证升级序单调。
-VERSION="$(sed -n 's/^  version: "\(.*\)"$/\1/p' "$ROOT/linglong/linglong.yaml" | head -1)"
-VERSION="${VERSION:-0.4.0.0}"
+# 打包线版本取自 linglong.yaml，全仓库统一为 0.4.0-beta（用户决策，覆盖此前的纯数字分轨）。
+# 兼容链已逐环实证：Cargo manifest ✓ / tauri NSIS（剥 prerelease 成数字 VIProductVersion）✓ /
+# DMG（原样写 plist）✓ / dpkg ✓ / linyaps semver（prerelease 允许字母与 -，官方测试含
+# alpha-3.Beta 用例）✓。升级序代价已实证并接受：dpkg 语义 0.4.0-beta > 0.4.0，将来发
+# 正式版时避开裸 0.4.0——用 0.4.0.1 / 0.4.0+0 / 0.4.1+（实测均 > 0.4.0-beta）即可平滑升级。
+# 正则同时认带引号/不带引号两种 yaml 写法——此前只认带引号，而 yaml 实际无引号，
+# 提取一直静默落空靠 fallback 兜底（两值恰好相同才没暴露）
+VERSION="$(sed -n -e 's/^  version: "\(.*\)"$/\1/p' -e 's/^  version: \([0-9][^ "]*\)$/\1/p' "$ROOT/linglong/linglong.yaml" | head -1)"
+VERSION="${VERSION:-0.4.0-beta}"
 ID="com.deepcode.deepdesign"
 PKGNAME="deepdesign-studio"
 APPNAME="deepDesign-Studio-${VERSION}-x86_64"

@@ -9,13 +9,13 @@ cd "$(dirname "$0")"
 ll-builder build
 
 # 2. 导出 .layer（可 ll-cli install 分发）
-ll-builder export ../com.deepcode.deepdesign_0.4.0.0_x86_64.layer
-echo "产物: com.deepcode.deepdesign_0.4.0.0_x86_64.layer"
+ll-builder export ../com.deepcode.deepdesign_0.4.0-beta_x86_64.layer
+echo "产物: com.deepcode.deepdesign_0.4.0-beta_x86_64.layer"
 
 # 3. （可选）导出 .uab 免安装分发包
-# ll-builder export --uab ../com.deepcode.deepdesign_0.4.0.0_x86_64.uab
+# ll-builder export --uab ../com.deepcode.deepdesign_0.4.0-beta_x86_64.uab
 
 # 4. 本地验证
 # ll-builder run bash   # 进容器检查 /opt/apps/com.deepcode.deepdesign/files
-# ll-cli install ../com.deepcode.deepdesign_0.4.0.0_x86_64.layer
+# ll-cli install ../com.deepcode.deepdesign_0.4.0-beta_x86_64.layer
 # ll-cli run com.deepcode.deepdesign

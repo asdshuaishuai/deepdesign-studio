@@ -4,12 +4,12 @@
 
 | 文件 | 大小 | 说明 |
 |------|------|------|
-| `com.deepcode.deepdesign_0.4.0.0_x86_64_binary.layer` | 147MB | 玲珑应用层（erofs + linglong 头）|
-| `com.deepcode.deepdesign_0.4.0.0_x86_64_develop.layer` | 2.7MB | develop 层 |
-| `deepdesign-studio_0.4.0.0_amd64.deb` | 65.8MB | deb 包（/opt/apps 布局，可 ll-pica 转换/直接安装）|
-| `deepDesign-Studio-0.4.0.0-x86_64.AppImage` | 82.6MB | 免安装 AppImage |
+| `com.deepcode.deepdesign_0.4.0-beta_x86_64_binary.layer` | 147MB | 玲珑应用层（erofs + linglong 头）|
+| `com.deepcode.deepdesign_0.4.0-beta_x86_64_develop.layer` | 2.7MB | develop 层 |
+| `deepdesign-studio_0.4.0-beta_amd64.deb` | 65.8MB | deb 包（/opt/apps 布局，可 ll-pica 转换/直接安装）|
+| `deepDesign-Studio-0.4.0-beta-x86_64.AppImage` | 82.6MB | 免安装 AppImage |
 
-layer 安装：`ll-cli install com.deepcode.deepdesign_0.4.0.0_x86_64_binary.layer`，
+layer 安装：`ll-cli install com.deepcode.deepdesign_0.4.0-beta_x86_64_binary.layer`，
 运行：`ll-cli run com.deepcode.deepdesign`。
 
 ## 目录结构
@@ -40,7 +40,7 @@ cd linglong
 
 ```bash
 mkdir -p /tmp/pica/package/com.deepcode.deepdesign/sources
-cp dist/deepdesign-studio_0.4.0.0_amd64.deb /tmp/pica/package/com.deepcode.deepdesign/sources/
+cp dist/deepdesign-studio_0.4.0-beta_amd64.deb /tmp/pica/package/com.deepcode.deepdesign/sources/
 cd sources && dpkg-deb -x *.deb deepdesign-studio/   # pica 预期主 deb 预解包
 cat > /tmp/pica/package.yaml << 'YAML'
 runtime:
@@ -54,7 +54,7 @@ file:
     - type: local
       id: com.deepcode.deepdesign
       name: deepdesign-studio
-      ref: /tmp/pica/package/com.deepcode.deepdesign/sources/deepdesign-studio_0.4.0.0_amd64.deb
+      ref: /tmp/pica/package/com.deepcode.deepdesign/sources/deepdesign-studio_0.4.0-beta_amd64.deb
 YAML
 ll-pica convert -c /tmp/pica/package.yaml -w /tmp/pica --exportFile layer
 ll-builder build && ll-builder export -z lz4 --layer
