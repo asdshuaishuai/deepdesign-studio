@@ -84,6 +84,7 @@ interface FxResult {
   content: string;
   reasoning: string;
   usage: Object | null;
+  message?: Record<string, Object>;   // M3.6.4：原始 assistant 消息
 }
 
 interface FxError {
@@ -490,12 +491,18 @@ export class CommandDispatch {
         return;
       }
       const url = baseUrl + '/chat/completions';
-      const body = JSON.stringify({
-        model: payload['model'] ?? '',
-        messages: payload['messages'] ?? [],
-        stream: false,
-        max_tokens: Number(payload['maxTokens'] ?? 4096)
-      });
+      // M3.6.4 agent loop：tools/tool_choice 透传（此前被丢弃——单轮 chat 专用形态）
+      const bodyObj: Record<string, Object> = {
+        'model': String(payload['model'] ?? ''),
+        'messages': (payload['messages'] ?? []) as Object,
+        'stream': false,
+        'max_tokens': Number(payload['maxTokens'] ?? 4096)
+      };
+      if (payload['tools'] !== undefined && payload['tools'] !== null) {
+        bodyObj['tools'] = payload['tools'];
+        bodyObj['tool_choice'] = payload['toolChoice'] ?? 'auto';
+      }
+      const body = JSON.stringify(bodyObj);
       const req = http.createHttp();
       req.request(url, {
         method: http.RequestMethod.POST,
@@ -509,13 +516,20 @@ export class CommandDispatch {
         connectTimeout: 30000
       }).then((resp: http.HttpResponse): void => {
         try {
+          // review-m37 R12：4xx/5xx 此前被当空回复静默走本地兜底（坏 key/欠费不可见）
+          if (resp.responseCode >= 400) {
+            const errOut: FxError = { error: `http_${resp.responseCode}: ${String(resp.result).slice(0, 160)}` };
+            resolve(errOut);
+            return;
+          }
           const j = JSON.parse(String(resp.result)) as Record<string, Object>;
           const choices = (j['choices'] as Array<Record<string, Object>>) ?? [];
-          const msg = choices[0]?.['message'] as Record<string, string> | undefined;
+          const msg = choices[0]?.['message'] as Record<string, Object> | undefined;
           const out: FxResult = {
-            content: msg?.['content'] ?? '',
-            reasoning: msg?.['reasoning_content'] ?? '',
-            usage: j['usage'] ?? null
+            content: String(msg?.['content'] ?? ''),
+            reasoning: String(msg?.['reasoning_content'] ?? ''),
+            usage: j['usage'] ?? null,
+            message: msg   // M3.6.4：完整 assistant 消息（含 tool_calls）供 agent loop 回填
           };
           resolve(out);
         } finally {

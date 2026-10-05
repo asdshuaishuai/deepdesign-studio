@@ -1697,7 +1697,8 @@ struct Index {
       },
       (ev: AgentStep): void => { this.pushStep(ev); },
       { thinkingLevel: this.cfgThinking, maxSteps: this.cfgMaxSteps },   // batch-3 透传（audit-modal-6）
-      (): string => `画布 ${appStore.boardCount()} 板 · 当前 ${this.curBoard()?.name ?? '无'} · ${this.curBoard()?.layers.length ?? 0} 层`   // M3.6.4 审查轮新鲜画布态（执行后重取）
+      (): string => `画布 ${appStore.boardCount()} 板 · 当前 ${this.curBoard()?.name ?? '无'} · ${this.curBoard()?.layers.length ?? 0} 层`,   // M3.6.4 审查轮新鲜画布态（执行后重取）
+      (): string => appStore.toCanonicalText()   // M3.6.4 loop read_mbt 工具：canonical 全文（6000 字截断在 loop 侧）
     ).then((r) => {
       this.agentMsg = r.reply;
       if (r.ok && !r.executed) {

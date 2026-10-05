@@ -41,6 +41,7 @@ export interface AgentStep {
 interface FxOutcome {
   content?: string;
   error?: string;
+  message?: Record<string, Object>;   // M3.6.4：原始 assistant 消息（含 tool_calls）
 }
 
 /** run 调优透传（batch-3，audit-modal-6）：设置卡思考等级/步数上限原样带入。
@@ -87,7 +88,8 @@ export class AgentService {
    */
   async run(instruction: string, mbtSummary: string, applyTemplate: (tid: string) => boolean,
     applyText: (text: string) => boolean, applyColor: (color: string) => boolean,
-    onStep?: (ev: AgentStep) => void, opts?: RunTuning, mbtNow?: () => string): Promise<AgentOutcome> {
+    onStep?: (ev: AgentStep) => void, opts?: RunTuning, mbtNow?: () => string,
+    readMbt?: () => string): Promise<AgentOutcome> {
     const t0 = Date.now();
     const step = (kind: string, label: string, detail: string, ok: boolean): void => {
       if (onStep) onStep({ kind: kind, label: label, detail: detail, ms: Date.now() - t0, ok: ok });
@@ -163,21 +165,14 @@ export class AgentService {
       } catch (e) { /* 端侧不可用 → 本地兜底 */ }
       step('tool_end', '小艺不可用', '本地解析兜底', false);
     } else if (conf.apiKey.trim() !== '' && this.dispatch !== null) {
-      // 2) 选定执行者：云端 OpenAI 兼容（有 key 且 dispatch 已挂；RunTuning 透传留痕仅云端）
-      if (opts) {
-        step('plan', `调优 思考=${opts.thinkingLevel} · 步数=${opts.maxSteps}`, '', true);
-      }
-      step('tool_start', `云端请求 ${conf.model}`, conf.baseUrl, true);
+      // 2) 选定执行者：云端 OpenAI 兼容（有 key 且 dispatch 已挂）——M3.6.4 起【真 agent
+      // loop】：多轮 tool-calling（moonviz_op/read_mbt），模型自规划 op 序列、看结果迭代，
+      // 收尾审查注入轮内（桌面 agent.rs 同构）；工具面不可用/网络失败诚实降级单轮意图链。
       try {
-        const v = await this.cloudChat(instruction, mbtSummary, conf);
-        if (v.trim().length > 0) {
-          step('tool_end', '云端回复', v.trim().slice(0, 80), true);
-          const outcome = executeReply(v.trim(), '云端');
-          return await this.maybeReview(outcome, instruction, applyTemplate, applyText, applyColor, onStep, mbtNow);
-        }
-        step('tool_end', '云端无回复', '本地解析兜底', false);
+        return await this.agentLoop(instruction, conf, opts ?? null, onStep, readMbt,
+          applyTemplate, applyText, applyColor);
       } catch (e) {
-        step('tool_end', '云端失败', (e as Error).message, false);
+        step('tool_end', '工具循环不可用，降级单轮意图解析', (e as Error).message.slice(0, 60), false);
       }
     } else {
       // 复审 finding-1 收口：无 key 不发起 dispatch（Dispatch 隐性改道已删），轨迹如实标注
@@ -211,6 +206,160 @@ export class AgentService {
     }
     step('failed', '失败', '无可执行意图', false);
     return { ok: false, reply: '试试更具体的指令：生成手机登录页 / 生成注册页 / 把标题改成蓝色，或输入命令行（如 template web_login b1 1280 800）', executed: false, ops: 0 };
+  }
+
+  /**
+   * 真 agent loop（M3.6.4，桌面 agent.rs run() 的鸿蒙同构）：多轮 OpenAI 兼容
+   * tool-calling——messages 累积，assistant(tool_calls) 原样回填、逐 op 经 lineExec
+   * （引擎人类门优先）执行并以 role:'tool' 回填结果；无 tool_calls 时按桌面语义
+   * 先注入收尾审查轮（reviewDone 单次）再收报告；澄清=纯文本回复（无工具调用）。
+   * 轮次预算 12（登记偏离：桌面 maxSteps 200-2000 为 Rust 循环步、每步引擎直调；
+   * 鸿蒙每步一次 HTTP 往返，12 轮为设备延迟上限，RunTuning.maxSteps 暂不直接消费）。
+   * 任何一轮 HTTP/协议失败抛错 → run() 诚实降级单轮意图链。
+   */
+  private async agentLoop(instruction: string, conf: AiConf, opts: RunTuning | null,
+    onStep?: (ev: AgentStep) => void, readMbt?: () => string,
+    applyTemplate?: (tid: string) => boolean, applyText?: (text: string) => boolean,
+    applyColor?: (color: string) => boolean): Promise<AgentOutcome> {
+    const t0 = Date.now();
+    const step = (kind: string, label: string, detail: string, ok: boolean): void => {
+      if (onStep) onStep({ kind: kind, label: label, detail: detail, ms: Date.now() - t0, ok: ok });
+    };
+    step('plan', '计划', instruction, true);
+    if (opts !== null) {
+      step('plan', `调优 思考=${opts.thinkingLevel} · 步数=${opts.maxSteps}`, '', true);
+    }
+    // ArkTS：对象字面量必须逐层显式 Record 标注（arkts-no-untyped-obj-literals）
+    const opProp: Record<string, Object> = {
+      'type': 'string', 'description': 'One operation string, e.g. "set login title color=#007aff"'
+    };
+    const opProps: Record<string, Object> = { 'op': opProp };
+    const mvRequired: Array<string> = ['op'];
+    const mvParams: Record<string, Object> = { 'type': 'object', 'properties': opProps, 'required': mvRequired };
+    const mvFn: Record<string, Object> = {
+      'name': 'moonviz_op',
+      'description': 'Execute one MoonViz design operation (validated by the engine gates, committed to the canonical document). ' +
+        'Ops (one command line per call): "template <tid>" create an artboard from a preset; "create <id> <w> <h>" blank artboard; ' +
+        '"text <board> <node> <text>" set or add text; "set <board> <node> <key>=<value>" style keys color/fontSize/bold/opacity/radius; ' +
+        '"move <board> <node> <dx> <dy>"; "delete <board> <node>"; "delete-artboard <board>"; "flow <fromBoard>.<node> <toBoard>" wire interaction.',
+      'parameters': mvParams
+    };
+    const mvTool: Record<string, Object> = { 'type': 'function', 'function': mvFn };
+    const noProps: Record<string, Object> = {};
+    const noRequired: Array<string> = [];
+    const rmParams: Record<string, Object> = { 'type': 'object', 'properties': noProps, 'required': noRequired };
+    const rmFn: Record<string, Object> = {
+      'name': 'read_mbt',
+      'description': 'Read the current canonical document source (artboards, node ids, flows) — call when unsure about ids.',
+      'parameters': rmParams
+    };
+    const rmTool: Record<string, Object> = { 'type': 'function', 'function': rmFn };
+    const tools: Array<Object> = [mvTool, rmTool];
+    const messages: Array<Record<string, Object>> = [
+      { 'role': 'system', 'content': LOOP_SYS },
+      { 'role': 'user', 'content': instruction }
+    ];
+    const ROUNDS = 12;
+    let ops = 0;
+    let reviewDone = false;
+    for (let round = 0; round < ROUNDS; round++) {
+      step('tool_start', `云端请求 ${conf.model} · 第 ${round + 1}/${ROUNDS} 轮`, conf.baseUrl, true);
+      const v = await this.loopChat(messages, tools, conf);
+      if (typeof v.error === 'string' && v.error !== '') {
+        throw new Error(v.error);
+      }
+      const msg = (v.message ?? {}) as Record<string, Object>;
+      const tcs = (msg['tool_calls'] ?? []) as Array<Record<string, Object>>;
+      const content = typeof msg['content'] === 'string' ? msg['content'] as string : '';
+      if (tcs.length === 0) {
+        // 无工具调用：审查注入点（桌面 review 语义，单次）或收报告
+        if (!reviewDone && ops > 0) {
+          reviewDone = true;
+          step('review', '🔎 收尾审查', '需求完整度 · 连线完整度 · 综合修复', true);
+          if (content.trim() !== '') {
+            const am: Record<string, Object> = { 'role': 'assistant', 'content': content };
+          messages.push(am);
+          }
+          const rm: Record<string, Object> = { 'role': 'user', 'content': REVIEW_PROMPT(instruction) };
+          messages.push(rm);
+          continue;
+        }
+        if (content.trim() === '') break;
+        step('tool_end', '云端回复', content.trim().slice(0, 80), true);
+        if (ops === 0 && this.isClarify(content)) {
+          step('tool_end', '澄清', '模型请求补充信息', true);
+          return { ok: true, reply: content, executed: false, ops: 0 };
+        }
+        if (ops > 0) {
+          return { ok: true, reply: content.trim(), executed: true, ops: ops };
+        }
+        // 0 op 且非澄清：模型只回文本没干活 → 兜底意图链（模板/改色/改文字）
+        if (applyTemplate !== undefined && applyText !== undefined && applyColor !== undefined) {
+          const r = this.reviewExec(content, applyTemplate, applyText, applyColor);
+          if (r.executed) {
+            step('tool_end', '意图落地', r.reply, true);
+            return { ok: true, reply: content.trim(), executed: true, ops: r.ops };
+          }
+        }
+        return { ok: true, reply: content.trim(), executed: false, ops: 0 };
+      }
+      // assistant(tool_calls) 原样回填（wire 契约：后续 role:'tool' 需与其 id 配对）
+      messages.push(msg);
+      for (const tc of tcs) {
+        const fn = tc['function'] as Record<string, string> | undefined;
+        const name = String(fn?.['name'] ?? '');
+        const tcId = String(tc['id'] ?? `call_${round}`);
+        if (name === 'read_mbt') {
+          const doc = readMbt !== undefined ? readMbt() : '';
+          step('tool_end', 'read_mbt', `${doc.length} 字节`, true);
+          const tm: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId, 'content': doc.slice(0, 6000) };
+          messages.push(tm);
+          continue;
+        }
+        let op = '';
+        try {
+          const argv = JSON.parse(String(fn?.['arguments'] ?? '{}')) as Record<string, string>;
+          op = String(argv['op'] ?? '');
+        } catch (e) { op = ''; }
+        if (op === '') {
+          const em: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId, 'content': '{"ok":false,"error":"empty op"}' };
+          messages.push(em);
+          continue;
+        }
+        const r = this.lineExec !== null ? this.lineExec(op) : null;
+        const ok = r !== null && r.ok;
+        if (ok) ops++;
+        step('tool_end', `${ok ? '✓' : '✗'} ${op.slice(0, 44)}`, r !== null ? r.note : '执行器未注入', ok);
+        const note = (r !== null ? r.note : 'executor missing').replace(/"/g, "'");
+        const tr: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId,
+          'content': `{"ok":${ok ? 'true' : 'false'},"note":"${note}"}` };
+        messages.push(tr);
+      }
+    }
+    if (ops > 0) {
+      return { ok: true, reply: `已完成 ${ops} 项操作（轮次预算用尽）`, executed: true, ops: ops };
+    }
+    step('failed', '失败', '轮次预算内无可执行操作', false);
+    return { ok: false, reply: '模型未给出可执行操作', executed: false, ops: 0 };
+  }
+
+  /** loop 专用 chat（messages/tools 直传 Dispatch invoke_fx_sdk；错误以 error 字段带回）。 */
+  private async loopChat(messages: Array<Record<string, Object>>, tools: Array<Object>,
+    conf: AiConf): Promise<FxOutcome> {
+    if (this.dispatch === null) return { error: 'dispatch 未注入' };
+    const payload: Record<string, Object> = {
+      'mode': 'chat',
+      'baseUrl': conf.baseUrl,
+      'model': conf.model,
+      'messages': messages as Object,
+      'maxTokens': 2048,
+      'tools': tools as Object,
+      'toolChoice': 'auto'
+    };
+    const args: Record<string, Object> = { 'apiKey': conf.apiKey, 'payload': JSON.stringify(payload) };
+    const v: Object | null = await this.dispatch.dispatch('invoke_fx_sdk', args);
+    if (v === null) return { error: 'dispatch 返回空' };
+    return v as FxOutcome;
   }
 
   /**
@@ -383,5 +532,24 @@ export class AgentService {
     return '';
   }
 }
+
+// agent loop 系统提示（桌面 INSTRUCTIONS 的鸿蒙凝缩版——工作流四段：澄清门/构建/
+// 检视/报告；模板清单与命令方言对齐 execCommandLine 支持面）
+const LOOP_SYS: string = 'You are the embedded design agent of deepDesign Studio (HarmonyOS), a visual prototyping editor. ' +
+  'The canvas is the canonical .mbt.md document; every moonviz_op call is validated by the engine gates and committed to it.\n' +
+  'Workflow:\n' +
+  '1. CHECK: if the request is ambiguous or missing key information, do NOT call any tool — reply with 1-3 concrete questions in Chinese, each ending with ？\n' +
+  '2. BUILD: call moonviz_op one operation at a time. Typical flow: create the artboard from a template, then add/adjust nodes (text/set/move/delete), then wire interactions with flow.\n' +
+  '3. INSPECT: call read_mbt when unsure about existing artboard/node ids.\n' +
+  '4. REPORT: when done (or after the review round), stop calling tools and reply in Chinese summarizing what was built and the interactions wired. Never ask questions in the report.\n' +
+  'Templates for "template <tid>": login, signup, login_v2, dashboard, profile, settings, list_detail, onboarding, empty_state, web_login, web_landing, web_dashboard, pc_app, adaptive_landing.';
+
+// 收尾审查注入提示（桌面 review_prompt 三段语义同构）
+const REVIEW_PROMPT: (goal: string) => string = (goal: string): string =>
+  '[收尾审查] 设计实现已完成。执行强制收尾审查——不得提问，直接用工具修复：\n' +
+  `1) 需求完整度：目标「${goal}」是否全部落实，缺项直接补建；\n` +
+  '2) 操作逻辑连线：可交互元素（按钮/链接）是否已用 flow 建立交互流，缺则补齐；\n' +
+  '3) 综合修复：布局重叠、明显对齐与配色问题。\n' +
+  '修复完成后给出简短中文报告；若无任何问题，只回复「审查通过」。';
 
 export const agentService: AgentService = new AgentService();
