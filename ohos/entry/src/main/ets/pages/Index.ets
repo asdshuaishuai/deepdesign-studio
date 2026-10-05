@@ -1696,7 +1696,8 @@ struct Index {
         return this.execCommandLine(`set ${b.id} ${l.id} color ${color}`).ok;
       },
       (ev: AgentStep): void => { this.pushStep(ev); },
-      { thinkingLevel: this.cfgThinking, maxSteps: this.cfgMaxSteps }   // batch-3 透传（audit-modal-6）
+      { thinkingLevel: this.cfgThinking, maxSteps: this.cfgMaxSteps },   // batch-3 透传（audit-modal-6）
+      (): string => `画布 ${appStore.boardCount()} 板 · 当前 ${this.curBoard()?.name ?? '无'} · ${this.curBoard()?.layers.length ?? 0} 层`   // M3.6.4 审查轮新鲜画布态（执行后重取）
     ).then((r) => {
       this.agentMsg = r.reply;
       if (r.ok && !r.executed) {
@@ -6065,6 +6066,26 @@ struct Index {
    * （>100 字折叠、点击行展开全文）；tool_start/end 常规行（detail>150 字同折叠）；
    * done 分流 tlFinal 绿胶囊（audit-right-11）；failed 红染行保留。
    */
+  /** M3.6.4 轨迹三段分桶：plan=计划（指令/计划/调优）、exec=执行（请求/回复/模板/
+   * 命令流/澄清）、review=审查修复、tail=done/failed 尾卡。 */
+  private stepsOfPhase(p: string): AgentStep[] {
+    return this.agentSteps.filter((s: AgentStep): boolean => {
+      if (p === 'plan') return s.kind === 'plan' || s.kind === 'instruction';
+      if (p === 'exec') return s.kind === 'tool_start' || s.kind === 'tool_end';
+      if (p === 'review') return s.kind === 'review';
+      return s.kind === 'done' || s.kind === 'failed';
+    });
+  }
+
+  /** 段头：小标签+发丝线（模块边界视觉锚，主题切换不清问题兜底）。 */
+  @Builder
+  phaseHead(label: string, color: ResourceColor) {
+    Row({ space: 8 }) {
+      Text(label).fontSize(this.fp(F_TRACK_MID)).fontWeight(700).fontColor(color).letterSpacing(1.5)
+      Divider().layoutWeight(1).strokeWidth(1).color(this.T().line)
+    }.width('100%').margin({ top: 1, bottom: 1 })
+  }
+
   @Builder
   stepRow(s: AgentStep) {
     if (s.kind === 'done') {
@@ -6073,6 +6094,7 @@ struct Index {
       Column() {
         Row({ space: 7 }) {
           Text(s.kind === 'instruction' ? '▸' :
+            s.kind === 'review' ? '🔎' :
             s.kind === 'tool_start' ? '⏳' : (s.ok ? '✓' : '✗'))
             .fontSize(this.fp(F_TRACK_MID))   // batch-5：图标档（复审修正：现值 10，挂 F_TRACK_MID 防误挂 F_TRACK_BODY 致宽窗 10→10.5 漂移）
             .fontColor(s.ok ? this.T().accTx : this.T().danger)
@@ -6080,7 +6102,7 @@ struct Index {
           Column({ space: 1 }) {
             Text(s.kind === 'instruction' ? this.foldText(s.label, 100) : s.label)
               .fontSize(this.fp(F_TRACK_BODY))   // batch-5：步骤 label（§3.3，10.5↔9.5）
-              .fontWeight(s.kind === 'failed' ? 700 : 500)
+              .fontWeight(s.kind === 'failed' ? 700 : (s.kind === 'review' ? 600 : 500))
               .fontColor(s.kind === 'failed' ? this.T().danger : this.T().tx)
               .maxLines(1)
             if (s.detail !== '') {
@@ -6106,7 +6128,8 @@ struct Index {
       }.width('100%').padding({ left: 8, right: 8, top: 5, bottom: 5 })
       .borderRadius(8)
       .backgroundColor(s.kind === 'failed' ? this.T().dangerSoft : this.T().card)
-      .border({ width: 1, color: s.kind === 'failed' ? this.T().dangerBorder : this.T().line })
+      .border({ width: 1, color: s.kind === 'failed' ? this.T().dangerBorder :
+        (s.kind === 'review' ? this.T().accTx : this.T().line) })   // M3.6.4：审查卡蓝边与执行卡区分
       .onClick(() => {
         const k = s.kind + s.label + String(s.ms) + s.detail;
         this.expandedStep = this.expandedStep === k ? '' : k;
@@ -7708,10 +7731,41 @@ struct Index {
                     })
                 }.width('100%').margin({ bottom: 6 })
                 if (this.agentSteps.length > 0) {
-                  Column({ space: 5 }) {
-                    ForEach(this.agentSteps, (s: AgentStep) => {
-                      this.stepRow(s)
-                    }, (s: AgentStep) => s.kind + s.label + String(s.ms) + s.detail)
+                  // M3.6.4 三段分组（对齐桌面 计划/执行/收尾审查三段语义）：段头=小标签
+                  // +发丝线，空段整段不渲染；done/failed 绿胶囊/红染留段外作尾卡——
+                  // 主题切换后卡片边界不清（用户截图点名）由段头+分组间距双重兜底
+                  Column({ space: 7 }) {
+                    if (this.stepsOfPhase('plan').length > 0) {
+                      Column({ space: 5 }) {
+                        this.phaseHead('计划', this.T().purple)
+                        ForEach(this.stepsOfPhase('plan'), (s: AgentStep) => {
+                          this.stepRow(s)
+                        }, (s: AgentStep) => s.kind + s.label + String(s.ms) + s.detail)
+                      }.width('100%')
+                    }
+                    if (this.stepsOfPhase('exec').length > 0) {
+                      Column({ space: 5 }) {
+                        this.phaseHead('执行', this.T().accTx)
+                        ForEach(this.stepsOfPhase('exec'), (s: AgentStep) => {
+                          this.stepRow(s)
+                        }, (s: AgentStep) => s.kind + s.label + String(s.ms) + s.detail)
+                      }.width('100%')
+                    }
+                    if (this.stepsOfPhase('review').length > 0) {
+                      Column({ space: 5 }) {
+                        this.phaseHead('审查修复', this.T().okText)
+                        ForEach(this.stepsOfPhase('review'), (s: AgentStep) => {
+                          this.stepRow(s)
+                        }, (s: AgentStep) => s.kind + s.label + String(s.ms) + s.detail)
+                      }.width('100%')
+                    }
+                    if (this.stepsOfPhase('tail').length > 0) {
+                      Column({ space: 5 }) {
+                        ForEach(this.stepsOfPhase('tail'), (s: AgentStep) => {
+                          this.stepRow(s)
+                        }, (s: AgentStep) => s.kind + s.label + String(s.ms) + s.detail)
+                      }.width('100%')
+                    }
                   }.width('100%').margin({ bottom: 10 })
                 }
                 if (this.timeline.length === 0 && this.agentSteps.length === 0) {

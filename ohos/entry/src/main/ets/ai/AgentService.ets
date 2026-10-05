@@ -87,7 +87,7 @@ export class AgentService {
    */
   async run(instruction: string, mbtSummary: string, applyTemplate: (tid: string) => boolean,
     applyText: (text: string) => boolean, applyColor: (color: string) => boolean,
-    onStep?: (ev: AgentStep) => void, opts?: RunTuning): Promise<AgentOutcome> {
+    onStep?: (ev: AgentStep) => void, opts?: RunTuning, mbtNow?: () => string): Promise<AgentOutcome> {
     const t0 = Date.now();
     const step = (kind: string, label: string, detail: string, ok: boolean): void => {
       if (onStep) onStep({ kind: kind, label: label, detail: detail, ms: Date.now() - t0, ok: ok });
@@ -157,7 +157,8 @@ export class AgentService {
         const reply = await chatOnce(instruction, mbtSummary);
         if (reply !== null && reply.trim().length > 0) {
           step('tool_end', '小艺回复', reply.trim().slice(0, 80), true);
-          return executeReply(reply.trim(), '小艺');
+          const outcome = executeReply(reply.trim(), '小艺');
+          return await this.maybeReview(outcome, instruction, applyTemplate, applyText, applyColor, onStep, mbtNow);
         }
       } catch (e) { /* 端侧不可用 → 本地兜底 */ }
       step('tool_end', '小艺不可用', '本地解析兜底', false);
@@ -171,7 +172,8 @@ export class AgentService {
         const v = await this.cloudChat(instruction, mbtSummary, conf);
         if (v.trim().length > 0) {
           step('tool_end', '云端回复', v.trim().slice(0, 80), true);
-          return executeReply(v.trim(), '云端');
+          const outcome = executeReply(v.trim(), '云端');
+          return await this.maybeReview(outcome, instruction, applyTemplate, applyText, applyColor, onStep, mbtNow);
         }
         step('tool_end', '云端无回复', '本地解析兜底', false);
       } catch (e) {
@@ -209,6 +211,87 @@ export class AgentService {
     }
     step('failed', '失败', '无可执行意图', false);
     return { ok: false, reply: '试试更具体的指令：生成手机登录页 / 生成注册页 / 把标题改成蓝色，或输入命令行（如 template web_login b1 1280 800）', executed: false, ops: 0 };
+  }
+
+  /**
+   * 收尾审查轮（M3.6.4，对齐桌面 agent.rs 收尾审查层/moonviz#20 三段语义：需求完整度/
+   * 操作逻辑连线/综合修复）：主轮执行成功（executed 且 ops>0）才发起；同通道单轮、
+   * 指令明令「不得提问」，澄清形回复一律吞为「审查通过」；审查回复复用命令流/模板/
+   * 改色/改文字执行链（修复 op 直接落画布并计入 ops）。本地兜底轮不审查（无 LLM 可用，
+   * 登记偏离：桌面为 LLM 循环内注入层，鸿蒙为单轮附加、不消耗 RunTuning.maxSteps）。
+   * 审查失败不改变主轮结果（诚实降级为「审查跳过」）。
+   */
+  private async maybeReview(outcome: AgentOutcome, instruction: string,
+    applyTemplate: (tid: string) => boolean, applyText: (text: string) => boolean,
+    applyColor: (color: string) => boolean, onStep?: (ev: AgentStep) => void,
+    mbtNow?: () => string): Promise<AgentOutcome> {
+    if (!outcome.executed || outcome.ops <= 0) return outcome;
+    const conf = aiConfig.load();
+    const xiaoyi = conf.provider === 'xiaoyi';
+    const cloudReady = !xiaoyi && conf.apiKey.trim() !== '' && this.dispatch !== null;
+    if (!xiaoyi && !cloudReady) return outcome;
+    const t0 = Date.now();
+    const step = (kind: string, label: string, detail: string, ok: boolean): void => {
+      if (onStep) onStep({ kind: kind, label: label, detail: detail, ms: Date.now() - t0, ok: ok });
+    };
+    const canvas = mbtNow !== undefined ? mbtNow() : '';
+    const reviewInstr = '[收尾审查] 设计实现已完成。执行强制收尾审查——不得提问，直接给出修复：\n' +
+      `1) 需求完整度：目标「${instruction}」是否全部落实；\n` +
+      '2) 操作逻辑连线：可交互元素是否补齐交互流；\n' +
+      '3) 综合修复：布局重叠、对齐、配色问题。\n' +
+      '无需修复时只回复「审查通过」。需要修复时直接给命令行（如 set b1 title color #007aff）。' +
+      (canvas !== '' ? `当前画布：${canvas}` : '');
+    step('review', '🔎 收尾审查', '需求完整度 · 连线完整度 · 综合修复', true);
+    try {
+      let reply: string | null = '';
+      if (xiaoyi) {
+        reply = await chatOnce(reviewInstr, '');
+      } else {
+        reply = await this.cloudChat(reviewInstr, canvas, conf);
+      }
+      if (reply === null || reply.trim() === '' || this.isClarify(reply)) {
+        step('review', '审查通过', '无修复项', true);
+        return outcome;
+      }
+      const ro = this.reviewExec(reply, applyTemplate, applyText, applyColor);
+      if (ro.executed) {
+        step('review', `审查修复落地 +${ro.ops}`, ro.reply.slice(0, 60), true);
+        return { ok: true, reply: `${outcome.reply}；审查修复 ${ro.ops} 项`,
+          executed: true, ops: outcome.ops + ro.ops };
+      }
+      step('review', '审查通过', reply.trim().slice(0, 60), true);
+      return outcome;
+    } catch (e) {
+      step('review', '审查跳过', (e as Error).message.slice(0, 40), false);
+      return outcome;
+    }
+  }
+
+  /** 审查轮执行链（executeReply 的审查变体）：无澄清分支（上游已吞）、review 通道专用——
+   * 命令流 → 模板 → 改色 → 改文字，执行计数同主轮口径。 */
+  private reviewExec(t: string, applyTemplate: (tid: string) => boolean,
+    applyText: (text: string) => boolean, applyColor: (color: string) => boolean): AgentOutcome {
+    const lines = extractOps(t);
+    let done = 0;
+    for (const line of lines) {
+      const r = this.lineExec !== null ? this.lineExec(line) : null;
+      if (r !== null && r.ok) done++;
+    }
+    if (done > 0) {
+      return { ok: true, reply: `命令流 ${done}/${lines.length}`, executed: true, ops: done };
+    }
+    const tid = this.matchTpl(t);
+    if (tid && applyTemplate(tid)) {
+      return { ok: true, reply: `模板 ${this.tplName(tid)}`, executed: true, ops: 1 };
+    }
+    const color = this.matchColor(t);
+    if (color && applyColor(color)) {
+      return { ok: true, reply: `改色 ${color}`, executed: true, ops: 1 };
+    }
+    if (applyText(t)) {
+      return { ok: true, reply: '文案已修', executed: true, ops: 1 };
+    }
+    return { ok: false, reply: '', executed: false, ops: 0 };
   }
 
   /**
