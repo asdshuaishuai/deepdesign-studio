@@ -365,9 +365,12 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
                 note.replace('"', "'")
             ));
         }
-        let detail = details.join("\\n").chars().take(1800).collect::<String>();
+        let detail = details.join("\n").chars().take(1800).collect::<String>();
+        // tool 结果 JSON 用 serde_json 序列化——op 里的 text="..." 引号经 format! 手拼会
+        // 打穿 JSON 结构（模型收到畸形 tool 结果的实证风险）
+        let tool_content = serde_json::json!({"ok": done > 0, "executed": done, "total": total, "detail": detail}).to_string();
         sess.messages.push(json!({"role": "tool", "tool_call_id": tc_id,
-            "content": format!("{{\"ok\":{},\"executed\":{},\"total\":{},\"detail\":\"{}\"}}", done > 0, done, total, detail)}));
+            "content": tool_content}));
     }
 
     sess.rounds += 1;

@@ -539,6 +539,13 @@ export class CommandDispatch {
         bodyObj['tools'] = payload['tools'];
         bodyObj['tool_choice'] = payload['toolChoice'] ?? 'auto';
       }
+      // M3.6.8 review：思考方言键透传（此前 body 白名单丢弃 reasoning_effort/thinking/
+      // chat_template_kwargs——thinkingExtraBody 全表变成死代码，恒思考模型稳定性支柱失效）
+      for (const dk of ['reasoning_effort', 'thinking', 'chat_template_kwargs']) {
+        if (payload[dk] !== undefined && payload[dk] !== null) {
+          bodyObj[dk] = payload[dk];
+        }
+      }
       const body = JSON.stringify(bodyObj);
       const req = http.createHttp();
       req.request(url, {

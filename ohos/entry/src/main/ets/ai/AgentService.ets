@@ -190,6 +190,9 @@ export class AgentService {
           if (++guard > 64) throw new Error('pump guard');
           const action = String(sess['action'] ?? '');
           if (action === 'error') throw new Error(String(sess['error'] ?? 'agent error'));
+          for (const e2 of (sess['events'] ?? []) as Array<Record<string, Object>>) {
+            step(String(e2['kind'] ?? 'tool_end'), String(e2['label'] ?? ''), String(e2['detail'] ?? ''), e2['ok'] === true);
+          }
           if (action === 'done') {
             const oc = (sess['outcome'] ?? {}) as Record<string, Object>;
             const ok = oc['ok'] === true;
@@ -201,6 +204,11 @@ export class AgentService {
               return { ok: false, reply: reply, executed: false, ops: 0 };
             }
             if (!executed) {
+              // M3.6.8 review-3：澄清问句绝不进意图链（reviewExec 会把「需要登录页还是
+              // 注册页？」matchTpl 成模板落板，且吞掉澄清面板）——原样交还触发 pending
+              if (this.isClarify(reply)) {
+                return { ok: true, reply: reply, executed: false, ops: 0 };
+              }
               // 0 op（澄清之外的空报告）：ArkTS 意图链兜底一次
               const r = this.reviewExec(reply, applyTemplate, applyText, applyColor);
               if (r.executed) {
@@ -210,11 +218,7 @@ export class AgentService {
             }
             return { ok: ok, reply: reply, executed: executed, ops: ops };
           }
-          // action === 'llm'：先渲染上一 feed 的事件（工具执行轨迹），再发起本轮 HTTP
-          const evs = (sess['events'] ?? []) as Array<Record<string, Object>>;
-          for (const e2 of evs) {
-            step(String(e2['kind'] ?? 'tool_end'), String(e2['label'] ?? ''), String(e2['detail'] ?? ''), e2['ok'] === true);
-          }
+          // action === 'llm'：事件已在上方统一渲染，直接发起本轮 HTTP
           step('tool_start', `云端请求 ${conf.model}`, conf.baseUrl, true);
           const lvl = (opts ?? { thinkingLevel: 'auto' }).thinkingLevel;
           const fx = await this.loopChat((sess['messages'] ?? []) as Object[],

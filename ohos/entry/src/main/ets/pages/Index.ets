@@ -1384,6 +1384,7 @@ struct Index {
         const parsed = parseMbtDoc(canonical);
         if (parsed.ok) {
           appStore.mergeCanonical(parsed);
+          this.lastCanonicalB64 = docB64;   // M3.6.8 review-F3：锚点随会话推进（hifi SVG/⌘Z 数据源）
           this.refreshEngineSvg();
           this.sync();
         }
@@ -1686,6 +1687,10 @@ struct Index {
     this.busy = true;
     this.rightTab = 'track';   // agent run 自动切追踪页（对齐通用版，gap-right-1）
     this.agentMsg = '';
+    // M3.6.8 review-F2：run 起点单次撤销快照（整个 run 一个撤销边界；续轮不重复压栈）
+    if (!isFollowup) {
+      appStore.pushUndoExternal();
+    }
     if (isFollowup) {
       // 续轮：保留此前步骤不清空；「↳ 回答：」行由调用方（runPromptFollowup）push
     } else {
