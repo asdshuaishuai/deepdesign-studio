@@ -85,6 +85,7 @@ interface FxResult {
   reasoning: string;
   usage: Object | null;
   message?: Record<string, Object>;   // M3.6.4：原始 assistant 消息
+  finishReason?: string;   // M3.6.8：length=截断透传
 }
 
 interface FxError {
@@ -565,7 +566,8 @@ export class CommandDispatch {
             content: String(msg?.['content'] ?? ''),
             reasoning: String(msg?.['reasoning_content'] ?? ''),
             usage: j['usage'] ?? null,
-            message: msg   // M3.6.4：完整 assistant 消息（含 tool_calls）供 agent loop 回填
+            message: msg,   // M3.6.4：完整 assistant 消息（含 tool_calls）供 agent loop 回填
+            finishReason: String(choices[0]?.['finish_reason'] ?? '')   // M3.6.8：length=截断
           };
           resolve(out);
         } finally {

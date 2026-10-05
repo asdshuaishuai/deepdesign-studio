@@ -44,6 +44,7 @@ interface FxOutcome {
   content?: string;
   error?: string;
   message?: Record<string, Object>;   // M3.6.4：原始 assistant 消息（含 tool_calls）
+  finishReason?: string;              // M3.6.8：length=截断——工具调用没发全，续跑而非收报告
 }
 
 /** run 调优透传（batch-3，audit-modal-6）：设置卡思考等级/步数上限原样带入。
@@ -219,7 +220,7 @@ export class AgentService {
           const fx = await this.loopChat((sess['messages'] ?? []) as Object[],
             (sess['tools'] ?? []) as Object[], conf, lvl);
           if (typeof fx.error === 'string' && fx.error !== '') throw new Error(fx.error);
-          const feedJson: string = await agentFeedOnWorker(JSON.stringify(fx.message ?? {}));
+          const feedJson: string = await agentFeedOnWorker(JSON.stringify({ 'message': fx.message ?? {}, 'finish_reason': fx.finishReason ?? '' }));
           sess = JSON.parse(feedJson) as Record<string, Object>;
           // 活进度：会话 canonical 每轮回灌 Index（merge+SVG 刷新+sync 在 Index 侧；
           // 撤销栈由 run 起点单次快照承担——整个 run 一个撤销边界）
@@ -324,12 +325,34 @@ export class AgentService {
   private async loopChat(messages: Object[], tools: Object[],
     conf: AiConf, thinkingLevel: string): Promise<FxOutcome> {
     if (this.dispatch === null) return { error: 'dispatch 未注入' };
+    // M3.6.8 发送前消毒：空 content 的 assistant 消息剔除（StepFun 400
+    // "Empty chat message" 实证）、剥 reasoning_content 等非标准回显字段
+    const wire: Array<Record<string, Object>> = [];
+    for (const m0 of messages) {
+      const m = m0 as Record<string, Object>;   // Object[] 参数收窄（索引访问须 Record）
+      const role = String(m['role'] ?? 'user');
+      const c = String(m['content'] ?? '');
+      const tcs = m['tool_calls'] as Array<Object> | undefined;
+      if (role === 'assistant') {
+        if (c === '' && (tcs === undefined || tcs === null)) continue;
+        const clean: Record<string, Object> = { 'role': 'assistant', 'content': c };
+        if (tcs !== undefined && tcs !== null) clean['tool_calls'] = tcs;
+        wire.push(clean);
+      } else {
+        const clean: Record<string, Object> = { 'role': role, 'content': c };
+        if (m['tool_call_id'] !== undefined) clean['tool_call_id'] = m['tool_call_id'];
+        wire.push(clean);
+      }
+    }
+    const wireDump = wire.map((m: Record<string, Object>): string =>
+      `${String(m['role'])}:${String(m['content'] ?? '').length}${m['tool_calls'] !== undefined ? '+tc' : ''}${m['tool_call_id'] !== undefined ? '+id' : ''}`).join(' | ');
+    hilog.info(0x0000, 'ddAgent', 'wire: %{public}s', wireDump);
     const payload: Record<string, Object> = {
       'mode': 'chat',
       'baseUrl': conf.baseUrl,
       'model': conf.model,
-      'messages': messages as Object,
-      'maxTokens': 8192,   // M3.6.6：2048→8192（桌面同值）——推理模型思考耗 token，不足即空消息
+      'messages': wire as Object,
+      'maxTokens': 16384,   // M3.6.6：2048→8192→16384——推理思考+批量工具调用双耗 token，8192 批量下仍会截断
       'tools': tools as Object,
       'toolChoice': 'auto'
     };
@@ -347,8 +370,8 @@ export class AgentService {
       return { error: 'dispatch 返回空' };
     }
     const o = v as FxOutcome;
-    hilog.info(0x0000, 'ddAgent', 'loopChat: err=%{public}s contentLen=%{public}d hasMsg=%{public}s',
-      String(o.error ?? ''), (o.content ?? '').length, String(o.message !== undefined));
+    hilog.info(0x0000, 'ddAgent', 'loopChat: err=%{public}s contentLen=%{public}d finish=%{public}s hasMsg=%{public}s',
+      String(o.error ?? ''), (o.content ?? '').length, String(o.finishReason ?? ''), String(o.message !== undefined));
     return o;
   }
 

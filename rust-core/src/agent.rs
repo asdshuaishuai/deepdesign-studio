@@ -26,6 +26,9 @@ pub struct AgentSession {
 }
 
 static AGENT_SESS: Mutex<Option<AgentSession>> = Mutex::new(None);
+/// 测试串行锁（AGENT_SESS 为进程级单会话——并行测试会互踢状态）
+#[cfg(test)]
+static AGENT_TEST_LOCK: Mutex<()> = Mutex::new(());
 // std::sync 顶层引用
 use std::sync::Mutex;
 
@@ -106,7 +109,7 @@ executed in order — batch a whole screen per call to minimize round trips)
 ## HarmonyOS batching note
 You are running with a per-round HTTP budget: BATCH AGGRESSIVELY. Build one complete screen
 per moonviz_op call (template line, then all place/update lines, then all flow lines). Aim to
-finish the whole request in 3-6 calls."#;
+Keep each moonviz_op call under ~15 operations (longer batches get truncated)."#;
 
 fn tools_json() -> Value {
     json!([
@@ -189,6 +192,7 @@ fn seed_doc_b64() -> String {
 /// 单 op 引擎执行（会话 doc 推进 + 种子承载 + __seed 清理标记）。
 /// 返回 {ok, note}。__seed 清理不在此处——由 agent_feed 在 op 成功后按需追加。
 fn apply_op(sess: &mut AgentSession, line: &str) -> Value {
+    let seeded = sess.doc_b64.is_none();   // 种子承载的首 op
     let doc = sess.doc_b64.clone().unwrap_or_else(seed_doc_b64);
     match crate::engine::apply_human_op(&doc, line) {
         Err(e) => json!({"ok": false, "note": e}),
@@ -200,6 +204,17 @@ fn apply_op(sess: &mut AgentSession, line: &str) -> Value {
             }
             if let Some(m) = env.get("mbt_b64").and_then(|x| x.as_str()) {
                 sess.doc_b64 = Some(m.to_string());
+            }
+            // 种子占位清理：种子承载的首个成功 op 后链式 delete-artboard __seed
+            // （桌面 agent.rs::seed_doc 同构；删除失败静默保留，不阻断主链路）
+            if seeded {
+                if let Some(m) = sess.doc_b64.clone() {
+                    if let Ok(env2) = crate::engine::apply_human_op(&m, "delete-artboard __seed") {
+                        if let Some(m2) = env2.get("mbt_b64").and_then(|x| x.as_str()) {
+                            sess.doc_b64 = Some(m2.to_string());
+                        }
+                    }
+                }
             }
             json!({"ok": true, "note": format!("ENGINE {}", line.chars().take(60).collect::<String>())})
         }
@@ -246,7 +261,12 @@ pub fn agent_start(instruction: &str, doc_b64: &str) -> Result<Value, String> {
 pub fn agent_feed(message_json: &str) -> Result<Value, String> {
     let mut guard = AGENT_SESS.lock().map_err(|e| format!("agent_lock:{e}"))?;
     let sess = guard.as_mut().ok_or("agent_no_session")?;
-    let msg: Value = serde_json::from_str(message_json).map_err(|e| format!("agent_feed_parse:{e}"))?;
+    let feed: Value = serde_json::from_str(message_json).map_err(|e| format!("agent_feed_parse:{e}"))?;
+    let msg: Value = feed.get("message").cloned().unwrap_or(json!({}));
+    // M3.6.8：finish_reason=length = 消息被 max_tokens 截断（桌面 issues #10 透传同源）——
+    // 工具调用没发全就断了；此形态不收报告，注入续跑提示让模型从断处继续（分批）
+    let finish = feed.get("finish_reason").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let truncated = finish == "length";
 
     let tcs = msg
         .get("tool_calls")
@@ -259,20 +279,30 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
         .unwrap_or("")
         .to_string();
 
-    // 空消息（推理 token 耗尽/网关异常）：不 break 不计报告——注入推进提示继续
-    if tcs.is_empty() && content.trim().is_empty() {
-        sess.messages.push(msg);
-        sess.messages.push(json!({"role": "user", "content": "继续：调用 moonviz_op 工具执行设计操作，或给出中文报告。"}));
+    // 空消息（推理 token 耗尽/网关异常）或截断（工具调用没发全）：不 break 不计报告——
+    // 注入续跑提示继续，轮预算自然收敛
+    if tcs.is_empty() && (content.trim().is_empty() || truncated) {
+        // 空 assistant 消息不回填（StepFun 对 content 空的 assistant 消息 400
+        // "Empty chat message"）；截断且有内容的 assistant 原样保留
+        if truncated && !content.trim().is_empty() {
+            sess.messages.push(msg);
+        }
+        let nudge = if truncated {
+            "你的上一条回复因长度限制被截断，工具调用没有发出。请继续完成剩余工作：分批调用 moonviz_op（每批不超过 10 条操作），或给出最终中文报告。"
+        } else {
+            "继续：调用 moonviz_op 工具执行设计操作，或给出中文报告。"
+        };
+        sess.messages.push(json!({"role": "user", "content": nudge}));
         return Ok(json!({"action": "llm", "messages": sess.messages, "events": [], "doc_b64": sess.doc_b64.clone().unwrap_or_default()}));
     }
 
-    if tcs.is_empty() {
-        // 无工具调用：审查注入点（桌面 review 语义，单次）或收报告
+    if tcs.is_empty() && !truncated {
+        // 无工具调用（且非截断）：审查注入点（桌面 review 语义，单次）或收报告
         if !sess.review_done && sess.ops > 0 {
             sess.review_done = true;
             sess.messages.push(msg);
             sess.messages.push(json!({"role": "user", "content": review_prompt(&sess.instruction)}));
-            return Ok(json!({"action": "llm", "doc_b64": sess.doc_b64.clone().unwrap_or_default(), "events": [ev("review", "🔎 收尾审查", "需求完整度 · 连线完整度 · 综合修复", true)]}));
+            return Ok(json!({"action": "llm", "doc_b64": sess.doc_b64.clone().unwrap_or_default(), "messages": sess.messages, "events": [ev("review", "🔎 收尾审查", "需求完整度 · 连线完整度 · 综合修复", true)]}));
         }
         sess.messages.push(msg);
         if sess.ops == 0 && is_clarify(&content) {
@@ -371,17 +401,18 @@ mod tests {
     /// 批量 op 一轮多项；澄清门放行；空消息推进。
     #[test]
     fn agent_session_state_machine() {
+        let _agent_serial = AGENT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let s0 = agent_start("生成登录页", "").expect("agent_start 必须送达");
         assert_eq!(s0["action"], "llm", "首动作=llm：{s0}");
         assert_eq!(s0["messages"].as_array().map(|a| a.len()), Some(2), "system+user");
 
         // 第 1 喂：批量工具调用（2 op 一轮）
-        let feed1 = json!({"role": "assistant", "content": "", "tool_calls": [
+        let feed1 = json!({"message": {"role": "assistant", "content": "", "tool_calls": [
             {"id": "c1", "type": "function",
              "function": {"name": "moonviz_op", "arguments": "{\"op\": \"template login 登录页 390 844\\ntemplate signup 注册页 390 844\"}"}},
             {"id": "c2", "type": "function",
              "function": {"name": "read_mbt", "arguments": "{}"}}
-        ]});
+        ]}, "finish_reason": "tool_calls"});
         let s1 = agent_feed(&feed1.to_string()).expect("feed1 必须送达");
         assert_eq!(s1["action"], "llm", "工具调用后继续 llm：{s1}");
         let evs = s1["events"].as_array().expect("feed1 必须带事件");
@@ -392,11 +423,12 @@ mod tests {
         assert_eq!(st["has_doc"], json!(true), "引擎回包推进会话文档");
 
         // 第 2 喂：纯文本报告 → 审查注入（桌面 review 语义，单次）→ 报告收尾 done
-        let feed2 = json!({"role": "assistant", "content": "已生成登录页与注册页。"});
+        let feed2 = json!({"message": {"role": "assistant", "content": "已生成登录页与注册页。"}, "finish_reason": "stop"});
         let s2 = agent_feed(&feed2.to_string()).expect("feed2 必须送达");
         assert_eq!(s2["action"], "llm", "首报告触发审查注入：{s2}");
         assert!(s2["events"].to_string().contains("收尾审查"), "必须带审查事件");
-        let feed3 = json!({"role": "assistant", "content": "审查通过：登录页与注册页已建，导航流已连。"});
+        assert!(s2["messages"].as_array().map(|a| !a.is_empty()).unwrap_or(false), "审查注入必须回带 messages（回灌丢失=下一轮 400）：{s2}");
+        let feed3 = json!({"message": {"role": "assistant", "content": "审查通过：登录页与注册页已建，导航流已连。"}, "finish_reason": "stop"});
         let s3 = agent_feed(&feed3.to_string()).expect("feed3 必须送达");
         assert_eq!(s3["action"], "done", "二报告收尾：{s3}");
         let oc = s3["outcome"].as_object().expect("done 必须带 outcome");
@@ -406,7 +438,7 @@ mod tests {
         // 新会话：澄清门（纯文本问句 + 0 op → done(executed=false, reply=原文)）
         let c0 = agent_start("你要什么风格？", "").expect("澄清会话必须送达");
         assert_eq!(c0["action"], "llm");
-        let c1 = agent_feed(&json!({"role": "assistant", "content": "你想要深色还是浅色？"}).to_string())
+        let c1 = agent_feed(&json!({"message": {"role": "assistant", "content": "你想要深色还是浅色？"}, "finish_reason": "stop"}).to_string())
             .expect("澄清喂入必须送达");
         assert_eq!(c1["action"], "done", "澄清收尾：{c1}");
         assert_eq!(c1["outcome"]["executed"], json!(false));
@@ -416,11 +448,32 @@ mod tests {
     /// 空消息推进守卫：无 tool_calls 且 content 空 → 不收报告，注入推进提示继续。
     #[test]
     fn agent_session_empty_message_nudge() {
+        let _agent_serial = AGENT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let _ = agent_start("生成登录页", "").expect("start");
-        let e = json!({"role": "assistant", "content": ""});
+        let e = json!({"message": {"role": "assistant", "content": ""}, "finish_reason": "stop"});
         let s = agent_feed(&e.to_string()).expect("feed");
         assert_eq!(s["action"], "llm", "空消息必须推进而不是收报告：{s}");
         let last = s["messages"].as_array().expect("messages").last().expect("nudge");
         assert!(last["content"].as_str().unwrap_or("").contains("继续"), "必须带推进提示：{last}");
     }
 }
+
+    /// M3.6.8 截断续跑：finish_reason=length 不收报告——注入「分批继续」提示，
+    /// 且不触发审查注入（截断不是完成）。
+    #[test]
+    fn agent_session_truncation_continue() {
+        let _agent_serial = AGENT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _ = agent_start("生成登录页", "").expect("start");
+        let t = json!({"message": {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "moonviz_op", "arguments": "{\"op\": \"template login 登录页 390 844\"}"}}
+        ]}, "finish_reason": "tool_calls"});
+        let s1 = agent_feed(&t.to_string()).expect("工具轮必须送达");
+        assert_eq!(s1["action"], "llm");
+        let tr = json!({"message": {"role": "assistant", "content": "我继续执行。第一批：创建 5 个画板…"}, "finish_reason": "length"});
+        let s2 = agent_feed(&tr.to_string()).expect("截断喂入必须送达");
+        assert_eq!(s2["action"], "llm", "截断必须续跑而不是收报告：{s2}");
+        assert!(!s2["events"].to_string().contains("收尾审查"), "截断不得触发审查注入：{s2}");
+        let last = s2["messages"].as_array().expect("messages").last().expect("续跑提示");
+        assert!(last["content"].as_str().unwrap_or("").contains("截断"), "续跑提示必须说明截断：{last}");
+    }
