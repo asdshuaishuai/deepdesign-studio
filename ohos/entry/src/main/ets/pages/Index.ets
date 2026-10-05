@@ -1127,28 +1127,29 @@ interface DeclPiece {
 
 
 // 快捷键说明表（设置 sheet §8.4 对齐；⇧E/⇧H 对齐桌面 export-html/svg 键位）
-// 快捷键说明表（设置 sheet §8.4 对齐；gap-canvas-11/12 补座与重映射，与 onPlanKey 实现一一对应）
+// 快捷键说明表（M3.6.2：鸿蒙 2in1 键盘适配——显示层 ⌘ 系字形改 Ctrl 系；行为层
+// onPlanKey :3155 本就双兼容 Ctrl/Meta，不改。桌面同键位语义，仅字形按平台惯例）
 const KEYMAP: string[][] = [
-  ['⌘Z / ⇧⌘Z', '撤销 / 重做'],
-  ['⌘S', '保存'],
-  ['⌘K', '聚焦指令条'],
-  ['⌘N / ⇧⌘N', '新建项目 / 新建画板'],
-  ['⌘O', '打开 DDP'],
-  ['⇧⌘D', '复制当前画板'],
-  ['⌘1 / ⌘2 / ⌘3', '线框图 / 高保真 / 源码视图'],
-  ['⌘4', '演示模式'],
-  ['⇧⌘⌫', '删除当前画板'],
-  ['⌘− / ⌘+ / ⌘0', '缩放 / 适配窗口'],
-  ['Del / ⌫', '删除选中元素'],
+  ['Ctrl+Z / Ctrl+Shift+Z', '撤销 / 重做'],
+  ['Ctrl+S', '保存'],
+  ['Ctrl+K', '聚焦指令条'],
+  ['Ctrl+N / Ctrl+Shift+N', '新建项目 / 新建画板'],
+  ['Ctrl+O', '打开 DDP'],
+  ['Ctrl+Shift+D', '复制当前画板'],
+  ['Ctrl+1 / Ctrl+2 / Ctrl+3', '线框图 / 高保真 / 源码视图'],
+  ['Ctrl+4', '演示模式'],
+  ['Ctrl+Shift+Del', '删除当前画板'],
+  ['Ctrl+- / Ctrl++ / Ctrl+0', '缩放 / 适配窗口'],
+  ['Del / Backspace', '删除选中元素'],
   ['方向键', '移动 1vp（Shift=10）'],
   ['V / T', '选择 / 文本工具'],
-  ['⇧⌘F', '自动修复'],   // batch-3，audit-modal-9：KEYMAP 与 onPlanKey 双缺补齐
+  ['Ctrl+Shift+F', '自动修复'],   // batch-3，audit-modal-9：KEYMAP 与 onPlanKey 双缺补齐
   ['Esc', '返回上一层 / 退出连接模式'],
   ['Ctrl+/', '快捷键（设置内）'],   // 诚实化（batch-6，gap-detail-22）：onPlanKey 对 / 与 , 同开
                                     // 设置 sheet（鸿蒙无独立快捷键 modal，拆分滚动高亮方案成本高
                                     // 登记不取）——文案与行为一致；KEYMAP 全表视觉核对归 2in1 真机
   ['Ctrl+,', '设置'],
-  ['⇧E / ⇧H', '导出 DDP / HTML']
+  ['Shift+E / Shift+H', '导出 DDP / HTML']
 ];
 
 /**
@@ -5979,7 +5980,7 @@ struct Index {
         this.setBoardOffset(b.id, 0, 0);
       })
       this.menuDivider()   // [切换,复制 | 演示,复位 | 删除]（batch-2，audit-canvas-7）
-      this.menuRow('🗑 删除此画板', '⇧⌘⌫', true, (): void => {
+      this.menuRow('🗑 删除此画板', 'Ctrl+Shift+Del', true, (): void => {
         this.confirmDeleteBoard(b.id);
       })
     }.width(216).padding({ bottom: 6 }).backgroundColor(this.T().card).borderRadius(this.T().rMenuPanel)
@@ -5994,13 +5995,13 @@ struct Index {
   canvasMenu() {
     Column() {
       this.menuTitle('画布')
-      this.menuRow('✚ 新建画板', '⇧⌘N', false, (): void => {
+      this.menuRow('✚ 新建画板', 'Ctrl+Shift+N', false, (): void => {
         const nb = appStore.addBlankBoard();
         this.sync();
         this.selBoard = nb.id;
         this.selLayer = '';
       })
-      this.menuRow('⧉ 复制当前画板', '⇧⌘D', false, (): void => {
+      this.menuRow('⧉ 复制当前画板', 'Ctrl+Shift+D', false, (): void => {
         if (this.selBoard === '') {
           this.toast('无画板可复制');
           return;
@@ -6014,7 +6015,7 @@ struct Index {
       this.menuRow(this.modeIdx === 0 ? '🎨 切换到高保真' : '◻ 切换到线框图', '', false, (): void => {
         this.modeIdx = this.modeIdx === 0 ? 1 : 0;
       })
-      this.menuRow('‹/› 查看 MBT 源码', '⌘3', false, (): void => {
+      this.menuRow('‹/› 查看 MBT 源码', 'Ctrl+3', false, (): void => {
         this.declText = appStore.toCanonicalText();   // canonical 展示投影（gap-mbt-1）
         this.modeIdx = 2;
       })
@@ -6022,9 +6023,9 @@ struct Index {
       this.menuRow('↻ 重新序列化刷新', '', false, (): void => {
         this.revalidateSource();   // 三入口统一（gap-mbt-11）：画布右键/源码右键/顶部按钮同一刷新函数
       })
-      this.menuRow('▶ 演示模式', '⌘4', false, (): void => { this.actDemoEntry(); })
+      this.menuRow('▶ 演示模式', 'Ctrl+4', false, (): void => { this.actDemoEntry(); })
       this.menuDivider()   // 分组线补齐（batch-2，audit-canvas-7）：[新建,复制 | 互切,源码 | 校验,演示 | 适配]
-      this.menuRow('⛶ 适配窗口', '⌘0', false, (): void => { this.fitWindow(); })
+      this.menuRow('⛶ 适配窗口', 'Ctrl+0', false, (): void => { this.fitWindow(); })
     }.width(216).padding({ bottom: 6 }).backgroundColor(this.T().card).borderRadius(this.T().rMenuPanel)
     // batch-3：菜单容器圆角 10→HMOS 20（baseline §4 menu）；阴影 {12,0,0,shadowMd}→shMenu md 档 60/(0,10)
     .border({ width: 1, color: this.T().line })
@@ -6866,7 +6867,7 @@ struct Index {
                   }) {
                     Text('暂无跳转。选中按钮后对 Agent 说「').fontSize(this.fp(F_LFLOW)).fontColor(this.T().tx3)   // r10 sz-lflow-1：空态断点（11↔10）
                     Text('链接 p2').fontSize(this.fp(F_LFLOW)).fontWeight(700).fontColor(this.T().tx2)   // r10 sz-lflow-1
-                    Text('」，或 ⌘K → ').fontSize(this.fp(F_LFLOW)).fontColor(this.T().tx3)   // r10 sz-lflow-1
+                    Text('」，或 Ctrl+K → ').fontSize(this.fp(F_LFLOW)).fontColor(this.T().tx3)   // r10 sz-lflow-1
                     Text('flow p1 p2 节点').fontSize(this.fp(F_LFLOW)).fontWeight(700).fontColor(this.T().tx2)   // r10 sz-lflow-1
                   }
                   .padding({ left: 4, right: 4, top: 6, bottom: 6 }).width('100%')
@@ -7136,7 +7137,7 @@ struct Index {
                     Row({ space: 4 }) {
                       Text('选择模板即刻开始，或按')
                         .fontSize(this.fp(F_WELCOME_SUB)).fontColor(this.T().tx2)   // r10 sz-welcome-2：副题断点（12.5↔11.5）
-                      Text('⌘K')
+                      Text('Ctrl+K')
                         .fontSize(this.fp(F_WELCOME_KBD)).fontFamily('monospace').fontColor(this.T().tx2)   // r10 sz-welcome-2：键帽断点（10.5↔9.5）
                         .backgroundColor(this.T().subtle).borderRadius(5)
                         .padding({ left: 6, right: 6, top: 2, bottom: 2 })
@@ -7412,7 +7413,7 @@ struct Index {
                   .fontSize(this.fp(F_DOCK_INPUT)).height(this.sp(H_DOCK_INPUT)).layoutWeight(1)   // batch-5：pmain 输入断点（§3.3 fDockInput 13↔12 + h34→30）
                   .backgroundColor(Color.Transparent).border({ width: 0 })
                   .placeholderColor(this.T().tx3)
-                Text('⌘K').fontSize(this.fp(F_KBD)).fontColor(this.T().tx3)   // batch-5：kbd 键帽（§3.3，10↔9）
+                Text('Ctrl+K').fontSize(this.fp(F_KBD)).fontColor(this.T().tx3)   // batch-5：kbd 键帽（§3.3，10↔9）
                   .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(5)
                   .backgroundColor(this.T().subtle).border({ width: 1, color: this.T().line })
                   .onClick(() => {
@@ -8492,9 +8493,13 @@ struct Index {
               // batch-9：小艺档条件注行（选中即展示——端侧免配置语义显性化；
               // r12 fix-aitab-1：对齐 hint 档 10.5px/tx3，原 tx2）
               if (this.cfgProvider === 'xiaoyi') {
-                Text('端侧模型，免 Key 免适配')
+                Text('端侧模型：无需 Base URL / API Token / Model ID')
                   .fontSize(this.fp(F_SET_SEC)).fontColor(this.T().tx3).width('100%')
               }
+              // M3.6.2：小艺端侧档整段隐藏云端三项（用户决策——免配置档不该再看到
+              // Base URL/API Token/Model ID 输入框，原 batch-9 仅 .enabled(false) 禁用
+          //   态仍然全量渲染，语义矛盾）；思考等级/步数上限通用保留。
+              if (this.cfgProvider !== 'xiaoyi') {
               // Base URL 字段块（fix-aitab-1 标签行 11px/tx2+框距 5；fix-aitab-2 桌面单值
               // 几何 h32/padding 0 9/radius 8/11.5px ui-monospace（i:466），占位=桌面 :1155
               // 原文；框下注行保留作长占位可见化替身，11px/tx3/行高1.6）
@@ -8590,6 +8595,8 @@ struct Index {
                   Text(this.capHintWarn()).fontSize(this.fp(F_SET_SEC)).lineHeight(16.3).fontColor(this.T().danger).width('100%')
                 }
               }.width('100%')
+              }
+
               // 思考等级（i:1165-1175；batch-12 cur-9：chips → Select 组件=桌面 <select> 语义；
               // 档位经 restrictThinking 按快照 reasoning_options 收紧。
               // batch-3 dd-select-thinking：Select → ddMenuPanel 自绘弹层（同构模型档）。
