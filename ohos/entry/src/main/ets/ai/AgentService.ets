@@ -213,8 +213,9 @@ export class AgentService {
    * tool-calling——messages 累积，assistant(tool_calls) 原样回填、逐 op 经 lineExec
    * （引擎人类门优先）执行并以 role:'tool' 回填结果；无 tool_calls 时按桌面语义
    * 先注入收尾审查轮（reviewDone 单次）再收报告；澄清=纯文本回复（无工具调用）。
-   * 轮次预算 12（登记偏离：桌面 maxSteps 200-2000 为 Rust 循环步、每步引擎直调；
-   * 鸿蒙每步一次 HTTP 往返，12 轮为设备延迟上限，RunTuning.maxSteps 暂不直接消费）。
+   * 轮次预算 24（登记偏离：桌面 maxSteps 200-2000 为 Rust 循环步、每步引擎直调；
+   * 鸿蒙每步一次 HTTP 往返——故 moonviz_op 支持多行批量、一轮落一批 op（M3.6.5），
+   * 24 轮 × 批量即覆盖完整需求构建；RunTuning.maxSteps 暂不直接消费）。
    * 任何一轮 HTTP/协议失败抛错 → run() 诚实降级单轮意图链。
    */
   private async agentLoop(instruction: string, conf: AiConf, opts: RunTuning | null,
@@ -238,8 +239,10 @@ export class AgentService {
     const mvParams: Record<string, Object> = { 'type': 'object', 'properties': opProps, 'required': mvRequired };
     const mvFn: Record<string, Object> = {
       'name': 'moonviz_op',
-      'description': 'Execute one MoonViz design operation (validated by the engine gates, committed to the canonical document). ' +
-        'Ops (one command line per call): "template <tid>" create an artboard from a preset; "create <id> <w> <h>" blank artboard; ' +
+      'description': 'Execute MoonViz design operations (validated by the engine gates, committed to the canonical document). ' +
+        'BATCHING: you MAY put multiple operations in one call — separate them with newlines, one op per line, executed in order. ' +
+        'Batch aggressively (e.g. build a whole screen in one call) to minimize round trips. ' +
+        'Ops: "template <tid>" create an artboard from a preset; "create <id> <w> <h>" blank artboard; ' +
         '"text <board> <node> <text>" set or add text; "set <board> <node> <key>=<value>" style keys color/fontSize/bold/opacity/radius; ' +
         '"move <board> <node> <dx> <dy>"; "delete <board> <node>"; "delete-artboard <board>"; "flow <fromBoard>.<node> <toBoard>" wire interaction.',
       'parameters': mvParams
@@ -259,7 +262,7 @@ export class AgentService {
       { 'role': 'system', 'content': LOOP_SYS },
       { 'role': 'user', 'content': instruction }
     ];
-    const ROUNDS = 12;
+    const ROUNDS = 24;   // M3.6.5：12→24，配合批量 op（一轮可落整屏）覆盖完整需求构建
     let ops = 0;
     let reviewDone = false;
     for (let round = 0; round < ROUNDS; round++) {
@@ -326,13 +329,21 @@ export class AgentService {
           messages.push(em);
           continue;
         }
-        const r = this.lineExec !== null ? this.lineExec(op) : null;
-        const ok = r !== null && r.ok;
-        if (ok) ops++;
-        step('tool_end', `${ok ? '✓' : '✗'} ${op.slice(0, 44)}`, r !== null ? r.note : '执行器未注入', ok);
-        const note = (r !== null ? r.note : 'executor missing').replace(/"/g, "'");
+        // M3.6.5 批量执行：op 可含多行（一行一命令），顺序执行、聚合一笔回填——
+        // 一轮 HTTP 落一批 op（每步一次往返的管道开销摊薄 10 倍+，12 轮不够的根因即此）
+        const lines = op.split(/\r?\n/).map((x: string): string => x.trim()).filter((x: string): boolean => x !== '');
+        let done = 0;
+        const notes: string[] = [];
+        for (const one of lines) {
+          const r = this.lineExec !== null ? this.lineExec(one) : null;
+          const ok = r !== null && r.ok;
+          if (ok) { ops++; done++; }
+          notes.push(`${ok ? '✓' : '✗'} ${one.slice(0, 40)}${r !== null ? ' :: ' + r.note : ' :: executor missing'}`);
+          step('tool_end', `${ok ? '✓' : '✗'} ${one.slice(0, 44)}`, r !== null ? r.note : '执行器未注入', ok);
+        }
+        const noteJson = notes.map((x: string): string => x.replace(/"/g, "'")).join('\\n').slice(0, 1800);
         const tr: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId,
-          'content': `{"ok":${ok ? 'true' : 'false'},"note":"${note}"}` };
+          'content': `{"ok":${done > 0 ? 'true' : 'false'},"executed":${done},"total":${lines.length},"detail":"${noteJson}"}` };
         messages.push(tr);
       }
     }
@@ -539,7 +550,8 @@ const LOOP_SYS: string = 'You are the embedded design agent of deepDesign Studio
   'The canvas is the canonical .mbt.md document; every moonviz_op call is validated by the engine gates and committed to it.\n' +
   'Workflow:\n' +
   '1. CHECK: if the request is ambiguous or missing key information, do NOT call any tool — reply with 1-3 concrete questions in Chinese, each ending with ？\n' +
-  '2. BUILD: call moonviz_op one operation at a time. Typical flow: create the artboard from a template, then add/adjust nodes (text/set/move/delete), then wire interactions with flow.\n' +
+  '2. BUILD: call moonviz_op with BATCHED operations — multiple lines per call, one op per line, executed in order. ' +
+      'Batch a whole screen per call (template first, then all nodes, then flows). Fewer calls = faster.\n' +
   '3. INSPECT: call read_mbt when unsure about existing artboard/node ids.\n' +
   '4. REPORT: when done (or after the review round), stop calling tools and reply in Chinese summarizing what was built and the interactions wired. Never ask questions in the report.\n' +
   'Templates for "template <tid>": login, signup, login_v2, dashboard, profile, settings, list_detail, onboarding, empty_state, web_login, web_landing, web_dashboard, pc_app, adaptive_landing.';
