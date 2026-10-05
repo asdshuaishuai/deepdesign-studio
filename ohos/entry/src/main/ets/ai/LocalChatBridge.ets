@@ -57,8 +57,11 @@ function buildPrompt(instruction: string, mbt: string): string {
     'template <模板名> <画板id> <宽> <高>   例如: template login p1 390 844\n' +
     'create <画板id> <宽> <高>\n' +
     'text <画板id> <元素id> "文案"   设置/新增文字元素\n' +
-    'set <画板id> <元素id> <属性> <值>   属性如 color/size/x/y\n' +
+    'set <画板id> <元素id> <属性> <值>   属性如 fill color x y fontSize\n' +
+    'move <画板id> <元素id> <dx> <dy>   相对位移\n' +
+    'delete <画板id> <元素id>\n' +
     'delete-artboard <画板id>\n' +
+    'flow <源画板id> <源元素id> <目标画板id>\n' +
     'list / lint <画板id>   检视类\n' +
     '规则：只输出命令行，不要解释、不要 markdown；需要澄清时用一句话提问。\n';
   const tail = `\n当前文档（.mbt.md）：\n${doc}\n\n用户指令：${instruction}\n命令流：`;

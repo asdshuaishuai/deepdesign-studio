@@ -7,6 +7,11 @@
 
 pub mod ddp;
 
+// 引擎宿主（wasmtime 进程内承载 classic wasm）——纯逻辑，host 测试覆盖
+// （--no-default-features 同 ddp 口径）。gap-global-3 第二阶段探针：
+// ohos 交叉编译面已放开（cfg(not(ohos)) 门撤除），双端同一实现。
+pub mod engine;
+
 // NAPI 门面仅设备构建启用（host 测试/CI：--no-default-features，
 // 避免 libace_napi.z.so 链接依赖）
 #[cfg(feature = "napi")]
@@ -56,5 +61,59 @@ mod napi_facade {
     #[napi]
     pub fn ddp_decrypt(ddp_b64: String, password: String) -> napi_ohos::Result<String> {
         ddp::decrypt_b64(&ddp_b64, &password).map_err(napi_ohos::Error::from_reason)
+    }
+
+    // —— 引擎宿主导出（gap-global-3 接线：engine.rs 公开面的 camelCase NAPI 桥）——
+    // 信封统一 String（serde_json 序列化）回传，与 DDP 导出的 String 面、Dispatch 侧
+    // JSON.parse 判型惯例同构。分层语义：Err 仅传输层失败（b64/编解码/wasm 编译/实例化/
+    // 超时）；ok:false 的门拒绝是**合法业务信封**（Ok 透传），调用方按信封 ok 字段判定——
+    // 与桌面 invoke 契约一致，ArkTS 侧不得把门拒绝当引擎不可用。
+
+    /// 真实引擎探针：wasmtime 实例化 + version_info 调用。信封 {ok, engine, version}
+    /// （真机探锚 {"ok":true,"engine":"moonviz","version":"0.1.6-fix"}）。首次调用含
+    /// wasm 编译（秒级，同步 NAPI 阻塞 UI 线程——调用方须延时到首帧后；Promise 化归后续）。
+    #[napi]
+    pub fn engine_version() -> napi_ohos::Result<String> {
+        crate::engine::version().map(|v| v.to_string()).map_err(napi_ohos::Error::from_reason)
+    }
+
+    /// 注册表 op 清单（引擎原样透传的裸 JSON 数组）。
+    #[napi]
+    pub fn engine_list_ops() -> napi_ohos::Result<String> {
+        crate::engine::list_ops().map(|v| v.to_string()).map_err(napi_ohos::Error::from_reason)
+    }
+
+    /// 人类门变更 op（session_apply_human）：canonical b64 文档 + op 行。成功信封带
+    /// mbt_b64（canonical），门拒绝原样透传 ok:false。
+    #[napi]
+    pub fn engine_apply_human_op(doc_b64: String, op: String) -> napi_ohos::Result<String> {
+        crate::engine::apply_human_op(&doc_b64, &op)
+            .map(|v| v.to_string())
+            .map_err(napi_ohos::Error::from_reason)
+    }
+
+    /// 代理门变更 op（session_apply_agent）：与 engineApplyHumanOp 同构，门更严
+    /// （只读 op 拒绝、越界放置整体拒绝）。
+    #[napi]
+    pub fn engine_apply_agent_op(doc_b64: String, op: String) -> napi_ohos::Result<String> {
+        crate::engine::apply_agent_op(&doc_b64, &op)
+            .map(|v| v.to_string())
+            .map_err(napi_ohos::Error::from_reason)
+    }
+
+    /// 渲染检视（经典 render_mbt，无状态）：信封 {ok, entry, revision, blockKinds, flows,
+    /// mbt, mbt_b64, artboards}，artboard 条目带 id/name/width/height/nodes/svg。
+    #[napi]
+    pub fn engine_render(doc_b64: String) -> napi_ohos::Result<String> {
+        crate::engine::render(&doc_b64).map(|v| v.to_string()).map_err(napi_ohos::Error::from_reason)
+    }
+
+    /// 会话历史（M3）：sub ∈ init|commit|log|undo|redo|checkout|diff。apply 不自动入史
+    /// 须显式 commit；undo/redo 信封带 canonical（mbt_b64）由 ArkTS 合并回灌。
+    #[napi]
+    pub fn engine_history(doc_b64: String, sub: String) -> napi_ohos::Result<String> {
+        crate::engine::history(&doc_b64, &sub)
+            .map(|v| v.to_string())
+            .map_err(napi_ohos::Error::from_reason)
     }
 }

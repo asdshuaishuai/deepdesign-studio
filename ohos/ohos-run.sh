@@ -56,12 +56,21 @@ sign_hap() {
 case "${1:-}" in
   --install)
     prepare_signing
+    echo "→ rust-core 引擎交叉编译（双目标）+ 替换 rust-libs（gap-global-3：防 .so 陈旧）..."
+    (cd "$HOME/code/deepdesign-studio/rust-core" && PATH="$HOME/.cargo/bin:$PATH" \
+      cargo build --release --target x86_64-unknown-linux-ohos --target aarch64-unknown-linux-ohos) || {
+      echo "✗ rust-core 交叉编译失败"; exit 1; }
+    cp "$HOME/code/deepdesign-studio/rust-core/target/x86_64-unknown-linux-ohos/release/libdeepdesign_core.so" \
+       "$PROJ/entry/src/main/cpp/rust-libs/x86_64/libdeepdesign_core.so"
+    cp "$HOME/code/deepdesign-studio/rust-core/target/aarch64-unknown-linux-ohos/release/libdeepdesign_core.so" \
+       "$PROJ/entry/src/main/cpp/rust-libs/arm64-v8a/libdeepdesign_core.so"
     echo "→ 构建 HAP（hvigor，ArkTS + NAPI）..."
     (cd "$PROJ" && devecocli build)
     echo "→ 本地签名（SDK OpenHarmony 调试密钥，免华为账号）..."
     sign_hap
     echo "→ 安装并启动 ..."
-    hdc -t 127.0.0.1:5555 uninstall com.deepcode.deepdesign >/dev/null 2>&1 || true
+    # R3（review-m37）：不 uninstall——签名材料确定性生成，install -r 即可增量升级；
+    # uninstall 会抹掉沙箱用户数据与 batch-13 的 ddp-external.ddp 注入通道
     hdc -t 127.0.0.1:5555 install -r "$HAP_SIGNED" \
       && hdc -t 127.0.0.1:5555 shell aa start -a EntryAbility -b com.deepcode.deepdesign
     echo "✓ deepDesign 已启动（ArkUI 原生壳 + Rust NAPI core）"

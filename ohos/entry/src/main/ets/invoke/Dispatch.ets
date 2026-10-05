@@ -8,6 +8,9 @@
 //   ✓ list_ddp_projects —— 目录扫描（沙箱外目录无权限时报错，前端已容错跳过）
 //   ✓ invoke_fx_sdk —— @ohos.net.http 直连 OpenAI 兼容端点（chat + models）
 //   ◌ rebase_agent_ops —— 待 wasmtime 引擎宿主下沉（结构化错误，前端有 catch）
+//   ✓ engine_status / engine_apply_human_op —— rust-core engine 模块 NAPI 接线
+//     （gap-global-3 M1；引擎不可用诚实降级 available:false/error + console.error，
+//     调用方回退本地路径）
 //   ✓ open_project_window —— 单窗口模式：聚焦自身
 
 import { http } from '@kit.NetworkKit';
@@ -16,17 +19,20 @@ import { common } from '@kit.AbilityKit';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { ddpEncrypt, ddpDecrypt } from '../core/CoreBridge';
+import { probeEngine, applyHumanOp, renderDoc, historyOp, EngineStatus, EngineApplyResult } from '../core/EngineBridge';
 
 interface FxModels {
   models: string[];
+  source?: string;   // network | snapshot（batch-5：失败回落 bundled 快照时标注）
 }
 
-interface AgentResult {
-  ok: boolean;
-  ops: string[];
-  text: string;
-  stopReason: string;
-  mbtB64: string;
+// bundled models.json 快照的具名形状（provider/model 两层均为动态 id 键表，键层用 Record 承载）
+interface ModelSnapshot {
+  providers?: Record<string, ModelSnapProvider>;
+}
+
+interface ModelSnapProvider {
+  models?: Record<string, Object>;
 }
 
 interface CmdError {
@@ -66,6 +72,14 @@ interface DdpListResult {
   projects: DdpProjectItem[];
 }
 
+/** engine_status 返回形状（Index 按字段鸭子对齐消费）。 */
+interface EngineStatusResult {
+  available: boolean;
+  tag: string;
+  version: string;
+  reason: string;
+}
+
 interface FxResult {
   content: string;
   reasoning: string;
@@ -74,6 +88,33 @@ interface FxResult {
 
 interface FxError {
   error: string;
+}
+
+// MoonViz op 动词白名单（提取模型回复/用户输入中的可执行行）
+// batch-9（cur-5）：由 CommandDispatch 私有静态公开化为模块级导出——消费方扩展到
+// AgentService.execCommandFlow（小艺/云端回复与本地兜底原始指令统一命令行解析）。
+const OP_VERBS: string[] = [
+  'template', 'create', 'text', 'set', 'move', 'resize', 'style', 'delete', 'delete-artboard',
+  'rename', 'add', 'remove', 'update', 'flow', 'link', 'align', 'group', 'order',
+  'list', 'list-templates', 'lint', 'critique', 'query', 'states', 'flows', 'export-svg'
+];
+
+/** 提取文本中的 MoonViz op 命令行（batch-9 公开化，原 CommandDispatch.extractOps）。 */
+export function extractOps(text: string): string[] {
+  const ops: string[] = [];
+  const lines = text.split('\n');
+  for (const raw of lines) {
+    const line = raw.trim()
+      .replace(/^[-*\d.\s]+/, '')
+      .replace(/^`+|`+$/g, '')
+      .trim();
+    if (!line || line.length > 200) continue;
+    const head = line.split(/\s+/)[0].toLowerCase();
+    if (OP_VERBS.includes(head)) {
+      ops.push(line);
+    }
+  }
+  return ops;
 }
 
 export class CommandDispatch {
@@ -117,6 +158,14 @@ export class CommandDispatch {
       case 'rebase_agent_ops':
         return Promise.reject(
           new Error('UNAVAILABLE_ON_OHOS: rebase_agent_ops（引擎宿主下沉后接入，当前 Agent run 走前端 wasm 路径）'));
+      case 'engine_status':
+        return this.engineStatus();
+      case 'engine_apply_human_op':
+        return this.engineApplyHumanOp(args);
+      case 'engine_render':
+        return this.engineRenderCmd(args);
+      case 'engine_history':
+        return this.engineHistoryCmd(args);
       default:
         return Promise.reject(new Error(`UNAVAILABLE_ON_OHOS: ${cmd}（该能力将在后续版本接入）`));
     }
@@ -310,67 +359,102 @@ export class CommandDispatch {
     });
   }
 
-  // MoonViz op 动词白名单（提取端侧模型回复中的可执行行）
-  private static OP_VERBS: string[] = [
-    'template', 'create', 'text', 'set', 'move', 'resize', 'style', 'delete', 'delete-artboard',
-    'rename', 'add', 'remove', 'update', 'flow', 'link', 'align', 'group', 'order',
-    'list', 'list-templates', 'lint', 'critique', 'query', 'states', 'flows', 'export-svg'
-  ];
+  // ---- 引擎宿主（gap-global-3 接线，M1：rust-core engine 模块 NAPI 导出）----
+  // 诚实降级：引擎不可用（导出缺失/传输失败）时 resolve available:false + reason，
+  // **保持现状文案**由调用方执行；此处 console.error 原因（§13：console.error 是
+  // 模拟器上可靠日志通道）。门拒绝（信封 ok:false）是合法业务响应，原样透传。
 
-  /** 从端侧模型回复中提取 MoonViz op 命令行。 */
-  private static extractOps(text: string): string[] {
-    const ops: string[] = [];
-    const lines = text.split('\n');
-    for (const raw of lines) {
-      const line = raw.trim()
-        .replace(/^[-*\d.\s]+/, '')
-        .replace(/^`+|`+$/g, '')
-        .trim();
-      if (!line || line.length > 200) continue;
-      const head = line.split(/\s+/)[0].toLowerCase();
-      if (CommandDispatch.OP_VERBS.includes(head)) {
-        ops.push(line);
+  /** engine_status：真实引擎探针（wasmtime 实例化 + version_info）。首呼含 wasm 编译
+   * （秒级，同步 NAPI 阻塞 UI 线程）——调用方须延时到首帧后。 */
+  private engineStatus(): Promise<Object | null> {
+    return new Promise<Object | null>((resolve) => {
+      try {
+        const st: EngineStatus = probeEngine();
+        if (!st.available) {
+          console.error(`[engine] 引擎不可用: ${st.reason}`);
+        }
+        const out: EngineStatusResult = {
+          available: st.available, tag: st.tag, version: st.version, reason: st.reason
+        };
+        resolve(out);
+      } catch (e) {
+        console.error(`[engine] 探测异常: ${(e as Error).message}`);
+        const out: EngineStatusResult = {
+          available: false, tag: '', version: '',
+          reason: `engine_probe_threw:${(e as Error).message}`
+        };
+        resolve(out);
       }
-    }
-    return ops;
-  }
-
-  /**
-   * 端侧系统 AI（localChatModel）执行 Agent 指令——鸿蒙体系下的默认执行者。
-   * 返回 undefined = 端侧不可用（模块缺失/模型未就绪），调用方降级。
-   */
-  private localAgent(payload: Record<string, Object>): Promise<Object | null | undefined> {
-    const loadMod: Promise<ESObject> = import('../ai/LocalChatBridge') as Promise<ESObject>;
-    return loadMod.then((mod: ESObject): Promise<Object | null | undefined> => {
-      return this.runLocalAgent(mod, payload);
-    }).catch((): Object | null | undefined => {
-      return undefined;  // 系统无 DataAugmentationKit
     });
   }
 
-  private async runLocalAgent(mod: ESObject, payload: Record<string, Object>): Promise<Object | null | undefined> {
-    try {
-      const instruction = String(payload['instruction'] ?? '');
-      const mbtB64 = String(payload['mbt_b64'] ?? '');
-      let mbt = '';
-      if (mbtB64) {
-        const helper = new util.Base64Helper();
-        mbt = util.TextDecoder.create("utf-8").decodeToString(helper.decodeSync(mbtB64));
+  /** engine_apply_human_op：{ docB64, op } → 引擎人类门。成功 resolve 引擎信封
+   * （含 ok/mbt_b64 等，ok:false 的门拒绝原样透传）；导出缺失/传输失败 resolve
+   * { error }（消费方据此回退本地路径）。 */
+  private engineApplyHumanOp(args: Record<string, Object>): Promise<Object | null> {
+    return new Promise<Object | null>((resolve) => {
+      const docB64 = String(args['docB64'] ?? '');
+      const op = String(args['op'] ?? '');
+      try {
+        const r: EngineApplyResult = applyHumanOp(docB64, op);
+        if (!r.ok) {
+          const out: CmdError = { error: r.error };
+          resolve(out);
+          return;
+        }
+        resolve(JSON.parse(r.envelope) as Object);
+      } catch (e) {
+        console.error(`[engine] apply 失败: ${op} -> ${(e as Error).message}`);
+        const out: CmdError = { error: `engine_apply_failed:${(e as Error).message}` };
+        resolve(out);
       }
-      const text: string | null = await mod.chatOnce(instruction, mbt);
-      if (text === null) return undefined;
-      const ops = CommandDispatch.extractOps(text);
-      const out: AgentResult = {
-        ok: true, ops: ops, text: text.trim(), stopReason: 'end', mbtB64: mbtB64
-      };
-      return out;
-    } catch (e) {
-      return undefined;
-    }
+    });
   }
 
-  /** invoke_fx_sdk：Agent 聊天/模型列表。默认执行者 = 端侧系统 AI（免 key、本地化），
-   *  用户显式配置云端 key 时走 OpenAI 兼容端点。 */
+  /** engine_render（M3）：{ docB64 } → render_mbt 信封（artboards[].svg 供画布高保真层）。 */
+  private engineRenderCmd(args: Record<string, Object>): Promise<Object | null> {
+    return new Promise<Object | null>((resolve) => {
+      const docB64 = String(args['docB64'] ?? '');
+      try {
+        const r: EngineApplyResult = renderDoc(docB64);
+        if (!r.ok) {
+          const out: CmdError = { error: r.error };
+          resolve(out);
+          return;
+        }
+        resolve(JSON.parse(r.envelope) as Object);
+      } catch (e) {
+        console.error(`[engine] render 失败: ${(e as Error).message}`);
+        const out: CmdError = { error: `engine_render_failed:${(e as Error).message}` };
+        resolve(out);
+      }
+    });
+  }
+
+  /** engine_history（M3）：{ docB64, sub } → session_history（按板 init/commit/undo/redo）。
+   * undo/redo 改文档 → 信封带 canonical（mbt_b64），消费方合并回灌。 */
+  private engineHistoryCmd(args: Record<string, Object>): Promise<Object | null> {
+    return new Promise<Object | null>((resolve) => {
+      const docB64 = String(args['docB64'] ?? '');
+      const sub = String(args['sub'] ?? '');
+      try {
+        const r: EngineApplyResult = historyOp(docB64, sub);
+        if (!r.ok) {
+          const out: CmdError = { error: r.error };
+          resolve(out);
+          return;
+        }
+        resolve(JSON.parse(r.envelope) as Object);
+      } catch (e) {
+        console.error(`[engine] history 失败: ${sub} -> ${(e as Error).message}`);
+        const out: CmdError = { error: `engine_history_failed:${(e as Error).message}` };
+        resolve(out);
+      }
+    });
+  }
+
+  /** invoke_fx_sdk：Agent 聊天/模型列表。云端 OpenAI 兼容直连（batch-9 起：无 key 不再
+   * 隐性改道端侧——执行者选择归 AgentService 选定执行者优先链，此处诚实报错兜底）。 */
   private invokeFx(args: Record<string, Object>): Promise<Object | null> {
     return new Promise<Object | null>((resolve) => {
       const payload = JSON.parse(String(args['payload'] ?? '{}')) as Record<string, Object>;
@@ -379,12 +463,11 @@ export class CommandDispatch {
       const mode = String(payload['mode'] ?? '');
 
       if (mode !== 'models' && !apiKey.trim() && !fromPayload.trim()) {
-        // 默认执行者：系统级端侧 AI
-        this.localAgent(payload).then((r: Object | null | undefined): void => {
-          if (r !== undefined) { resolve(r); return; }
-          const out: CmdError = { error: 'local_ai_unavailable: 端侧模型不可用，请在设置中配置云端 API Key' };
-          resolve(out);
-        });
+        // batch-9（复审 finding-1 后门收口）：原「无 key→localAgent 隐性改道」分支删除——
+        // 执行者选择归 AgentService 选定执行者优先链（provider=xiaoyi 由其直调 chatOnce，
+        // 不经本命令）；此处对无 key 云端调用诚实报错，杜绝静默改道击穿执行者诚实语义。
+        const out: CmdError = { error: 'api_key_required: 未配置云端 API Key' };
+        resolve(out);
         return;
       }
       let baseUrl = String(payload['baseUrl'] ?? args['baseUrl'] ?? 'https://api.deepseek.com');
@@ -392,7 +475,18 @@ export class CommandDispatch {
       if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
       if (String(payload['mode'] ?? '') === 'models') {
-        this.listModels(baseUrl, apiKey).then((v: Object | null): void => resolve(v));
+        this.listModels(baseUrl, apiKey).then((v: Object | null): void => {
+          // 网络失败/空列表 → 回落 bundled models.json 快照（batch-5 小改，照抄 loadModelRegistry 先例）
+          const fm = v as FxModels;
+          if (v !== null && Array.isArray(fm.models) && fm.models.length > 0) {
+            resolve(v);
+            return;
+          }
+          this.snapshotModels().then((ids: string[]): void => {
+            const out: FxModels = { models: ids, source: 'snapshot' };
+            resolve(out);
+          });
+        });
         return;
       }
       const url = baseUrl + '/chat/completions';
@@ -433,6 +527,25 @@ export class CommandDispatch {
         resolve(out);
       });
     });
+  }
+
+  /** bundled models.json 快照（providers{id→{models{id…}}}}）展平全部模型 id，离线兜底。 */
+  private snapshotModels(): Promise<string[]> {
+    const ctx = this.context;
+    if (!ctx) return Promise.resolve([]);
+    return ctx.resourceManager.getRawFileContent('models.json').then((data: Uint8Array): string[] => {
+      const snap = JSON.parse(util.TextDecoder.create('utf-8').decodeToString(data)) as ModelSnapshot;
+      const providers = snap.providers ?? {};
+      const ids: string[] = [];
+      for (const pid of Object.keys(providers)) {
+        const p = providers[pid];
+        const models = p?.models ?? {};
+        for (const mid of Object.keys(models)) {
+          if (!ids.includes(mid)) ids.push(mid);
+        }
+      }
+      return ids;
+    }).catch((): string[] => []);
   }
 
   private listModels(baseUrl: string, apiKey: string): Promise<Object | null> {

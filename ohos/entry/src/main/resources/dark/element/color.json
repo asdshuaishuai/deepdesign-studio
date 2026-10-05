@@ -3,6 +3,102 @@
     {
       "name": "start_window_background",
       "value": "#000000"
+    },
+    {
+      "name": "dd_brand",
+      "value": "#006CDE"
+    },
+    {
+      "name": "dd_component_activated",
+      "value": "#317AF7"
+    },
+    {
+      "name": "dd_focus",
+      "value": "#3F97E9"
+    },
+    {
+      "name": "dd_pressed",
+      "value": "#1A7AE1"
+    },
+    {
+      "name": "dd_warning",
+      "value": "#E64548"
+    },
+    {
+      "name": "dd_alert",
+      "value": "#BA5500"
+    },
+    {
+      "name": "dd_success",
+      "value": "#007900"
+    },
+    {
+      "name": "dd_purple",
+      "value": "#8A2BE2"
+    },
+    {
+      "name": "dd_tx_primary",
+      "value": "#DBFFFFFF"
+    },
+    {
+      "name": "dd_tx_secondary",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "dd_tx_tertiary",
+      "value": "#66FFFFFF"
+    },
+    {
+      "name": "dd_bg",
+      "value": "#18181A"
+    },
+    {
+      "name": "dd_sub_bg",
+      "value": "#000000"
+    },
+    {
+      "name": "dd_input_bg",
+      "value": "#19FFFFFF"
+    },
+    {
+      "name": "dd_input_sub_bg",
+      "value": "#19FFFFFF"
+    },
+    {
+      "name": "dd_dialog_bg",
+      "value": "#202224"
+    },
+    {
+      "name": "dd_card",
+      "value": "#202224"
+    },
+    {
+      "name": "dd_component_normal",
+      "value": "#19FFFFFF"
+    },
+    {
+      "name": "dd_separator",
+      "value": "#33FFFFFF"
+    },
+    {
+      "name": "dd_mask_thin",
+      "value": "#66000000"
+    },
+    {
+      "name": "dd_mask_light",
+      "value": "#99000000"
+    },
+    {
+      "name": "dd_mask_regular",
+      "value": "#B2000000"
+    },
+    {
+      "name": "dd_mask_thick",
+      "value": "#E5000000"
+    },
+    {
+      "name": "dd_dialog_mask",
+      "value": "#66000000"
     }
   ]
 }

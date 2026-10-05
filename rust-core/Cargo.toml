@@ -16,6 +16,10 @@ napi-derive-ohos = { version = "1.0", optional = true }
 # DDP 认证加密容器（与桌面版 src-tauri 同一份 vendored codec——同一 .ddp 两端互通）
 moonviz-ddp = { path = "../vendor/moonviz-ddp" }
 base64 = "0.22"
+# wasmtime 引擎宿主 + 信封解析（gap-global-3 第二阶段探针：ohos 交叉编译面放开，
+# cfg(not(ohos)) 门已撤——wasmtime 在 OHOS target 上的编译兼容性以真机构建为准）
+wasmtime = "49.0.0"
+serde_json = "1.0"
 
 # hilog 仅存在于 OHOS 目标（host 测试/CI 不需要链接 OHOS 系统库）
 [target.'cfg(target_env = "ohos")'.dependencies]
