@@ -278,7 +278,7 @@ export class AgentService {
     let reviewDone = false;
     for (let round = 0; round < ROUNDS; round++) {
       step('tool_start', `云端请求 ${conf.model} · 第 ${round + 1}/${ROUNDS} 轮`, conf.baseUrl, true);
-      const v = await this.loopChat(messages, tools, conf);
+      const v = await this.loopChat(messages, tools, conf, opts !== null ? opts.thinkingLevel : 'auto');
       if (typeof v.error === 'string' && v.error !== '') {
         hilog.error(0x0000, 'ddAgent', 'round %{public}d failed: %{public}s', round + 1, v.error.slice(0, 120));
         throw new Error(v.error);
@@ -286,6 +286,13 @@ export class AgentService {
       const msg = (v.message ?? {}) as Record<string, Object>;
       const tcs = (msg['tool_calls'] ?? []) as Array<Record<string, Object>>;
       const content = typeof msg['content'] === 'string' ? msg['content'] as string : '';
+      if (tcs.length === 0 && content.trim() === '') {
+        // 空消息（推理 token 耗尽/网关异常）：不 break 不计报告——注入推进提示，
+        // 轮预算内继续（连续空轮由 ROUNDS 上限自然收敛）
+        const nm: Record<string, Object> = { 'role': 'user', 'content': '继续：调用 moonviz_op 工具执行设计操作，或给出中文报告。' };
+        messages.push(nm);
+        continue;
+      }
       if (tcs.length === 0) {
         // 无工具调用：审查注入点（桌面 review 语义，单次）或收报告
         if (!reviewDone && ops > 0) {
@@ -376,19 +383,81 @@ export class AgentService {
     return { ok: false, reply: '模型未给出可执行操作', executed: false, ops: 0 };
   }
 
+  /** 思考方言表（M3.6.6，桌面 agent.rs::thinking_extra_body OpenAI 半区移植——稳定性
+   * 支柱：恒思考模型如 StepFun 把 token 预算耗在思考上，maxTokens 不足即返回空消息
+   * 断轮；batch-3「仅透传留痕」的欠账就此清偿）。按模型名分部：GLM-5.3 强制思考仅
+   * low/high/max；Kimi k3 恒开 off→none；Kimi k2.x/Moonshot/MiniMax/GLM/DeepSeek-off/
+   * 未知模型 off→thinking disabled；StepFun 三档无开关；Qwen 仅 vLLM off 方言；
+   * auto 不注入。 */
+  private thinkingExtraBody(model: string, level: string): Record<string, Object> | null {
+    let lv = level;
+    if (lv === 'on') lv = 'high';
+    const m = model.toLowerCase();
+    if (lv === 'auto') return null;
+    const thinkDisabled: Record<string, Object> = { 'type': 'disabled' };
+    const thinkOff: Record<string, Object> = { 'thinking': thinkDisabled };
+    if (m.includes('glm-5.3')) {
+      const effort = (lv === 'off' || lv === 'low') ? 'low' : (lv === 'medium' || lv === 'high') ? 'high' : 'max';
+      const r: Record<string, Object> = { 'reasoning_effort': effort };
+      return r;
+    }
+    if (m.includes('k3') || m.includes('kimi-for-coding')) {
+      const effort = lv === 'off' ? 'none' : (lv === 'medium' ? 'high' : lv);
+      const r: Record<string, Object> = { 'reasoning_effort': effort };
+      return r;
+    }
+    if (m.includes('kimi') || m.includes('moonshot')) {
+      return lv === 'off' ? thinkOff : null;
+    }
+    if (m.includes('glm')) {
+      if (lv === 'off') return thinkOff;
+      const r: Record<string, Object> = { 'reasoning_effort': lv };
+      return r;
+    }
+    if (m.includes('minimax')) {
+      return lv === 'off' ? thinkOff : null;
+    }
+    if (m.includes('step')) {
+      const effort = (lv === 'off' || lv === 'low') ? 'low' : (lv === 'max' ? 'high' : lv);
+      const r: Record<string, Object> = { 'reasoning_effort': effort };
+      return r;
+    }
+    if (m.includes('deepseek')) {
+      if (lv === 'off') return thinkOff;
+      const r: Record<string, Object> = { 'reasoning_effort': lv };
+      return r;
+    }
+    if (m.includes('qwen')) {
+      if (lv === 'off') {
+        const kw: Record<string, Object> = { 'enable_thinking': false };
+        const r: Record<string, Object> = { 'chat_template_kwargs': kw };
+        return r;
+      }
+      return null;
+    }
+    return lv === 'off' ? thinkOff : null;
+  }
+
   /** loop 专用 chat（messages/tools 直传 Dispatch invoke_fx_sdk；错误以 error 字段带回）。 */
   private async loopChat(messages: Array<Record<string, Object>>, tools: Array<Object>,
-    conf: AiConf): Promise<FxOutcome> {
+    conf: AiConf, thinkingLevel: string): Promise<FxOutcome> {
     if (this.dispatch === null) return { error: 'dispatch 未注入' };
     const payload: Record<string, Object> = {
       'mode': 'chat',
       'baseUrl': conf.baseUrl,
       'model': conf.model,
       'messages': messages as Object,
-      'maxTokens': 2048,
+      'maxTokens': 8192,   // M3.6.6：2048→8192（桌面同值）——推理模型思考耗 token，不足即空消息
       'tools': tools as Object,
       'toolChoice': 'auto'
     };
+    const extra = this.thinkingExtraBody(conf.model, thinkingLevel);
+    if (extra !== null) {
+      const keys = Object.keys(extra);
+      for (const k of keys) {
+        payload[k] = extra[k];
+      }
+    }
     const args: Record<string, Object> = { 'apiKey': conf.apiKey, 'payload': JSON.stringify(payload) };
     const v: Object | null = await this.dispatch.dispatch('invoke_fx_sdk', args);
     if (v === null) {
