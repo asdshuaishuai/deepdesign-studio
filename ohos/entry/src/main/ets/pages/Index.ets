@@ -8556,6 +8556,16 @@ struct Index {
                     .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                     .padding({ left: 9, right: 9 })
                     .enabled(this.cfgProvider !== 'xiaoyi')   // batch-9：小艺档免 model（零回退门）
+                  // M3.6.3：▾ 帽内嵌输入行（用户决策）——获取模型成功后出现在输入框尾部，
+                  // 点击展开模型清单（bindMenu 引用形），选中经 pickModel 回填本输入框；
+                  // 输入框手输名义不变。原输入框下方的独立模型触发行拆除（与输入框双框
+                  // 同值显示，用户红框点名冗余）
+                  if (this.cfgModels.length > 0) {
+                    Text('▾').fontSize(10).fontColor(this.T().tx2)
+                      .height(this.sp(H_SET_FIELD))
+                      .padding({ left: 2, right: 10 })
+                      .bindMenu(this.modelMenuPanel)
+                  }
                   Text('获取模型').fontSize(this.fp(F_SET_LABEL)).fontWeight(500).fontColor(this.T().tx2)
                     .height(this.sp(H_SET_BTN)).padding({ left: 10, right: 10 }).borderRadius(6)   // r12 fix-aitab-4：i:1161 inline font 11/padding 0 10 + .tbtn h28 r6
                     .stateStyles({
@@ -8568,20 +8578,7 @@ struct Index {
                       this.fetchModels();
                     })
                 }.width('100%')
-                if (this.cfgModels.length > 0) {
-                  // 模型选择触发行（batch-12 cur-9 chips→下拉、batch-3 dd-select-model
-                  // 自绘弹层均不动；r12 fix-aitab-2：随字段几何 h32/radius 8/padding 9/
-                  // border+card，空值文案 tx3 占位色保留）
-                  Row() {
-                    Text(this.cfgModel === '' ? '获取模型后选择' : this.cfgModel)
-                      .fontSize(this.fp(F_SET_MONO_URL)).fontFamily('monospace')
-                      .fontColor(this.cfgModel === '' ? this.T().tx3 : this.T().tx)
-                      .maxLines(1).layoutWeight(1)
-                    Text('▾').fontSize(8).fontColor(this.T().tx2)
-                  }.width('100%').height(this.sp(H_SET_FIELD)).padding({ left: 9, right: 9 }).borderRadius(8)
-                  .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-                  .bindMenu(this.modelMenuPanel)   // 箭头形→引用形（r9 实测箭头形 builder 不求值）
-                }
+                // （独立模型触发行已于 M3.6.3 拆除——▾ 帽内嵌 Model ID 输入行，见上）
                 // 能力提示（i:1157-1164 #agent-model-hint 等价；batch-3 audit-modal-6；
                 // r12 fix-aitab-1：10.5/tx3=F_SET_SEC+行高1.55，归位 Model ID 字段块，
                 // 原非缺失态 tx2 对齐桌面 tx3）
@@ -8595,7 +8592,7 @@ struct Index {
                   Text(this.capHintWarn()).fontSize(this.fp(F_SET_SEC)).lineHeight(16.3).fontColor(this.T().danger).width('100%')
                 }
               }.width('100%')
-              }
+              }   // M3.6.2 小艺档包裹层闭合（if cfgProvider !== 'xiaoyi'，:8502 开）
 
               // 思考等级（i:1165-1175；batch-12 cur-9：chips → Select 组件=桌面 <select> 语义；
               // 档位经 restrictThinking 按快照 reasoning_options 收紧。
