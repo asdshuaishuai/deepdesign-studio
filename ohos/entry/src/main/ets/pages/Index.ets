@@ -5224,21 +5224,10 @@ struct Index {
   /** 顶栏左簇（r5 重构抽出）：brand+tsep+项目名+filechip——宽窄两态共用。 */
   @Builder
   topbarLeft() {
-    // brand（batch-4，audit-topbar-11：海豹吉祥物 PNG 替代 dD 文字块；i:784 base64 解码
-    // 落 resources/base/media/app_logo.png 64×64；.logo 20/20 radius 5 阴影 i:70）
-    Row({ space: 8 }) {
-      Image($r('app.media.app_logo'))
-        .width(20).height(20).borderRadius(this.T().rIcon)   // batch-3：logo 底圆角 5→HMOS 8（§4 icon）
-        .shadow({ radius: SH_LOGO.radius, offsetX: SH_LOGO.dx, offsetY: SH_LOGO.dy, color: this.T().shadowMd })   // r10 sh-4：几何 token SH_LOGO（4/(0,1) 不变）；取色硬编码 rgba(15,23,42,0.25)→主题 shadowMd（§五登记行为修正）
-      Column({ space: 0 }) {
-        Row({ space: 5 }) {
-          Text('deepDesign').fontSize(13).fontWeight(700).fontColor(this.T().tx)
-          Text('STUDIO').fontSize(9).fontColor(this.T().tx3).fontWeight(600)
-            .letterSpacing(1.2).margin({ top: 1 })
-        }
-      }
-    }
-    this.tsep()
+    // M3.6.2：品牌块拆除（用户决策）——鸿蒙有系统标题栏（native「deepDesign」+ 图标，
+    // M3.6.1 修复后正常显示），应用顶栏再放 logo+deepDesign STUDIO 属完全冗余；项目 chip
+    // 前移至最左（原品牌位）。副产：还原态 980 最小档入流预算富余 ~150vp，窄窗压缩
+    // 随之拆除（药丸 padding 13/操作组间距 6/演示 10/导出▾ 8/导出DDP 12 恢复桌面常量）。
     // 项目名裸文字 + ▾ 下拉（batch-4，audit-topbar-5：名称移出 chip——桌面 .proj> b
     // i:786 语义）；filechip 只承担脏标/版本
     Row({ space: 5 }) {
@@ -5267,7 +5256,7 @@ struct Index {
           this.modeIcon(i)
           Text(m).fontSize(this.fp(F_TOOLBAR)).fontWeight(this.modeIdx === i ? 600 : 500)   // batch-5：modeSeg 断点字号（§3.3 fToolLabel，12.5↔11.5）
             .fontColor(this.modeIdx === i ? this.T().tx : this.T().tx2)
-        }.height(this.sp(H_PILL)).padding({ left: this.isNarrowBar() ? 10 : 13, right: this.isNarrowBar() ? 10 : 13 }).borderRadius(8)   // r10 h-topbar-3：药丸断点高（28↔25）；M3.6.1 窄窗 padding 13→10（minWidth 980 档入流预算，见顶栏壳注释）
+        }.height(this.sp(H_PILL)).padding({ left: 13, right: 13 }).borderRadius(8)   // r10 h-topbar-3：药丸断点高（28↔25）
         .backgroundColor(this.modeIdx === i ? this.T().card : Color.Transparent)
         .shadow(this.modeIdx === i ?
           { radius: SH_SEG_SELECTED.radius, offsetX: SH_SEG_SELECTED.dx, offsetY: SH_SEG_SELECTED.dy, color: this.T().shadowMd } :
@@ -5290,7 +5279,7 @@ struct Index {
    * topW 跨阈值切换时的一致性护栏。 */
   @Builder
   opsGroup() {
-    Row({ space: this.isNarrowBar() ? 4 : 6 }) {   // M3.6.1：窄窗间距 6→4（minWidth 980 档入流预算，见顶栏壳注释）
+    Row({ space: 6 }) {
       // 小艺徽章折叠为圆点+短文案（batch-4，audit-topbar-2：全文案入设置卡）
       // 窄窗隐藏（batch-1，iss-5 响应式折叠）：还原态 931vp 宽度预算不足，低频项让位，
       // 状态文案仍可在设置卡查看；宽窗（topW≥1200）原样保留
@@ -5323,18 +5312,18 @@ struct Index {
           .draggable(false)
           .interpolation(ImageInterpolation.Medium)
         Text('演示').fontSize(this.fp(F_TOOLBAR)).fontWeight(500).fontColor(this.T().tx2)   // batch-5：工具行断点字号（§3.3，12.5↔11.5）
-      }.height(this.sp(H_PILL)).padding({ left: this.isNarrowBar() ? 6 : 10, right: this.isNarrowBar() ? 6 : 10 }).borderRadius(8)   // r10 h-topbar-3：演示药丸断点高（28↔25）；M3.6.1 窄窗 padding 10→6（980 档导出DDP 右缘贴边回收）
+      }.height(this.sp(H_PILL)).padding({ left: 10, right: 10 }).borderRadius(8)   // r10 h-topbar-3：演示药丸断点高（28↔25）
       .onClick(() => { this.actDemoEntry(); })   // gap-canvas-7：唯一入口，起点页进入
       Row({ space: 4 }) {
         Text('⇩').fontSize(this.fp(F_TOOLBAR_BADGE)).fontColor(this.T().tx2)   // batch-5：徽章档（§3.3，11↔10）
         Text('导出').fontSize(this.fp(F_TOOLBAR)).fontWeight(500).fontColor(this.T().tx2)   // batch-5：工具行断点字号（§3.3，12.5↔11.5）
         Text('▾').fontSize(8).fontColor(this.T().tx2)   // r10 sz-topbar-3：箭头 8 两态同值保底不接 token
-      }.height(this.sp(H_PILL)).padding({ left: this.isNarrowBar() ? 5 : 8, right: this.isNarrowBar() ? 5 : 8 }).borderRadius(7)   // r10 h-topbar-3：导出▾ 药丸断点高（28↔25）；M3.6.1 窄窗 8→5 同上
+      }.height(this.sp(H_PILL)).padding({ left: 8, right: 8 }).borderRadius(7)   // r10 h-topbar-3：导出▾ 药丸断点高（28↔25）
       .bindMenu(this.exportMenuPanel)   // batch-2 dd-menu-export：自绘面板（r9 实测修正：箭头形 bindMenu builder 零求值 6 处全死，统一改引用形=recentMenu 顶栏先例；builder 展开时求值，canUndo 仍读当帧值）
       Row({ space: 5 }) {
         Text('↧').fontSize(this.fp(F_TOOLBAR_GLYPH)).fontColor(this.T().onAcc)   // r10 sz-topbar-3：字形断点（12↔11）
         Text('导出 DDP').fontSize(this.fp(F_TOOLBAR)).fontWeight(600).fontColor(this.T().onAcc)   // batch-5：工具行断点字号（§3.3，12.5↔11.5）
-      }.height(this.sp(H_PILL)).padding({ left: this.isNarrowBar() ? 8 : 12, right: this.isNarrowBar() ? 8 : 12 }).borderRadius(8)   // r10 h-topbar-3：导出DDP 药丸断点高（28↔25）；M3.6.1 窄窗 12→8 同上
+      }.height(this.sp(H_PILL)).padding({ left: 12, right: 12 }).borderRadius(8)   // r10 h-topbar-3：导出DDP 药丸断点高（28↔25）
       .backgroundColor(this.T().acc)
       .onClick(() => { this.showExport = true; })
     }
