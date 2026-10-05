@@ -12,6 +12,10 @@ pub mod ddp;
 // ohos 交叉编译面已放开（cfg(not(ohos)) 门撤除），双端同一实现。
 pub mod engine;
 
+// Agent 会话状态机（M3.6.7：桌面 agent.rs 循环架构移植——loop 状态机/工具执行/引擎
+// 调用全在 Rust；ArkTS 仅 HTTP 传输泵 + UI。宿主测试覆盖，见 agent.rs tests）。
+pub mod agent;
+
 // NAPI 门面仅设备构建启用（host 测试/CI：--no-default-features，
 // 避免 libace_napi.z.so 链接依赖）
 #[cfg(feature = "napi")]
@@ -115,5 +119,18 @@ mod napi_facade {
         crate::engine::history(&doc_b64, &sub)
             .map(|v| v.to_string())
             .map_err(napi_ohos::Error::from_reason)
+    }
+
+    /// Agent 会话启动（M3.6.7）：建会话返回首动作 JSON（{"action":"llm",...}）。
+    #[napi]
+    pub fn agent_start(instruction: String, doc_b64: String) -> napi_ohos::Result<String> {
+        crate::agent::agent_start(&instruction, &doc_b64).map(|v| v.to_string()).map_err(napi_ohos::Error::from_reason)
+    }
+
+    /// Agent 喂回 LLM 响应（同步 NAPI；工作线程执行由 ArkTS TaskPool 承担——引擎 op
+    /// 不上 UI 线程，批量轮 ANR 根因修复）。
+    #[napi]
+    pub fn agent_feed_llm(message_json: String) -> napi_ohos::Result<String> {
+        crate::agent::agent_feed(&message_json).map(|v| v.to_string()).map_err(napi_ohos::Error::from_reason)
     }
 }

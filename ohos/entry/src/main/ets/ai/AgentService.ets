@@ -10,6 +10,7 @@ import { chatOnce } from './LocalChatBridge';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { CommandDispatch, extractOps } from '../invoke/Dispatch';
 import { aiConfig, AiConf } from '../model/AiConfig';
+import { agentFeedOnWorker } from '../core/AgentFeedTask';
 
 export interface AgentOutcome {
   ok: boolean;
@@ -68,6 +69,13 @@ export class AgentService {
     this.lineExec = fn;
   }
 
+  /** 会话 canonical 回灌回调（M3.6.7）：loop 每轮把推进后的 canonical b64 交还
+   * Index（merge+SVG 刷新+sync 全在 Index 侧——appStore 归 UI 层所有）。 */
+  private docFlush: ((docB64: string) => void) | null = null;
+  attachDocFlush(fn: (docB64: string) => void): void {
+    this.docFlush = fn;
+  }
+
   /** 端侧小艺可用性（设置面板/顶栏状态显示）。带超时（init 挂起保护）。 */
   async probe(): Promise<boolean> {
     if (this.xiaoyiTried) return this.xiaoyiOk;
@@ -89,8 +97,7 @@ export class AgentService {
    */
   async run(instruction: string, mbtSummary: string, applyTemplate: (tid: string) => boolean,
     applyText: (text: string) => boolean, applyColor: (color: string) => boolean,
-    onStep?: (ev: AgentStep) => void, opts?: RunTuning, mbtNow?: () => string,
-    readMbt?: () => string, engineApply?: (op: string) => Promise<LineExecOutcome>): Promise<AgentOutcome> {
+    onStep?: (ev: AgentStep) => void, opts?: RunTuning, docB64?: string): Promise<AgentOutcome> {
     const t0 = Date.now();
     const step = (kind: string, label: string, detail: string, ok: boolean): void => {
       if (onStep) onStep({ kind: kind, label: label, detail: detail, ms: Date.now() - t0, ok: ok });
@@ -161,17 +168,66 @@ export class AgentService {
         if (reply !== null && reply.trim().length > 0) {
           step('tool_end', '小艺回复', reply.trim().slice(0, 80), true);
           const outcome = executeReply(reply.trim(), '小艺');
-          return await this.maybeReview(outcome, instruction, applyTemplate, applyText, applyColor, onStep, mbtNow);
+          return await this.maybeReview(outcome, instruction, applyTemplate, applyText, applyColor, onStep);
         }
       } catch (e) { /* 端侧不可用 → 本地兜底 */ }
       step('tool_end', '小艺不可用', '本地解析兜底', false);
     } else if (conf.apiKey.trim() !== '' && this.dispatch !== null) {
-      // 2) 选定执行者：云端 OpenAI 兼容（有 key 且 dispatch 已挂）——M3.6.4 起【真 agent
-      // loop】：多轮 tool-calling（moonviz_op/read_mbt），模型自规划 op 序列、看结果迭代，
-      // 收尾审查注入轮内（桌面 agent.rs 同构）；工具面不可用/网络失败诚实降级单轮意图链。
+      // 2) 选定执行者：云端 OpenAI 兼容（M3.6.7 真 agent loop——桌面 agent.rs 同构：
+      // loop 状态机/工具执行/引擎调用全在 Rust（rust-core agent.rs，op 于 TaskPool
+      // 工作线程过引擎人类门），ArkTS 仅 HTTP 传输泵 + 轨迹渲染）。失败诚实降级。
+      if (opts) {
+        step('plan', `调优 思考=${opts.thinkingLevel} · 步数=${opts.maxSteps}`, '', true);
+      }
       try {
-        return await this.agentLoop(instruction, conf, opts ?? null, onStep, readMbt,
-          engineApply, applyTemplate, applyText, applyColor);
+        const st = await this.dispatch.dispatch('agent_start', {
+          'instruction': instruction, 'docB64': docB64 ?? ''
+        } as Record<string, Object>);
+        let sess = JSON.parse(String((st as Record<string, Object>)['json'] ?? '{}')) as Record<string, Object>;
+        let guard = 0;
+        for (;;) {
+          if (++guard > 64) throw new Error('pump guard');
+          const action = String(sess['action'] ?? '');
+          if (action === 'error') throw new Error(String(sess['error'] ?? 'agent error'));
+          if (action === 'done') {
+            const oc = (sess['outcome'] ?? {}) as Record<string, Object>;
+            const ok = oc['ok'] === true;
+            const reply = String(oc['reply'] ?? '');
+            const executed = oc['executed'] === true;
+            const ops = Number(oc['ops'] ?? 0);
+            if (!ok) {
+              step('failed', '失败', reply.slice(0, 50), false);
+              return { ok: false, reply: reply, executed: false, ops: 0 };
+            }
+            if (!executed) {
+              // 0 op（澄清之外的空报告）：ArkTS 意图链兜底一次
+              const r = this.reviewExec(reply, applyTemplate, applyText, applyColor);
+              if (r.executed) {
+                step('tool_end', '意图落地', r.reply, true);
+                return { ok: true, reply: reply, executed: true, ops: r.ops };
+              }
+            }
+            return { ok: ok, reply: reply, executed: executed, ops: ops };
+          }
+          // action === 'llm'：先渲染上一 feed 的事件（工具执行轨迹），再发起本轮 HTTP
+          const evs = (sess['events'] ?? []) as Array<Record<string, Object>>;
+          for (const e2 of evs) {
+            step(String(e2['kind'] ?? 'tool_end'), String(e2['label'] ?? ''), String(e2['detail'] ?? ''), e2['ok'] === true);
+          }
+          step('tool_start', `云端请求 ${conf.model}`, conf.baseUrl, true);
+          const lvl = (opts ?? { thinkingLevel: 'auto' }).thinkingLevel;
+          const fx = await this.loopChat((sess['messages'] ?? []) as Object[],
+            (sess['tools'] ?? []) as Object[], conf, lvl);
+          if (typeof fx.error === 'string' && fx.error !== '') throw new Error(fx.error);
+          const feedJson: string = await agentFeedOnWorker(JSON.stringify(fx.message ?? {}));
+          sess = JSON.parse(feedJson) as Record<string, Object>;
+          // 活进度：会话 canonical 每轮回灌 Index（merge+SVG 刷新+sync 在 Index 侧；
+          // 撤销栈由 run 起点单次快照承担——整个 run 一个撤销边界）
+          const docB64Out = String(sess['doc_b64'] ?? '');
+          if (docB64Out !== '' && this.docFlush !== null) {
+            this.docFlush(docB64Out);
+          }
+        }
       } catch (e) {
         step('tool_end', '工具循环不可用，降级单轮意图解析', (e as Error).message.slice(0, 60), false);
       }
@@ -207,180 +263,6 @@ export class AgentService {
     }
     step('failed', '失败', '无可执行意图', false);
     return { ok: false, reply: '试试更具体的指令：生成手机登录页 / 生成注册页 / 把标题改成蓝色，或输入命令行（如 template web_login b1 1280 800）', executed: false, ops: 0 };
-  }
-
-  /**
-   * 真 agent loop（M3.6.4，桌面 agent.rs run() 的鸿蒙同构）：多轮 OpenAI 兼容
-   * tool-calling——messages 累积，assistant(tool_calls) 原样回填、逐 op 经 lineExec
-   * （引擎人类门优先）执行并以 role:'tool' 回填结果；无 tool_calls 时按桌面语义
-   * 先注入收尾审查轮（reviewDone 单次）再收报告；澄清=纯文本回复（无工具调用）。
-   * 轮次预算 24（登记偏离：桌面 maxSteps 200-2000 为 Rust 循环步、每步引擎直调；
-   * 鸿蒙每步一次 HTTP 往返——故 moonviz_op 支持多行批量、一轮落一批 op（M3.6.5），
-   * 24 轮 × 批量即覆盖完整需求构建；RunTuning.maxSteps 暂不直接消费）。
-   * 任何一轮 HTTP/协议失败抛错 → run() 诚实降级单轮意图链。
-   */
-  private async agentLoop(instruction: string, conf: AiConf, opts: RunTuning | null,
-    onStep?: (ev: AgentStep) => void, readMbt?: () => string,
-    engineApply?: (op: string) => Promise<LineExecOutcome>,
-    applyTemplate?: (tid: string) => boolean, applyText?: (text: string) => boolean,
-    applyColor?: (color: string) => boolean): Promise<AgentOutcome> {
-    return this.agentLoopInner(instruction, conf, opts, onStep, readMbt, engineApply,
-      applyTemplate, applyText, applyColor);
-  }
-
-  private async agentLoopInner(instruction: string, conf: AiConf, opts: RunTuning | null,
-    onStep?: (ev: AgentStep) => void, readMbt?: () => string,
-    engineApply?: (op: string) => Promise<LineExecOutcome>,
-    applyTemplate?: (tid: string) => boolean, applyText?: (text: string) => boolean,
-    applyColor?: (color: string) => boolean): Promise<AgentOutcome> {
-    const t0 = Date.now();
-    const step = (kind: string, label: string, detail: string, ok: boolean): void => {
-      if (onStep) onStep({ kind: kind, label: label, detail: detail, ms: Date.now() - t0, ok: ok });
-    };
-    step('plan', '计划', instruction, true);
-    if (opts !== null) {
-      step('plan', `调优 思考=${opts.thinkingLevel} · 步数=${opts.maxSteps}`, '', true);
-    }
-    // ArkTS：对象字面量必须逐层显式 Record 标注（arkts-no-untyped-obj-literals）
-    const opProp: Record<string, Object> = {
-      'type': 'string', 'description': 'One operation string, e.g. "set login title color=#007aff"'
-    };
-    const opProps: Record<string, Object> = { 'op': opProp };
-    const mvRequired: Array<string> = ['op'];
-    const mvParams: Record<string, Object> = { 'type': 'object', 'properties': opProps, 'required': mvRequired };
-    const mvFn: Record<string, Object> = {
-      'name': 'moonviz_op',
-      'description': 'Execute MoonViz design operations (validated by the engine gates, committed to the canonical document). ' +
-        'BATCHING: you MAY put multiple operations in one call — separate them with newlines, one op per line, executed in order. ' +
-        'Batch aggressively (e.g. build a whole screen in one call) to minimize round trips. ' +
-        'Ops: "template <tid>" create an artboard from a preset; "create <id> <w> <h>" blank artboard; ' +
-        '"text <board> <node> <text>" set or add text; "set <board> <node> <key>=<value>" style keys color/fontSize/bold/opacity/radius; ' +
-        '"move <board> <node> <dx> <dy>"; "delete <board> <node>"; "delete-artboard <board>"; "flow <fromBoard>.<node> <toBoard>" wire interaction.',
-      'parameters': mvParams
-    };
-    const mvTool: Record<string, Object> = { 'type': 'function', 'function': mvFn };
-    const noProps: Record<string, Object> = {};
-    const noRequired: Array<string> = [];
-    const rmParams: Record<string, Object> = { 'type': 'object', 'properties': noProps, 'required': noRequired };
-    const rmFn: Record<string, Object> = {
-      'name': 'read_mbt',
-      'description': 'Read the current canonical document source (artboards, node ids, flows) — call when unsure about ids.',
-      'parameters': rmParams
-    };
-    const rmTool: Record<string, Object> = { 'type': 'function', 'function': rmFn };
-    const tools: Array<Object> = [mvTool, rmTool];
-    const messages: Array<Record<string, Object>> = [
-      { 'role': 'system', 'content': LOOP_SYS },
-      { 'role': 'user', 'content': instruction }
-    ];
-    const ROUNDS = 24;   // M3.6.5：12→24，配合批量 op（一轮可落整屏）覆盖完整需求构建
-    let ops = 0;
-    let reviewDone = false;
-    for (let round = 0; round < ROUNDS; round++) {
-      step('tool_start', `云端请求 ${conf.model} · 第 ${round + 1}/${ROUNDS} 轮`, conf.baseUrl, true);
-      const v = await this.loopChat(messages, tools, conf, opts !== null ? opts.thinkingLevel : 'auto');
-      if (typeof v.error === 'string' && v.error !== '') {
-        hilog.error(0x0000, 'ddAgent', 'round %{public}d failed: %{public}s', round + 1, v.error.slice(0, 120));
-        throw new Error(v.error);
-      }
-      const msg = (v.message ?? {}) as Record<string, Object>;
-      const tcs = (msg['tool_calls'] ?? []) as Array<Record<string, Object>>;
-      const content = typeof msg['content'] === 'string' ? msg['content'] as string : '';
-      if (tcs.length === 0 && content.trim() === '') {
-        // 空消息（推理 token 耗尽/网关异常）：不 break 不计报告——注入推进提示，
-        // 轮预算内继续（连续空轮由 ROUNDS 上限自然收敛）
-        const nm: Record<string, Object> = { 'role': 'user', 'content': '继续：调用 moonviz_op 工具执行设计操作，或给出中文报告。' };
-        messages.push(nm);
-        continue;
-      }
-      if (tcs.length === 0) {
-        // 无工具调用：审查注入点（桌面 review 语义，单次）或收报告
-        if (!reviewDone && ops > 0) {
-          reviewDone = true;
-          step('review', '🔎 收尾审查', '需求完整度 · 连线完整度 · 综合修复', true);
-          if (content.trim() !== '') {
-            const am: Record<string, Object> = { 'role': 'assistant', 'content': content };
-          messages.push(am);
-          }
-          const rm: Record<string, Object> = { 'role': 'user', 'content': REVIEW_PROMPT(instruction) };
-          messages.push(rm);
-          continue;
-        }
-        if (content.trim() === '') break;
-        step('tool_end', '云端回复', content.trim().slice(0, 80), true);
-        if (ops === 0 && this.isClarify(content)) {
-          step('tool_end', '澄清', '模型请求补充信息', true);
-          return { ok: true, reply: content, executed: false, ops: 0 };
-        }
-        if (ops > 0) {
-          return { ok: true, reply: content.trim(), executed: true, ops: ops };
-        }
-        // 0 op 且非澄清：模型只回文本没干活 → 兜底意图链（模板/改色/改文字）
-        if (applyTemplate !== undefined && applyText !== undefined && applyColor !== undefined) {
-          const r = this.reviewExec(content, applyTemplate, applyText, applyColor);
-          if (r.executed) {
-            step('tool_end', '意图落地', r.reply, true);
-            return { ok: true, reply: content.trim(), executed: true, ops: r.ops };
-          }
-        }
-        return { ok: true, reply: content.trim(), executed: false, ops: 0 };
-      }
-      // assistant(tool_calls) 原样回填（wire 契约：后续 role:'tool' 需与其 id 配对）
-      messages.push(msg);
-      for (const tc of tcs) {
-        const fn = tc['function'] as Record<string, string> | undefined;
-        const name = String(fn?.['name'] ?? '');
-        const tcId = String(tc['id'] ?? `call_${round}`);
-        if (name === 'read_mbt') {
-          const doc = readMbt !== undefined ? readMbt() : '';
-          // M3.6.6：结构大纲代替全文——板/节点(id+component+text)/flows 全量 id 在场，
-          // 但体积从 ~18KB 降到 ~4KB（全文回灌撑爆上下文、轮次时延爆炸的实证根因）
-          const outline = doc.split('\n')
-            .filter((l: string): boolean => l.startsWith('## ') || l.includes('id="') ||
-              l.includes('component="') || l.startsWith('flow '))
-            .map((l: string): string => l.trim())
-            .join('\n').slice(0, 4000);
-          step('tool_end', 'read_mbt', `${outline.length} 字节（大纲）`, true);
-          const tm: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId, 'content': outline };
-          messages.push(tm);
-          continue;
-        }
-        let op = '';
-        try {
-          const argv = JSON.parse(String(fn?.['arguments'] ?? '{}')) as Record<string, string>;
-          op = String(argv['op'] ?? '');
-        } catch (e) { op = ''; }
-        if (op === '') {
-          const em: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId, 'content': '{"ok":false,"error":"empty op"}' };
-          messages.push(em);
-          continue;
-        }
-        // M3.6.5 批量执行：op 可含多行（一行一命令），顺序执行、聚合一笔回填——
-        // 一轮 HTTP 落一批 op（每步一次往返的管道开销摊薄 10 倍+，12 轮不够的根因即此）
-        const lines = op.split(/\r?\n/).map((x: string): string => x.trim()).filter((x: string): boolean => x !== '');
-        let done = 0;
-        const notes: string[] = [];
-        for (const one of lines) {
-          // M3.6.6：engineApply 优先——完整引擎 op 词表直连人类门（桌面同面：place/update
-          // 全键/interact/state/align/constrain/fix...）；lineExec 仅无引擎闭包时的兜底
-          const r = engineApply !== undefined ? await engineApply(one) :
-            (this.lineExec !== null ? this.lineExec(one) : null);
-          const ok = r !== null && r.ok;
-          if (ok) { ops++; done++; }
-          notes.push(`${ok ? '✓' : '✗'} ${one.slice(0, 40)}${r !== null ? ' :: ' + r.note : ' :: executor missing'}`);
-          step('tool_end', `${ok ? '✓' : '✗'} ${one.slice(0, 44)}`, r !== null ? r.note : '执行器未注入', ok);
-        }
-        const noteJson = notes.map((x: string): string => x.replace(/"/g, "'")).join('\\n').slice(0, 1800);
-        const tr: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId,
-          'content': `{"ok":${done > 0 ? 'true' : 'false'},"executed":${done},"total":${lines.length},"detail":"${noteJson}"}` };
-        messages.push(tr);
-      }
-    }
-    if (ops > 0) {
-      return { ok: true, reply: `已完成 ${ops} 项操作（轮次预算用尽）`, executed: true, ops: ops };
-    }
-    step('failed', '失败', '轮次预算内无可执行操作', false);
-    return { ok: false, reply: '模型未给出可执行操作', executed: false, ops: 0 };
   }
 
   /** 思考方言表（M3.6.6，桌面 agent.rs::thinking_extra_body OpenAI 半区移植——稳定性
@@ -439,7 +321,7 @@ export class AgentService {
   }
 
   /** loop 专用 chat（messages/tools 直传 Dispatch invoke_fx_sdk；错误以 error 字段带回）。 */
-  private async loopChat(messages: Array<Record<string, Object>>, tools: Array<Object>,
+  private async loopChat(messages: Object[], tools: Object[],
     conf: AiConf, thinkingLevel: string): Promise<FxOutcome> {
     if (this.dispatch === null) return { error: 'dispatch 未注入' };
     const payload: Record<string, Object> = {
@@ -645,91 +527,7 @@ export class AgentService {
 // 构建循环/ground-truth 规则；差异登记：ohos 引擎面无检视类 op 导出，read_mbt 为
 // 唯一检视工具、组件发现走模板板 canonical 源的 component="..." 字段；批量 op 为
 // 鸿蒙扩展——一轮多行摊薄 HTTP 往返）
-const LOOP_SYS: string = `You are the embedded design agent of deepDesign Studio (HarmonyOS), a visual prototyping editor.
-You operate as a product designer, not a command executor: interpret what the user wants to
-ACHIEVE, decide which screens the experience needs, build them, connect them, and verify the result.
-The single source of truth is one MoonBit literate .mbt.md document; every operation you issue is
-validated by the engine (AgentGate) and committed immediately, so the user watches progress live.
-
-## Mindset
-- Derive intent: "a WeChat-style app" means an experience (login, feed, chat, profile, settings),
-  not one artboard. Before the first tool call, state a one-line plan: the screen list and how they connect.
-- CLARIFY-FIRST TASKS: when the user explicitly asks you to confirm questions before building,
-  reply with those questions as plain text — do NOT call tools and do NOT build yet.
-- Think in flows: a prototype is screens + navigation. An unconnected screen is unfinished.
-- Write real product copy (realistic labels, names, numbers), never lorem ipsum.
-- Full-bleed backgrounds are fine: place a background rect and grow it with
-  width_mode=fill & height_mode=fill. Nodes with EXPLICIT sizes must never intersect any
-  sibling rect (no_sibling_overlap rejects them): before each place, reserve a
-  non-intersecting slot; when you know a node's final size, pass [w] [h] inline.
-- Tiny precision nodes (battery/status icons, switches) occupy small rects
-  inside bars — place them FIRST, then place larger siblings around them.
-- Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
-  get read_mbt, one targeted op, done.
-
-## Build loop (from empty document)
-1. PLAN: choose screens; map each to a template. Available (template <tid> <name> [w] [h]):
-   login, login_v2, signup, dashboard, profile, settings, list_detail, onboarding,
-   empty_state, web_login, web_landing, web_dashboard, pc_app, adaptive_landing.
-   Artboard names become ids after sanitization — ASCII snake_case only (e.g. chat_list);
-   Chinese copy belongs in node text values, never in ids.
-2. CREATE: one "template <tid> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
-   node ids are only discoverable there. Artboard id = sanitized name.
-3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.
-   "place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]" adds engine
-   components — component ids appear as component="..." in read_mbt output of template
-   boards (badge/heading/body_text/text_input/button/divider at minimum). ALWAYS pass
-   the final [w] [h] when you know them — the gate evaluates the FINAL bbox.
-4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
-5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired.
-   Run "fix <artboard>" if violations accumulated.
-6. REPORT: stop calling tools and reply in Chinese: screens built and the flow map.
-
-## Tweak loop (document already loaded)
-0. read_mbt FIRST — always ground ids and flows before any op.
-1. Make the minimal ops. 2. Report what changed.
-
-## Operation grammar (multiple ops per moonviz_op call ALLOWED on this face: one per line,
-executed in order — batch a whole screen per call to minimize round trips)
-  template <template_id> <name> [w] [h] | create <name> [w] [h]
-  | duplicate <artboard> <new_name> | delete-artboard <artboard>
-  | place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]
-  | move <artboard> <node> <x> <y> | update <artboard> <node> k=v [k=v ...]
-  | delete <artboard> <node> | copy <artboard> <node> <new_id> [dx] [dy]
-  | reorder <artboard> <node> front|back|up|down | flip <artboard> <node> h|v|both|none
-  | align <artboard> left|right|top|bottom|hcenter|vcenter <n1> <n2> ...
-  | resize-canvas <artboard> <w> <h>
-  | interact <artboard> <node> <trigger> <action>  | uninteract <artboard> <node>
-  | state <artboard> <node> <state_name> k=v ...   | set-state <node> <state_name> [toggle]
-  | flow <from_artboard> <to_artboard> <node> | unflow <from_artboard> <to_artboard> <node>
-  | theme <name> (light|dark|high_contrast|sepia|nord|sunset) | fix <artboard>
-- update keys: w h text fill text_color stroke stroke_width radius opacity font_size weight
-  shadow rotate blur blend line tracking constraint align italic dash visible layout gap
-  justify padding width_mode height_mode x_mode y_mode name.
-  Quote values with spaces: text="Sign in". Unquoted words after a space are silently dropped.
-- interact triggers: tap long_press swipe_left swipe_right swipe_up swipe_down scroll_end
-  key_enter focus blur. interact actions: back | navigate_to:<board> | show_toast:<msg> | haptic.
-
-## Ground truth and errors
-- NEVER guess node/component/template ids: templates are listed above; everything else:
-  read_mbt. Ids are shared with the human canvas: never rename; new ids = snake_case.
-- Errors: unknown_artboard/unknown_node/unknown_template → read_mbt then retry with real ids.
-  Predicate violations (overflow, overlap) reject the op with predicate + node_id → adjust values;
-  if stuck run fix <artboard>. Never repeat an identical failing op.
-- On this engine face read-only inspection ops (list/lint/query/list-components/...) are NOT
-  available — read_mbt is your only introspection tool. Use it liberally.
-
-## HarmonyOS batching note
-You are running with a per-round HTTP budget: BATCH AGGRESSIVELY. Build one complete screen
-per moonviz_op call (template line, then all place/update lines, then all flow lines). Aim to
-finish the whole request in 3-6 calls.`;
 
 // 收尾审查注入提示（桌面 review_prompt 三段语义同构）
-const REVIEW_PROMPT: (goal: string) => string = (goal: string): string =>
-  '[收尾审查] 设计实现已完成。执行强制收尾审查——不得提问，直接用工具修复：\n' +
-  `1) 需求完整度：目标「${goal}」是否全部落实，缺项直接补建；\n` +
-  '2) 操作逻辑连线：可交互元素（按钮/链接）是否已用 flow 建立交互流，缺则补齐；\n' +
-  '3) 综合修复：布局重叠、明显对齐与配色问题。\n' +
-  '修复完成后给出简短中文报告；若无任何问题，只回复「审查通过」。';
 
 export const agentService: AgentService = new AgentService();

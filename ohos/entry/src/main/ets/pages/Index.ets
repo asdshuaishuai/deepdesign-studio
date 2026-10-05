@@ -1376,6 +1376,19 @@ struct Index {
     agentService.attachDispatch(this.dispatch);
     // batch-9 cur-5：命令行执行器注入——AgentService 命令流（extractOps 产物）逐行回调
     agentService.attachLineExec((line: string): LineExecOutcome => { return this.execCommandLine(line); });
+    agentService.attachDocFlush((docB64: string): void => {
+      // M3.6.7 会话 canonical 回灌（活进度）：merge + 引擎 SVG 刷新 + sync（UI 线程轻量）
+      try {
+        const dec = new util.Base64Helper().decodeSync(docB64);
+        const canonical = util.TextDecoder.create('utf-8').decodeToString(dec);
+        const parsed = parseMbtDoc(canonical);
+        if (parsed.ok) {
+          appStore.mergeCanonical(parsed);
+          this.refreshEngineSvg();
+          this.sync();
+        }
+      } catch (e) { /* 单轮回灌失败不阻断 run（下一轮覆盖） */ }
+    });
     const conf = aiConfig.load();
     this.cfgProvider = conf.provider;
     this.cfgBaseUrl = conf.baseUrl;
@@ -1697,9 +1710,7 @@ struct Index {
       },
       (ev: AgentStep): void => { this.pushStep(ev); },
       { thinkingLevel: this.cfgThinking, maxSteps: this.cfgMaxSteps },   // batch-3 透传（audit-modal-6）
-      (): string => `画布 ${appStore.boardCount()} 板 · 当前 ${this.curBoard()?.name ?? '无'} · ${this.curBoard()?.layers.length ?? 0} 层`,   // M3.6.4 审查轮新鲜画布态（执行后重取）
-      (): string => appStore.toCanonicalText(),   // M3.6.4 loop read_mbt 工具：canonical 全文（6000 字截断在 loop 侧）
-      (op: string): Promise<LineExecOutcome> => this.execEngineOpRawAsync(op)   // M3.6.6 moonviz_op：完整引擎词表直连（真回执）
+      this.utf8B64(appStore.toCanonicalText())   // M3.6.7：会话初始 canonical（Rust 侧种子引导兜底）
     ).then((r) => {
       this.agentMsg = r.reply;
       if (r.ok && !r.executed) {

@@ -202,7 +202,7 @@ pub(crate) fn hard_reset() {
 // ————————————————————————————————————————————————————————————————
 
 /// 文档入参解码：base64 → UTF-8 canonical。
-fn decode_doc(doc_b64: &str) -> Result<String, String> {
+pub fn decode_doc(doc_b64: &str) -> Result<String, String> {
     let bytes = BASE64
         .decode(doc_b64.as_bytes())
         .map_err(|e| format!("engine_doc_b64_invalid:{e}"))?;

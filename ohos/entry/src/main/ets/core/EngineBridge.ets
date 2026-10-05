@@ -110,3 +110,29 @@ export function historyOp(docB64: string, sub: string): EngineApplyResult {
     return { ok: false, envelope: '', error: 'engine_history_failed:' + (e as Error).message };
   }
 }
+
+/** Agent 会话启动（M3.6.7）：返回首动作 JSON（{"action":"llm","messages","tools","events"}）。
+ * ok=传输层成功；error=传输失败原因。 */
+export function agentStart(instruction: string, docB64: string): EngineApplyResult {
+  if (!engineExportReady(core.agentStart)) {
+    return { ok: false, envelope: '', error: 'engine_export_missing:agentStart' };
+  }
+  try {
+    return { ok: true, envelope: core.agentStart(instruction, docB64), error: '' };
+  } catch (e) {
+    return { ok: false, envelope: '', error: 'agent_start_failed:' + (e as Error).message };
+  }
+}
+
+/** Agent 喂回 LLM 响应（同步 NAPI——工作线程执行由 ArkTS TaskPool 承担，勿在 UI 线程直调）。
+ * 返回下一动作 JSON（{"action":"llm"|"done"|"error","events","outcome"}）。 */
+export function agentFeedLlm(messageJson: string): EngineApplyResult {
+  if (!engineExportReady(core.agentFeedLlm)) {
+    return { ok: false, envelope: '', error: 'engine_export_missing:agentFeedLlm' };
+  }
+  try {
+    return { ok: true, envelope: core.agentFeedLlm(messageJson), error: '' };
+  } catch (e) {
+    return { ok: false, envelope: '', error: 'agent_feed_failed:' + (e as Error).message };
+  }
+}

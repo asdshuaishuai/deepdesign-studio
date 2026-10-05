@@ -19,7 +19,7 @@ import { common } from '@kit.AbilityKit';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { ddpEncrypt, ddpDecrypt } from '../core/CoreBridge';
-import { probeEngine, applyHumanOp, renderDoc, historyOp, EngineStatus, EngineApplyResult } from '../core/EngineBridge';
+import { probeEngine, applyHumanOp, renderDoc, historyOp, EngineStatus, EngineApplyResult, agentStart, agentFeedLlm } from '../core/EngineBridge';
 
 interface FxModels {
   models: string[];
@@ -163,6 +163,10 @@ export class CommandDispatch {
         return this.engineStatus();
       case 'engine_apply_human_op':
         return this.engineApplyHumanOp(args);
+      case 'agent_start':
+        return this.agentStartCmd(args);
+      case 'agent_feed_llm':
+        return this.agentFeedCmd(args);
       case 'engine_render':
         return this.engineRenderCmd(args);
       case 'engine_history':
@@ -385,6 +389,38 @@ export class CommandDispatch {
           reason: `engine_probe_threw:${(e as Error).message}`
         };
         resolve(out);
+      }
+    });
+  }
+
+  /** agent_start（M3.6.7）：{ instruction, docB64 } → 建会话，resolve { json }（首动作）。 */
+  private agentStartCmd(args: Record<string, Object>): Promise<Object | null> {
+    const instruction = String(args['instruction'] ?? '');
+    const docB64 = String(args['docB64'] ?? '');
+    return new Promise<Object | null>((resolve): void => {
+      const r = agentStart(instruction, docB64);
+      if (r.ok) {
+        const okOut: Record<string, Object> = { 'json': r.envelope };
+        resolve(okOut);
+      } else {
+        const errOut: Record<string, Object> = { 'error': r.error };
+        resolve(errOut);
+      }
+    });
+  }
+
+  /** agent_feed_llm（M3.6.7）：{ messageJson } → 喂回 LLM 响应，resolve { json }（下一动作）。
+   * 引擎 op 在 TaskPool 工作线程执行（调用方经 agentFeedLlmAsync，UI 线程不阻塞）。 */
+  private agentFeedCmd(args: Record<string, Object>): Promise<Object | null> {
+    const messageJson = String(args['messageJson'] ?? '');
+    return new Promise<Object | null>((resolve): void => {
+      const r = agentFeedLlm(messageJson);
+      if (r.ok) {
+        const okOut: Record<string, Object> = { 'json': r.envelope };
+        resolve(okOut);
+      } else {
+        const errOut: Record<string, Object> = { 'error': r.error };
+        resolve(errOut);
       }
     });
   }
