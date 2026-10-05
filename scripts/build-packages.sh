@@ -11,6 +11,9 @@
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# 打包线版本（deb/AppImage/玲珑产物命名）取自 linglong.yaml，刻意保持纯数字四段，
+# 与 semver-prerelease 显示版本（0.4.0-beta）分轨："-beta" 进 deb revision 会让
+# 0.4.0-beta > 0.4.0，逆转后续正式版的升级序；数字段 0.4.0.0 保证升级序单调。
 VERSION="$(sed -n 's/^  version: "\(.*\)"$/\1/p' "$ROOT/linglong/linglong.yaml" | head -1)"
 VERSION="${VERSION:-0.4.0.0}"
 ID="com.deepcode.deepdesign"

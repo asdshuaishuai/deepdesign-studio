@@ -687,7 +687,9 @@ fn build_native_menus(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
     let app_menu = SubmenuBuilder::new(app, "deepDesign Studio")
         .about(Some(AboutMetadata {
             name: Some("deepDesign Studio".into()),
-            version: Some("0.3.0".into()),
+            // 版本唯一事实源是 tauri.conf.json 的 version（曾硬编码 0.3.0 与 UI 显示漂移）——
+            // 这里动态读取，随包版本自动同步
+            version: Some(app.package_info().version.to_string()),
             ..Default::default()
         }))
         .separator()
