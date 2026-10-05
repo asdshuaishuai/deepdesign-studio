@@ -7,6 +7,7 @@
 // （模板/改色/改文字）→ AppStore 执行。onStep 逐步推进实时轨迹（gap-right-4）。
 
 import { chatOnce } from './LocalChatBridge';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { CommandDispatch, extractOps } from '../invoke/Dispatch';
 import { aiConfig, AiConf } from '../model/AiConfig';
 
@@ -89,7 +90,7 @@ export class AgentService {
   async run(instruction: string, mbtSummary: string, applyTemplate: (tid: string) => boolean,
     applyText: (text: string) => boolean, applyColor: (color: string) => boolean,
     onStep?: (ev: AgentStep) => void, opts?: RunTuning, mbtNow?: () => string,
-    readMbt?: () => string): Promise<AgentOutcome> {
+    readMbt?: () => string, engineApply?: (op: string) => Promise<LineExecOutcome>): Promise<AgentOutcome> {
     const t0 = Date.now();
     const step = (kind: string, label: string, detail: string, ok: boolean): void => {
       if (onStep) onStep({ kind: kind, label: label, detail: detail, ms: Date.now() - t0, ok: ok });
@@ -170,7 +171,7 @@ export class AgentService {
       // 收尾审查注入轮内（桌面 agent.rs 同构）；工具面不可用/网络失败诚实降级单轮意图链。
       try {
         return await this.agentLoop(instruction, conf, opts ?? null, onStep, readMbt,
-          applyTemplate, applyText, applyColor);
+          engineApply, applyTemplate, applyText, applyColor);
       } catch (e) {
         step('tool_end', '工具循环不可用，降级单轮意图解析', (e as Error).message.slice(0, 60), false);
       }
@@ -220,6 +221,16 @@ export class AgentService {
    */
   private async agentLoop(instruction: string, conf: AiConf, opts: RunTuning | null,
     onStep?: (ev: AgentStep) => void, readMbt?: () => string,
+    engineApply?: (op: string) => Promise<LineExecOutcome>,
+    applyTemplate?: (tid: string) => boolean, applyText?: (text: string) => boolean,
+    applyColor?: (color: string) => boolean): Promise<AgentOutcome> {
+    return this.agentLoopInner(instruction, conf, opts, onStep, readMbt, engineApply,
+      applyTemplate, applyText, applyColor);
+  }
+
+  private async agentLoopInner(instruction: string, conf: AiConf, opts: RunTuning | null,
+    onStep?: (ev: AgentStep) => void, readMbt?: () => string,
+    engineApply?: (op: string) => Promise<LineExecOutcome>,
     applyTemplate?: (tid: string) => boolean, applyText?: (text: string) => boolean,
     applyColor?: (color: string) => boolean): Promise<AgentOutcome> {
     const t0 = Date.now();
@@ -269,6 +280,7 @@ export class AgentService {
       step('tool_start', `云端请求 ${conf.model} · 第 ${round + 1}/${ROUNDS} 轮`, conf.baseUrl, true);
       const v = await this.loopChat(messages, tools, conf);
       if (typeof v.error === 'string' && v.error !== '') {
+        hilog.error(0x0000, 'ddAgent', 'round %{public}d failed: %{public}s', round + 1, v.error.slice(0, 120));
         throw new Error(v.error);
       }
       const msg = (v.message ?? {}) as Record<string, Object>;
@@ -314,8 +326,15 @@ export class AgentService {
         const tcId = String(tc['id'] ?? `call_${round}`);
         if (name === 'read_mbt') {
           const doc = readMbt !== undefined ? readMbt() : '';
-          step('tool_end', 'read_mbt', `${doc.length} 字节`, true);
-          const tm: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId, 'content': doc.slice(0, 6000) };
+          // M3.6.6：结构大纲代替全文——板/节点(id+component+text)/flows 全量 id 在场，
+          // 但体积从 ~18KB 降到 ~4KB（全文回灌撑爆上下文、轮次时延爆炸的实证根因）
+          const outline = doc.split('\n')
+            .filter((l: string): boolean => l.startsWith('## ') || l.includes('id="') ||
+              l.includes('component="') || l.startsWith('flow '))
+            .map((l: string): string => l.trim())
+            .join('\n').slice(0, 4000);
+          step('tool_end', 'read_mbt', `${outline.length} 字节（大纲）`, true);
+          const tm: Record<string, Object> = { 'role': 'tool', 'tool_call_id': tcId, 'content': outline };
           messages.push(tm);
           continue;
         }
@@ -335,7 +354,10 @@ export class AgentService {
         let done = 0;
         const notes: string[] = [];
         for (const one of lines) {
-          const r = this.lineExec !== null ? this.lineExec(one) : null;
+          // M3.6.6：engineApply 优先——完整引擎 op 词表直连人类门（桌面同面：place/update
+          // 全键/interact/state/align/constrain/fix...）；lineExec 仅无引擎闭包时的兜底
+          const r = engineApply !== undefined ? await engineApply(one) :
+            (this.lineExec !== null ? this.lineExec(one) : null);
           const ok = r !== null && r.ok;
           if (ok) { ops++; done++; }
           notes.push(`${ok ? '✓' : '✗'} ${one.slice(0, 40)}${r !== null ? ' :: ' + r.note : ' :: executor missing'}`);
@@ -369,8 +391,14 @@ export class AgentService {
     };
     const args: Record<string, Object> = { 'apiKey': conf.apiKey, 'payload': JSON.stringify(payload) };
     const v: Object | null = await this.dispatch.dispatch('invoke_fx_sdk', args);
-    if (v === null) return { error: 'dispatch 返回空' };
-    return v as FxOutcome;
+    if (v === null) {
+      hilog.error(0x0000, 'ddAgent', 'loopChat: dispatch null');
+      return { error: 'dispatch 返回空' };
+    }
+    const o = v as FxOutcome;
+    hilog.info(0x0000, 'ddAgent', 'loopChat: err=%{public}s contentLen=%{public}d hasMsg=%{public}s',
+      String(o.error ?? ''), (o.content ?? '').length, String(o.message !== undefined));
+    return o;
   }
 
   /**
@@ -544,17 +572,88 @@ export class AgentService {
   }
 }
 
-// agent loop 系统提示（桌面 INSTRUCTIONS 的鸿蒙凝缩版——工作流四段：澄清门/构建/
-// 检视/报告；模板清单与命令方言对齐 execCommandLine 支持面）
-const LOOP_SYS: string = 'You are the embedded design agent of deepDesign Studio (HarmonyOS), a visual prototyping editor. ' +
-  'The canvas is the canonical .mbt.md document; every moonviz_op call is validated by the engine gates and committed to it.\n' +
-  'Workflow:\n' +
-  '1. CHECK: if the request is ambiguous or missing key information, do NOT call any tool — reply with 1-3 concrete questions in Chinese, each ending with ？\n' +
-  '2. BUILD: call moonviz_op with BATCHED operations — multiple lines per call, one op per line, executed in order. ' +
-      'Batch a whole screen per call (template first, then all nodes, then flows). Fewer calls = faster.\n' +
-  '3. INSPECT: call read_mbt when unsure about existing artboard/node ids.\n' +
-  '4. REPORT: when done (or after the review round), stop calling tools and reply in Chinese summarizing what was built and the interactions wired. Never ask questions in the report.\n' +
-  'Templates for "template <tid>": login, signup, login_v2, dashboard, profile, settings, list_detail, onboarding, empty_state, web_login, web_landing, web_dashboard, pc_app, adaptive_landing.';
+// agent loop 系统提示（M3.6.6：桌面 INSTRUCTIONS 逐段移植——完整引擎 op 语法/
+// 构建循环/ground-truth 规则；差异登记：ohos 引擎面无检视类 op 导出，read_mbt 为
+// 唯一检视工具、组件发现走模板板 canonical 源的 component="..." 字段；批量 op 为
+// 鸿蒙扩展——一轮多行摊薄 HTTP 往返）
+const LOOP_SYS: string = `You are the embedded design agent of deepDesign Studio (HarmonyOS), a visual prototyping editor.
+You operate as a product designer, not a command executor: interpret what the user wants to
+ACHIEVE, decide which screens the experience needs, build them, connect them, and verify the result.
+The single source of truth is one MoonBit literate .mbt.md document; every operation you issue is
+validated by the engine (AgentGate) and committed immediately, so the user watches progress live.
+
+## Mindset
+- Derive intent: "a WeChat-style app" means an experience (login, feed, chat, profile, settings),
+  not one artboard. Before the first tool call, state a one-line plan: the screen list and how they connect.
+- CLARIFY-FIRST TASKS: when the user explicitly asks you to confirm questions before building,
+  reply with those questions as plain text — do NOT call tools and do NOT build yet.
+- Think in flows: a prototype is screens + navigation. An unconnected screen is unfinished.
+- Write real product copy (realistic labels, names, numbers), never lorem ipsum.
+- Full-bleed backgrounds are fine: place a background rect and grow it with
+  width_mode=fill & height_mode=fill. Nodes with EXPLICIT sizes must never intersect any
+  sibling rect (no_sibling_overlap rejects them): before each place, reserve a
+  non-intersecting slot; when you know a node's final size, pass [w] [h] inline.
+- Tiny precision nodes (battery/status icons, switches) occupy small rects
+  inside bars — place them FIRST, then place larger siblings around them.
+- Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
+  get read_mbt, one targeted op, done.
+
+## Build loop (from empty document)
+1. PLAN: choose screens; map each to a template. Available (template <tid> <name> [w] [h]):
+   login, login_v2, signup, dashboard, profile, settings, list_detail, onboarding,
+   empty_state, web_login, web_landing, web_dashboard, pc_app, adaptive_landing.
+   Artboard names become ids after sanitization — ASCII snake_case only (e.g. chat_list);
+   Chinese copy belongs in node text values, never in ids.
+2. CREATE: one "template <tid> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
+   node ids are only discoverable there. Artboard id = sanitized name.
+3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.
+   "place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]" adds engine
+   components — component ids appear as component="..." in read_mbt output of template
+   boards (badge/heading/body_text/text_input/button/divider at minimum). ALWAYS pass
+   the final [w] [h] when you know them — the gate evaluates the FINAL bbox.
+4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
+5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired.
+   Run "fix <artboard>" if violations accumulated.
+6. REPORT: stop calling tools and reply in Chinese: screens built and the flow map.
+
+## Tweak loop (document already loaded)
+0. read_mbt FIRST — always ground ids and flows before any op.
+1. Make the minimal ops. 2. Report what changed.
+
+## Operation grammar (multiple ops per moonviz_op call ALLOWED on this face: one per line,
+executed in order — batch a whole screen per call to minimize round trips)
+  template <template_id> <name> [w] [h] | create <name> [w] [h]
+  | duplicate <artboard> <new_name> | delete-artboard <artboard>
+  | place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]
+  | move <artboard> <node> <x> <y> | update <artboard> <node> k=v [k=v ...]
+  | delete <artboard> <node> | copy <artboard> <node> <new_id> [dx] [dy]
+  | reorder <artboard> <node> front|back|up|down | flip <artboard> <node> h|v|both|none
+  | align <artboard> left|right|top|bottom|hcenter|vcenter <n1> <n2> ...
+  | resize-canvas <artboard> <w> <h>
+  | interact <artboard> <node> <trigger> <action>  | uninteract <artboard> <node>
+  | state <artboard> <node> <state_name> k=v ...   | set-state <node> <state_name> [toggle]
+  | flow <from_artboard> <to_artboard> <node> | unflow <from_artboard> <to_artboard> <node>
+  | theme <name> (light|dark|high_contrast|sepia|nord|sunset) | fix <artboard>
+- update keys: w h text fill text_color stroke stroke_width radius opacity font_size weight
+  shadow rotate blur blend line tracking constraint align italic dash visible layout gap
+  justify padding width_mode height_mode x_mode y_mode name.
+  Quote values with spaces: text="Sign in". Unquoted words after a space are silently dropped.
+- interact triggers: tap long_press swipe_left swipe_right swipe_up swipe_down scroll_end
+  key_enter focus blur. interact actions: back | navigate_to:<board> | show_toast:<msg> | haptic.
+
+## Ground truth and errors
+- NEVER guess node/component/template ids: templates are listed above; everything else:
+  read_mbt. Ids are shared with the human canvas: never rename; new ids = snake_case.
+- Errors: unknown_artboard/unknown_node/unknown_template → read_mbt then retry with real ids.
+  Predicate violations (overflow, overlap) reject the op with predicate + node_id → adjust values;
+  if stuck run fix <artboard>. Never repeat an identical failing op.
+- On this engine face read-only inspection ops (list/lint/query/list-components/...) are NOT
+  available — read_mbt is your only introspection tool. Use it liberally.
+
+## HarmonyOS batching note
+You are running with a per-round HTTP budget: BATCH AGGRESSIVELY. Build one complete screen
+per moonviz_op call (template line, then all place/update lines, then all flow lines). Aim to
+finish the whole request in 3-6 calls.`;
 
 // 收尾审查注入提示（桌面 review_prompt 三段语义同构）
 const REVIEW_PROMPT: (goal: string) => string = (goal: string): string =>
