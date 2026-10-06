@@ -16,7 +16,6 @@
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import display from '@ohos.display';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { CommandDispatch } from '../invoke/Dispatch';
 import { appStore } from '../model/AppStore';
@@ -24,29 +23,6 @@ import { appStore } from '../model/AppStore';
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
-  /** M3.6.9 全局同步缩放：窗口宽度低于设计宽（1560vp）时按比例下调自定义密度——
-   * vp/fp 全量重新换算，字体/icon/组件/文案整体等比（桌面浏览器缩放同机制）。
-   * 0.72 下限防不可读；setCustomDensity StageModelOnly（2in1/PC 形态），失败
-   * 静默降级固定 1.0。 */
-  private uiDensity: number = 1.0;
-  private static windowStageStatic: window.WindowStage | null = null;
-
-  private updateUiDensity(mainWindow: window.Window): void {
-    try {
-      const rect = mainWindow.getWindowProperties().windowRect;
-      const base = display.getDefaultDisplaySync().densityPixels;   // px/vp @ density 1.0
-      const vpW1 = rect.width / (base * this.uiDensity);            // 折算回密度 1.0 的窗口 vp 宽
-      const d = Math.min(1, Math.max(0.72, vpW1 / 1560));
-      if (Math.abs(d - this.uiDensity) > 0.02) {
-        this.uiDensity = d;
-        EntryAbility.windowStageStatic?.setCustomDensity(d);
-        hilog.info(DOMAIN, 'testTag', 'uiDensity -> %f', d);
-      }
-    } catch (e) {
-      const em: string = (e as Error).message;
-      hilog.error(DOMAIN, 'testTag', 'uiDensity failed: %{public}s', em);
-    }
-  }
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     // iss-4 登记：启动默认 NOT_SET（跟随系统），由 Index.aboutToAppear/saveLook 经
     // applicationContext.setColorMode 应用态覆写（深浅色资源 dd_* 随之换值）。
@@ -164,12 +140,6 @@ export default class EntryAbility extends UIAbility {
         });
       });
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
-      // M3.6.9 全局同步缩放：初始评估 + 窗口尺寸变化跟踪（整应用 vp 等比）
-      EntryAbility.windowStageStatic = windowStage;
-      this.updateUiDensity(mainWindow);
-      mainWindow.on('windowSizeChange', (): void => {
-        this.updateUiDensity(mainWindow);
-      });
     });
   }
 
