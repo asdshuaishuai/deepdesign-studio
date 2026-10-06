@@ -2245,17 +2245,6 @@ struct Index {
 
   // ===== 行内 Agent（gap-right-5）=====
 
-  /** 悬浮 Agent 同步缩放系数（M3.6.9）：画布宽/1560，0.72 下限——窄窗等比缩小。 */
-  private iaScale(): number {
-    return Math.min(1, Math.max(0.72, this.cw / 1560));
-  }
-
-  /** dock 同步缩放系数（M3.6.9）：dock 满档 680 与当前壳宽之比——窄窗整体等比
-   * （chips/输入/文案一起缩），与悬浮 Agent 同一曲线，视觉一体。 */
-  private dockScale(): number {
-    return Math.min(1, Math.max(0.72, this.cw / 1560));
-  }
-
   private openInlineAgent(b: Board, l: LayerNode): void {
     const org = this.boardOriginStack(b);   // batch-6：Stack-local 换基（浮层 .position 在内容 Stack 内）
     const z = this.zoomOf(b);
@@ -7192,7 +7181,6 @@ struct Index {
                       .animation({ curve: curves.springMotion(0.55, 0.825) }))
                     // M3.6.9 同步缩放：浮层随画布宽等比（maximized 1640→1.0，窄窗→0.72 下限），
                     // 渲染级 transform——文字矢量缩放不糊；位置钳制按未缩放 320 保守即可
-                    .scale({ x: this.iaScale(), y: this.iaScale() })
                     .position({ x: this.iaX, y: this.iaY })
                   }
                 }
@@ -7530,7 +7518,6 @@ struct Index {
             .width(Math.min(680, Math.max(320, this.cw - 24)))
             // M3.6.9 同步缩放：dock 整体（chips/输入/文案/间距）随画布宽等比缩放，
             // 底部中心原点（钉底不漂移）——字体/组件/文案一个机制整体缩，不再降档打架
-            .scale({ x: this.dockScale(), y: this.dockScale(), centerX: '50%', centerY: '100%' })   // 底部中心原点：钉底不漂移
             .padding(9)   // i:242 .promptbar padding:9
             .borderRadius(16)
             .backgroundColor(this.isDark() ? 'rgba(26,27,32,0.97)' : 'rgba(255,255,255,0.92)')
