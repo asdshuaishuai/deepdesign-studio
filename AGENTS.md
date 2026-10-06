@@ -461,14 +461,23 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   - layer 走 **deepin 25 宿主构建**：`cd linglong && ./host-build.sh`（本机 ll-builder 在
     `~/.local/opt/tauri-env.sh` 环境的 tauri-deps 里，须先 source；它**不进 PATH**，
     build-packages.sh 只在需要 cargo 编译时才 source 环境，二进制已存在时会误报
-    「ll-builder not installed」并静默 SKIP）。宿主构建产物在 linglong/ 下，上传：
-    `gh release upload <tag> dist/com.deepcode.deepdesign_0.4.0.0_x86_64_binary.layer#com.deepcode.deepdesign-<tag>-x86_64.layer`。
-  - CI（ubuntu runner）的两层坑：libyaml-cpp0.7 在 deepin 池 `pool/main/y/` 桶
-    （`ci-install-linyaps.sh` 已修，勿再拼进 `/l` BASE）；**ll-builder 需要 Qt 6.8**，
-    ubuntu 24.04 只有 6.4（未解——CI 过不了就按本规则宿主补齐）。
+    「ll-builder not installed」并静默 SKIP）。宿主构建产物在 linglong/ 下。
+  - **`gh release upload` 不支持 `file#改名` 语法**——上传前先把本地文件改名成目标资产名
+    （`#后缀` 会被当字面量收进资产名，2026-10-06 实测）。CI（ubuntu runner）的两层坑：
+    libyaml-cpp0.7 在 deepin 池 `pool/main/y/` 桶（`ci-install-linyaps.sh` 已修，勿再拼进
+    `/l` BASE）；**ll-builder 需要 Qt 6.8**，ubuntu 24.04 只有 6.4（未解——CI 过不了就按
+    本规则宿主补齐）。
   - 宿主构建依赖 `~/.linglong` 的 base/runtime 层缓存或 `repo.linyaps.org.cn` 可达；
     2026-10-06 该源曾返回 Traefik 默认证书（官方侧故障），届时构建会报
     `stage prepare error`——查 `openssl s_client`，等恢复即可，不是本侧问题。
+  - **离线兜底（源故障期间实测打通）**：layer = 36B 魔数 `<<< deepin linglong layer
+    archive >>>` + 3B 填充 + u32 LE JSON 长度 + JSON 元数据 + erofs 镜像（lz4），无签名
+    字段。手术法：fsck.erofs --extract 拆旧 layer → 换 `files/bin/deepdesign-studio` 与
+    `files/share/deepdesign-studio/frontend/` 为当日产物 → 外层与内层 info.json 的 size
+    同步重算 → `mkfs.erofs -z lz4` 重打包 → 按序重组装 → fsck 校验。新 layer 可由
+    ll-pica 起步（组 /opt/apps 布局 deb → 配方见 linglong/README-BUILD.md；无 apt 环境垫
+    `apt-cache show <deb>` 垫片、输出 dpkg-deb -f 并抹掉 Depends），但 convert 只生成
+    项目不构建——最终以手术法收尾。整套工具在 tauri-deps（fsck/dump/mkfs.erofs）。
 
 ## 提交与文档
 
