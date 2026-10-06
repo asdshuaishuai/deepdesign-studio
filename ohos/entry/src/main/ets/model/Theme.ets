@@ -130,10 +130,10 @@ export interface HmosSizePair {
 // —— 字号族（wide=现 inline 值零漂移；narrow 按降档规则：整数 −1 / 半整数 −1；
 //      8.5/9.5 两小档贴地取整不下穿 0.5 步进——值以本清单为准）——
 export const HMOS_F_MENU_ROW: HmosSizePair = { narrow: 10.5, wide: 11.5 };    // 菜单行/下拉收编共用（§3.2 menuRow）
-export const F_DOCK_QUICK: HmosSizePair = { narrow: 9.5, wide: 10.5 };        // dock 快捷区文字
-export const F_DOCK_CHIP: HmosSizePair = { narrow: 11, wide: 12 };            // pchip/行内 chips（§3.3 fDockChip 12↔11）
-export const F_DOCK_ICON: HmosSizePair = { narrow: 13, wide: 14 };            // dock 图标字形
-export const F_DOCK_INPUT: HmosSizePair = { narrow: 12, wide: 13 };           // pmain 指令条（§3.3 fDockInput 13↔12）；M3.6.9 缩放改由组件级 transform 承担（勿在此降档）
+export const F_DOCK_QUICK: HmosSizePair = { narrow: 9.5, wide: 10.5 };       // pchips 行首 label（M3.6.9 窄窗降档恢复——density 方案回退时漏补）
+export const F_DOCK_CHIP: HmosSizePair = { narrow: 10.5, wide: 12 };          // pchip 字号（M3.6.9 窄窗 12→10.5——窄窗胶囊肥大，用户圈点）
+export const F_DOCK_ICON: HmosSizePair = { narrow: 12, wide: 14 };             // dock 图标字形（M3.6.9 窄窗 13→12）
+export const F_DOCK_INPUT: HmosSizePair = { narrow: 11, wide: 13 };           // pmain 指令条（M3.6.9 窄窗 12→11）
 export const F_KBD: HmosSizePair = { narrow: 9, wide: 10 };                   // kbd 键帽
 export const F_DOCK_HINT: HmosSizePair = { narrow: 9, wide: 10 };             // dock 提示行
 export const F_AGENTMSG: HmosSizePair = { narrow: 10, wide: 11 };             // 行内 Agent 消息
@@ -154,9 +154,9 @@ export const F_PROJNAME: HmosSizePair = { narrow: 11, wide: 12 };             //
 export const F_PROJNAME_L: HmosSizePair = { narrow: 11.5, wide: 12.5 };       // 左栏项目区大字（§3.2 :5636）
 
 // —— 尺寸族（与字号降档联动同改防「小字大框」，§3.3 要点 3；按列值，不套字号降档规则）——
-export const HMOS_H_CHIP: HmosSizePair = { narrow: 27, wide: 30 };     // pchip 高（§3.3 chip h30→27）
-export const PAD_CHIP: HmosSizePair = { narrow: 11, wide: 13 };        // pchip/发送钮水平 padding
-export const H_DOCK_INPUT: HmosSizePair = { narrow: 30, wide: 34 };    // pmain 指令条高（§3.3 pmain h34→30）；缩放由组件 transform 承担
+export const HMOS_H_CHIP: HmosSizePair = { narrow: 24, wide: 30 };             // pchip 高（M3.6.9 窄窗 27→24）
+export const PAD_CHIP: HmosSizePair = { narrow: 9, wide: 13 };                 // pchip 水平 padding（M3.6.9 窄窗 11→9）
+export const H_DOCK_INPUT: HmosSizePair = { narrow: 27, wide: 34 };    // pmain 指令条高（M3.6.9 窄窗 30→27）
 export const H_CLARIFY: HmosSizePair = { narrow: 28, wide: 32 };       // 澄清回答框/发送钮高
 export const PAD_TRACK_CARD_H: HmosSizePair = { narrow: 8, wide: 11 };   // tlCard 水平 padding（§3.2 11×2）
 export const PAD_TRACK_CARD_V: HmosSizePair = { narrow: 7, wide: 9 };    // tlCard 垂直 padding

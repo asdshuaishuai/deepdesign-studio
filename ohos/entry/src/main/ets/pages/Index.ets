@@ -7491,7 +7491,7 @@ struct Index {
                 Row({ space: 6 }) {
                   Text('⚡').fontSize(this.fp(F_DOCK_CHIP)).fontColor(this.T().onAcc)   // batch-5：chip 档（§3.3，12↔11）
                   Text('一键生成').fontSize(this.sd(this.T().fBtnPrimary)).fontWeight(600).fontColor(this.T().onAcc)   // batch-3：13→HMOS 16（§3 button 档）；batch-5：主题变量走 sd 离散降档（HMOS 16→14/桌面 13→12，r9-sweep §3.3 要点 3）
-                }.height(this.sp(H_DOCK_INPUT)).padding({ left: 18, right: 18 }).borderRadius(this.T().rBtnPrimary)   // batch-3 圆角；batch-5：主钮高随输入条（§3.3，34↔30）
+                }.height(this.sp(H_DOCK_INPUT)).padding({ left: this.isNarrowBar() ? 12 : 18, right: this.isNarrowBar() ? 12 : 18 }).borderRadius(this.T().rBtnPrimary)   // batch-3 圆角；batch-5：主钮高随输入条（§3.3，34↔30）；M3.6.9 窄窗 padding 18→12
                 .backgroundColor(this.T().acc)
                 .stateStyles({
                   pressed: { .backgroundColor(this.T().accTx) },   // batch-4 iss-5：B 底色叠加（acc 主钮按压色=accTx；HMOS=悬浮按钮 pressed #0070E5/#1A7AE1，§9 实证）
