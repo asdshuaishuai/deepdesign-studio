@@ -190,7 +190,8 @@ export const T_ICON_TBTN: HmosSizePair = { narrow: 14, wide: 15 };      // 顶�
 // 颜色不进 token——消费点从主题表取色：.shadow({ radius: T.radius, offsetX: T.dx,
 // offsetY: T.dy, color: this.T().shadowMd })（ArkTS 禁对象展开，逐字段显式）。
 export const SH_SEG_SELECTED: HmosShadow = { radius: 3, dx: 0, dy: 1 };  // modeSeg 选中态（色已走 T().shadowMd）
-export const SH_LOGO: HmosShadow = { radius: 4, dx: 0, dy: 1 };          // 顶栏 logo（取色 rgba(15,23,42,0.25) 硬编码→T().shadowMd，r10 §五登记行为修正，几何不变）
+// [退役 M3.6.2] SH_LOGO：顶栏品牌块拆除（fe492f5）后无消费方——保留导出防破坏外部引用，勿再使用
+export const SH_LOGO: HmosShadow = { radius: 4, dx: 0, dy: 1 };
 
 // ===== 画布周边族（batch-2 r10 收编：sz-ctools-1/sz-czoom-1/sz-tpl-1/sz-welcome-1/
 //      sz-welcome-2/sz-ia-1/sz-tail-1/sz-dock-1，r10-sweep §二；wide=现 inline 值零漂移）=====

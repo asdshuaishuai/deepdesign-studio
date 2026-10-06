@@ -21,7 +21,7 @@ import { HMOS_BRAND, HMOS_PRESSED, HMOS_WARNING, HMOS_SUCCESS, HMOS_PURPLE, HMOS
   F_TRACK_MS, F_TRACK_FINAL, F_TRACK_FINAL_SUB, F_TOOLBAR, F_TOOLBAR_BADGE,
   F_PROJNAME, F_PROJNAME_L, HMOS_H_CHIP, PAD_CHIP, H_DOCK_INPUT, H_CLARIFY,
   PAD_TRACK_CARD_H, PAD_TRACK_CARD_V, PAD_TRACK_FINAL_H, PAD_TRACK_FINAL_V,
-  F_FILECHIP, F_TOOLBAR_GLYPH, H_TOPBAR, H_FILECHIP, H_PILL, T_ICON_TBTN, SH_SEG_SELECTED, SH_LOGO,
+  F_FILECHIP, F_TOOLBAR_GLYPH, H_TOPBAR, H_FILECHIP, H_PILL, T_ICON_TBTN, SH_SEG_SELECTED,
   F_TOOLROW, F_TOOLROW_FIT, F_ZOOM_GLYPH, F_ZOOM, F_TPL, F_TPL_META, F_GHOST, F_GHOST_DIM,
   F_IA, F_IA_HEAD, F_IA_MINI, F_IA_CHIP, F_WELCOME_SUB, F_WELCOME_KBD, F_WELCOME_SEC,
   F_WELCOME, F_WELCOME_NAME, F_WELCOME_TIME, F_TAIL, F_CLARIFY_GLYPH, F_CLARIFY_X,
@@ -1383,6 +1383,7 @@ struct Index {
         const canonical = util.TextDecoder.create('utf-8').decodeToString(dec);
         const parsed = parseMbtDoc(canonical);
         if (parsed.ok) {
+          appStore.docEpoch += 1;   // R10 缓解：mergeCanonical rev=0 不再依赖偶然再键——每轮强制板卡重建（线框活进度）
           appStore.mergeCanonical(parsed);
           this.lastCanonicalB64 = docB64;   // M3.6.8 review-F3：锚点随会话推进（hifi SVG/⌘Z 数据源）
           this.refreshEngineSvg();
@@ -2059,67 +2060,6 @@ struct Index {
       this.sync();
     });
     return { ok: true, note: `ENGINE ${engOp}` };
-  }
-
-  /** M3.6.6：原始引擎 op 异步直连（agent loop 专用，真回执）——op 为桌面语法全文
-   * （place/update 全键/interact/state/align/fix...），不经 engineOpFor 命令行翻译。
-   * 空画布自动种子引导（engineSeedDoc 承载 op，成功后链式 delete-artboard __seed——
-   * 桌面 agent.rs::seed_doc 同构）；门拒绝/引擎错误如实回传给 loop（作为 tool 结果
-   * 喂回模型自纠错），不做本地兜底（桌面同语义）。 */
-  private async execEngineOpRawAsync(op: string): Promise<LineExecOutcome> {
-    let doc = appStore.toCanonicalText();
-    const seeded = appStore.boards.length === 0;
-    if (seeded) {
-      doc = this.engineSeedDoc();
-    }
-    const args: Record<string, Object> = { 'docB64': this.utf8B64(doc), 'op': op };
-    try {
-      const v = await this.dispatch.dispatch('engine_apply_human_op', args);
-      if (v === null) return { ok: false, note: 'engine null reply' };
-      const r = v as EngineApplyReply;
-      if (typeof r.error === 'string' && r.error !== '') return { ok: false, note: r.error };
-      if (r.ok !== true || typeof r.mbt_b64 !== 'string' || r.mbt_b64 === '') {
-        return { ok: false, note: `gate: ${JSON.stringify(r).slice(0, 140)}` };
-      }
-      const dec = new util.Base64Helper().decodeSync(r.mbt_b64);
-      const canonical = util.TextDecoder.create('utf-8').decodeToString(dec);
-      const parsed = parseMbtDoc(canonical);
-      if (!parsed.ok) return { ok: false, note: 'canonical_parse_failed' };
-      appStore.pushUndoExternal();   // ⌘Z 语义：快照进栈在合并前
-      if (!appStore.mergeCanonical(parsed)) return { ok: false, note: 'merge_failed' };
-      this.lastCanonicalB64 = r.mbt_b64;
-      const commitBoard = op.trim().split(/\s+/)[1] ?? '';
-      // 种子占位板清理：__seed 在场且已有真实板时链式删除（桌面 seed_doc 同构）
-      const seedBoard = appStore.boards.find((b: Board): boolean => b.id === '__seed');
-      if (seeded && seedBoard !== undefined && appStore.boards.length > 1) {
-        const d: Record<string, Object> = { 'docB64': r.mbt_b64, 'op': 'delete-artboard __seed' };
-        this.dispatch.dispatch('engine_apply_human_op', d).then((dv: Object | null): void => {
-          if (dv === null) return;
-          const dr = dv as EngineApplyReply;
-          if (dr.ok === true && typeof dr.mbt_b64 === 'string' && dr.mbt_b64 !== '') {
-            const ddec = new util.Base64Helper().decodeSync(dr.mbt_b64);
-            const dcanon = util.TextDecoder.create('utf-8').decodeToString(ddec);
-            const dp = parseMbtDoc(dcanon);
-            if (dp.ok) {
-              appStore.mergeCanonical(dp);
-              this.lastCanonicalB64 = dr.mbt_b64;
-              this.histTouch(dr.mbt_b64, '');
-              this.refreshEngineSvg();
-              this.sync();
-            }
-          }
-        });
-        this.histTouch(r.mbt_b64, '');
-      } else {
-        this.histTouch(r.mbt_b64, commitBoard);
-      }
-      this.refreshEngineSvg();
-      appStore.logCmd('ENGINE', op, true, appStore.docRev);
-      this.sync();
-      return { ok: true, note: `ENGINE ${op.slice(0, 60)}` };
-    } catch (e) {
-      return { ok: false, note: (e as Error).message };
-    }
   }
 
   private execCommandLine(line: string): LineExecOutcome {

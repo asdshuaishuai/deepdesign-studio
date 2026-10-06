@@ -29,9 +29,10 @@
 - STILL OPEN：R1（锚点跨项目——本轮 #4 修复了 loop 内锚点推进，跨项目重置仍开）、R4（flows 双计）、R6（UDID）、R8/R9（histTouch 记账——新 raw 路径 :2086 复刻同病）、R10（rev=0 条件性）、R11、R14、R15、R16 全部子项
 - R2 确认未变（hist NAPI 仍未接线）；R7 登记未变
 
-## 新登记（未修，按优先级）
-- N1 P1：截断轮不进轮预算（#11，泵 guard 兜底）
-- N2 P1：模型每轮往返时延随上下文增长（20-56s）——read_mbt 已大纲化，下一杠杆是
-  op 计数预算 + 429/5xx 退避重试（#N4 同批）
-- N3 P2：泵 agent_start 失败信封未显式检查（#8）
-- N4 P2：SH_LOGO 死 token/execEngineOpRawAsync 死代码（M3.6.6 遗留）清理
+## 新登记（✅ 已全部修复，见 8214f80 后续提交）
+- N1 P1 ✅：截断/空回复轮计入轮预算 + 预算耗尽诚实收尾（Rust agent.rs nudge 分支）
+- N2 P1 ✅：loopChat 429/5xx 单次 2.5s 退避重试（4xx 参数类不重试）
+- N3 P2 ✅：泵 agent_start 失败信封显式检查（先查 error 再 parse json）
+- N4 P2 ✅：execEngineOpRawAsync 死代码删除；SH_LOGO 导入移除 + Theme token 退役标注
+- 附带：docFlush 回灌前 appStore.docEpoch += 1（R10 缓解——线框活进度每轮强制板卡重建，
+  不再依赖 rev/zoom 偶然再键）

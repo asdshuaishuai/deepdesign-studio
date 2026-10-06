@@ -282,6 +282,16 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
     // 空消息（推理 token 耗尽/网关异常）或截断（工具调用没发全）：不 break 不计报告——
     // 注入续跑提示继续，轮预算自然收敛
     if tcs.is_empty() && (content.trim().is_empty() || truncated) {
+        // N1（review-m38）：推进/截断轮同样消耗轮预算（每轮一次真实 HTTP 往返），
+        // 预算耗尽诚实收尾——此前仅工具轮递增，截断/空回复可 64 泵轮空转
+        sess.rounds += 1;
+        if sess.rounds >= ROUNDS {
+            sess.finished = true;
+            return Ok(json!({"action": "done", "doc_b64": sess.doc_b64.clone().unwrap_or_default(),
+                "events": [ev("failed", "失败", "推进轮次预算耗尽（连续截断/空回复）", false)],
+                "outcome": {"ok": sess.ops > 0, "reply": format!("已完成 {} 项操作（轮次预算用尽）", sess.ops),
+                    "executed": sess.ops > 0, "ops": sess.ops}}));
+        }
         // 空 assistant 消息不回填（StepFun 对 content 空的 assistant 消息 400
         // "Empty chat message"）；截断且有内容的 assistant 原样保留
         if truncated && !content.trim().is_empty() {

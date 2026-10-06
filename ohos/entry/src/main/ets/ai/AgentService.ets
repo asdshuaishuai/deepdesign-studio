@@ -181,10 +181,15 @@ export class AgentService {
         step('plan', `调优 思考=${opts.thinkingLevel} · 步数=${opts.maxSteps}`, '', true);
       }
       try {
-        const st = await this.dispatch.dispatch('agent_start', {
+        const st = (await this.dispatch.dispatch('agent_start', {
           'instruction': instruction, 'docB64': docB64 ?? ''
-        } as Record<string, Object>);
-        let sess = JSON.parse(String((st as Record<string, Object>)['json'] ?? '{}')) as Record<string, Object>;
+        } as Record<string, Object>)) as Record<string, Object>;
+        // N3（review-m38）：启动失败信封显式检查（此前静默 {} → 空 messages 打 HTTP，
+        // 根因被供应商 400 掩盖）
+        if (typeof st['error'] === 'string' && st['error'] !== '') {
+          throw new Error(String(st['error']));
+        }
+        let sess = JSON.parse(String(st['json'] ?? '{}')) as Record<string, Object>;
         let guard = 0;
         for (;;) {
           if (++guard > 64) throw new Error('pump guard');
@@ -368,7 +373,15 @@ export class AgentService {
       }
     }
     const args: Record<string, Object> = { 'apiKey': conf.apiKey, 'payload': JSON.stringify(payload) };
-    const v: Object | null = await this.dispatch.dispatch('invoke_fx_sdk', args);
+    let v: Object | null = await this.dispatch.dispatch('invoke_fx_sdk', args);
+    // N2（review-m38）：瞬时 429/5xx 单次退避重试（2.5s）——多轮 run 中一次瞬断
+    // 即弃跑整轮的实证缓解；4xx 参数类错误不重试
+    const o0 = (v ?? {}) as FxOutcome;
+    if (typeof o0.error === 'string' && /http_(429|50[0-4])/.test(o0.error)) {
+      hilog.info(0x0000, 'ddAgent', 'loopChat retryable: %{public}s — backoff 2.5s', o0.error.slice(0, 60));
+      await new Promise<void>((r): void => { setTimeout((): void => { r(); }, 2500); });
+      v = await this.dispatch.dispatch('invoke_fx_sdk', args);
+    }
     if (v === null) {
       hilog.error(0x0000, 'ddAgent', 'loopChat: dispatch null');
       return { error: 'dispatch 返回空' };
