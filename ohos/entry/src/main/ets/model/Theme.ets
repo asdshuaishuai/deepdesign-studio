@@ -133,7 +133,7 @@ export const HMOS_F_MENU_ROW: HmosSizePair = { narrow: 10.5, wide: 11.5 };    //
 export const F_DOCK_QUICK: HmosSizePair = { narrow: 9.5, wide: 10.5 };        // dock 快捷区文字
 export const F_DOCK_CHIP: HmosSizePair = { narrow: 11, wide: 12 };            // pchip/行内 chips（§3.3 fDockChip 12↔11）
 export const F_DOCK_ICON: HmosSizePair = { narrow: 13, wide: 14 };            // dock 图标字形
-export const F_DOCK_INPUT: HmosSizePair = { narrow: 10.5, wide: 13 };          // pmain 指令条（§3.3 fDockInput 13↔12）；M3.6.9 窄窗 12→10.5（用户：提示文案过大/无同步缩放）
+export const F_DOCK_INPUT: HmosSizePair = { narrow: 12, wide: 13 };           // pmain 指令条（§3.3 fDockInput 13↔12）；M3.6.9 缩放改由组件级 transform 承担（勿在此降档）
 export const F_KBD: HmosSizePair = { narrow: 9, wide: 10 };                   // kbd 键帽
 export const F_DOCK_HINT: HmosSizePair = { narrow: 9, wide: 10 };             // dock 提示行
 export const F_AGENTMSG: HmosSizePair = { narrow: 10, wide: 11 };             // 行内 Agent 消息
@@ -156,7 +156,7 @@ export const F_PROJNAME_L: HmosSizePair = { narrow: 11.5, wide: 12.5 };       //
 // —— 尺寸族（与字号降档联动同改防「小字大框」，§3.3 要点 3；按列值，不套字号降档规则）——
 export const HMOS_H_CHIP: HmosSizePair = { narrow: 27, wide: 30 };     // pchip 高（§3.3 chip h30→27）
 export const PAD_CHIP: HmosSizePair = { narrow: 11, wide: 13 };        // pchip/发送钮水平 padding
-export const H_DOCK_INPUT: HmosSizePair = { narrow: 27, wide: 34 };    // pmain 指令条高（§3.3 pmain h34→30）；M3.6.9 窄窗 30→27
+export const H_DOCK_INPUT: HmosSizePair = { narrow: 30, wide: 34 };    // pmain 指令条高（§3.3 pmain h34→30）；缩放由组件 transform 承担
 export const H_CLARIFY: HmosSizePair = { narrow: 28, wide: 32 };       // 澄清回答框/发送钮高
 export const PAD_TRACK_CARD_H: HmosSizePair = { narrow: 8, wide: 11 };   // tlCard 水平 padding（§3.2 11×2）
 export const PAD_TRACK_CARD_V: HmosSizePair = { narrow: 7, wide: 9 };    // tlCard 垂直 padding
@@ -203,10 +203,10 @@ export const F_TPL: HmosSizePair = { narrow: 10.5, wide: 11.5 };         // 模�
 export const F_TPL_META: HmosSizePair = { narrow: 8, wide: 9 };          // 模板卡 meta（kind · 尺寸）
 export const F_GHOST: HmosSizePair = { narrow: 10.5, wide: 11.5 };       // ghost 新建画板卡题
 export const F_GHOST_DIM: HmosSizePair = { narrow: 8, wide: 9 };         // ghost 卡尺寸行
-export const F_IA: HmosSizePair = { narrow: 9, wide: 11 };              // 行内 Agent ✦/输入/↗；M3.6.9 窄窗 10→9
-export const F_IA_HEAD: HmosSizePair = { narrow: 8.5, wide: 10 };          // 行内 Agent 题；M3.6.9 窄窗 9→8.5
-export const F_IA_MINI: HmosSizePair = { narrow: 7.5, wide: 9 };           // 行内 Agent ✕/上下文行；M3.6.9 窄窗 8→7.5
-export const F_IA_CHIP: HmosSizePair = { narrow: 8.5, wide: 9.5 };         // 行内快捷 chips；M3.6.9 窄窗 9→8.5
+export const F_IA: HmosSizePair = { narrow: 10, wide: 11 };              // 行内 Agent ✦/输入/↗；缩放由浮层 transform 承担
+export const F_IA_HEAD: HmosSizePair = { narrow: 9, wide: 10 };          // 行内 Agent 题
+export const F_IA_MINI: HmosSizePair = { narrow: 8, wide: 9 };           // 行内 Agent ✕/上下文行
+export const F_IA_CHIP: HmosSizePair = { narrow: 9, wide: 9.5 };         // 行内快捷 chips
 export const F_WELCOME_SUB: HmosSizePair = { narrow: 11.5, wide: 12.5 }; // 欢迎副题 ×2
 export const F_WELCOME_KBD: HmosSizePair = { narrow: 9.5, wide: 10.5 };  // ⌘K 键帽
 export const F_WELCOME_SEC: HmosSizePair = { narrow: 9.5, wide: 10.5 };  // veil 模板分组题（复审拆分：现值 10.5 非 11，原并 F_WELCOME 会宽窗漂移）
@@ -219,7 +219,7 @@ export const F_CLARIFY_X: HmosSizePair = { narrow: 9, wide: 10 };        // 澄�
 
 // —— 高度族（batch-2 r10 §四 A 组）——
 export const H_TOOLBTN: HmosSizePair = { narrow: 22, wide: 24 };         // 画布工具钮高
-export const H_IA: HmosSizePair = { narrow: 23, wide: 28 };              // 行内 Agent 输入/发送钮高；M3.6.9 窄窗 25→23
+export const H_IA: HmosSizePair = { narrow: 25, wide: 28 };              // 行内 Agent 输入/发送钮高
 export const H_WELCOME_ROW: HmosSizePair = { narrow: 27, wide: 30 };     // 欢迎最近行高
 export const H_TAIL: HmosSizePair = { narrow: 28, wide: 32 };            // 板尾栏高
 
