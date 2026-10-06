@@ -148,6 +148,29 @@ fn review_prompt(goal: &str) -> String {
     )
 }
 
+/// 引擎 op 动词表（桌面语法全集——文本形态工具调用识别用）
+const OP_VERBS: &[&str] = &[
+    "template", "create", "duplicate", "delete-artboard", "place", "move", "update",
+    "delete", "copy", "reorder", "flip", "group", "ungroup", "align", "resize-canvas",
+    "responsive", "restyle", "constrain", "interact", "uninteract", "state", "set-state",
+    "flow", "unflow", "theme", "token", "fix",
+];
+
+/// 文本形态工具调用提取：部分模型/网关不走结构化 tool_calls，而把工具调用以
+/// <tool_call>/<arguments> 包裹或纯文本行输出在 content 里——按行首动词识别可执行
+/// op 行（桌面语法全集）。识别不了的原样放行（澄清门照常）。
+fn extract_op_lines(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| {
+            let first = l.split_whitespace().next().unwrap_or("");
+            OP_VERBS.contains(&first)
+        })
+        .map(|l| l.to_string())
+        .collect()
+}
+
 /// 修订 1 澄清门（ArkTS 同构）：问句特征或征询词判澄清（【回答】续跑放行）。
 fn is_clarify(s: &str) -> bool {
     if s.contains("【回答】") {
@@ -268,6 +291,7 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
     let finish = feed.get("finish_reason").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let truncated = finish == "length";
 
+    let mut events: Vec<Value> = Vec::new();
     let tcs = msg
         .get("tool_calls")
         .and_then(|v| v.as_array())
@@ -278,6 +302,46 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+
+    // 文本形态工具调用（M3.6.9）：部分模型（如 StepFun 部分型号）不返回结构化
+    // tool_calls，而把工具调用以 <tool_call>/<arguments> 包裹或纯文本行输出在
+    // content——按行首动词提取批量执行（等价 moonviz_op），不落澄清门
+    // （截图实证：整段 <tool_call> XML 被当澄清问题呈给用户）
+    if tcs.is_empty() {
+        let op_lines = extract_op_lines(&content);
+        if !op_lines.is_empty() {
+            sess.messages.push(msg);
+            let mut done = 0usize;
+            for one in &op_lines {
+                let r = apply_op(sess, one);
+                let ok = r.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
+                if ok {
+                    sess.ops += 1;
+                    done += 1;
+                }
+                let note = r.get("note").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                events.push(ev(
+                    "tool_end",
+                    &format!("{} {}", if ok { "✓" } else { "✗" }, one.chars().take(44).collect::<String>()),
+                    &note,
+                    ok,
+                ));
+            }
+            sess.rounds += 1;
+            events.push(ev("tool_end", "文本工具调用", format!("{}/{} 执行", done, op_lines.len()).as_str(), done > 0));
+            if sess.rounds >= ROUNDS {
+                sess.finished = true;
+                return Ok(json!({"action": "done", "doc_b64": sess.doc_b64.clone().unwrap_or_default(),
+                    "events": events,
+                    "outcome": {"ok": sess.ops > 0, "reply": format!("已完成 {} 项操作（轮次预算用尽）", sess.ops),
+                        "executed": sess.ops > 0, "ops": sess.ops}}));
+            }
+            let summary = format!("工具执行结果：{}/{} 项成功。请继续剩余操作或给出中文报告。", done, op_lines.len());
+            sess.messages.push(json!({"role": "user", "content": summary}));
+            return Ok(json!({"action": "llm", "messages": sess.messages, "events": events,
+                "doc_b64": sess.doc_b64.clone().unwrap_or_default()}));
+        }
+    }
 
     // 空消息（推理 token 耗尽/网关异常）或截断（工具调用没发全）：不 break 不计报告——
     // 注入续跑提示继续，轮预算自然收敛
@@ -327,7 +391,6 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
 
     // assistant(tool_calls) 原样回填（wire 契约：后续 role:'tool' 与 id 配对）
     sess.messages.push(msg);
-    let mut events = Vec::new();
     for tc in &tcs {
         let func = tc.get("function").cloned().unwrap_or(json!({}));
         let name = func.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -489,4 +552,25 @@ mod tests {
         assert!(!s2["events"].to_string().contains("收尾审查"), "截断不得触发审查注入：{s2}");
         let last = s2["messages"].as_array().expect("messages").last().expect("续跑提示");
         assert!(last["content"].as_str().unwrap_or("").contains("截断"), "续跑提示必须说明截断：{last}");
+    }
+
+    /// M3.6.9 文本形态工具调用：content 里的 <tool_call>/<arguments> 包裹或纯文本
+    /// op 行被提取执行（不落澄清门），执行结果以 user 消息回喂继续循环。
+    #[test]
+    fn agent_session_text_form_tool_calls() {
+        let _agent_serial = AGENT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _ = agent_start("做一个微博风格主页", "").expect("start");
+        // 模拟 step-3.7-flash 的文本形态输出（XML 包裹 + 纯文本 op 行混排）
+        let content = "<tool_call>\n{\"function\":\"moonviz_op\">\n<arguments>op>\ncreate chat_list 390 844\ncreate chat_detail 390 844\ncreate discover 390 844\ncreate profile 844\n<|parameters|>";
+        let feed = json!({"message": {"role": "assistant", "content": content}, "finish_reason": "stop"});
+        let s = agent_feed(&feed.to_string()).expect("feed 必须送达");
+        assert_eq!(s["action"], "llm", "文本形态 op 必须执行并继续循环：{s}");
+        let evs = s["events"].as_array().expect("events");
+        let oks = evs.iter().filter(|e| e["ok"] == json!(true)).count();
+        assert!(oks >= 3, "至少 3 条 create 成功（profile 844 亦合法，h 缺省）：{s}");
+        // 不得落澄清门
+        assert!(!evs.iter().any(|e| e["label"] == json!("澄清")), "文本形态工具调用不得判澄清：{s}");
+        // 回喂的执行结果 user 消息在场
+        let last = s["messages"].as_array().expect("messages").last().expect("result msg");
+        assert!(last["content"].as_str().unwrap_or("").contains("工具执行结果"), "必须回喂执行结果：{last}");
     }
