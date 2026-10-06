@@ -449,6 +449,27 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   副本）只聚焦既有主窗，不并跑（已实测 `open -a` ×3 与 DMG 副本启动均单进程）。
 - `install-app.sh --uninstall` 彻底卸载；`--uninstall --purge` 连用户数据目录一起清。
 
+## 发布完整性（用户决策，2026-10-06）
+
+- **每次发布必须包含全部五个资产**：Windows NSIS / macOS DMG / Linux deb / AppImage /
+  **玲珑 layer**。layer 缺席不算完整发布——CI 的 linyaps 装不上时工作流会「降级跳过」，
+  那只是不阻塞其它资产，**不等于发布完成**；必须宿主构建补齐后上传才算收尾。
+- 玲珑 layer 构建纪律（2026-10-06 实战全部实证）：
+  - `linglong/linglong.yaml` 的 version **只能是四段数字**（MAJOR.MINOR.PATCH.TWEAK），
+    `0.4.0-beta` 会被 `ll-builder export` 拒绝；发布资产名由 release workflow 改写成
+    `v0.4.0-beta`，应用内显示版本由 tauri.conf/APP_VER 承担——两套版本号并存是有意的。
+  - layer 走 **deepin 25 宿主构建**：`cd linglong && ./host-build.sh`（本机 ll-builder 在
+    `~/.local/opt/tauri-env.sh` 环境的 tauri-deps 里，须先 source；它**不进 PATH**，
+    build-packages.sh 只在需要 cargo 编译时才 source 环境，二进制已存在时会误报
+    「ll-builder not installed」并静默 SKIP）。宿主构建产物在 linglong/ 下，上传：
+    `gh release upload <tag> dist/com.deepcode.deepdesign_0.4.0.0_x86_64_binary.layer#com.deepcode.deepdesign-<tag>-x86_64.layer`。
+  - CI（ubuntu runner）的两层坑：libyaml-cpp0.7 在 deepin 池 `pool/main/y/` 桶
+    （`ci-install-linyaps.sh` 已修，勿再拼进 `/l` BASE）；**ll-builder 需要 Qt 6.8**，
+    ubuntu 24.04 只有 6.4（未解——CI 过不了就按本规则宿主补齐）。
+  - 宿主构建依赖 `~/.linglong` 的 base/runtime 层缓存或 `repo.linyaps.org.cn` 可达；
+    2026-10-06 该源曾返回 Traefik 默认证书（官方侧故障），届时构建会报
+    `stage prepare error`——查 `openssl s_client`，等恢复即可，不是本侧问题。
+
 ## 提交与文档
 
 - 提交信息用 Conventional Commits + 英文 subject：`feat(agent): ...` / `fix(studio): ...` /
