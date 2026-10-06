@@ -2251,8 +2251,14 @@ struct Index {
     this.iaBoard = b.id;
     this.iaLayer = l.id;
     this.iaInput = '';
-    this.iaX = Math.max(8, org[0] + (l.style.x + l.style.w) * z + 6);
-    this.iaY = Math.max(8, org[1] + l.style.y * z);
+    // M3.6.9：四向钳制——X 右缘不入右栏、Y 底缘不入 dock 带（用户截图：浮层输入行
+    // 被 pchips/指令条遮挡）。POP_H≈浮层实测高（head+chips+input+padding）、
+    // DOCK_BAND=dock 带 106 + 底距 12 + 余量
+    const POP_W = 320;
+    const POP_H = 150;
+    const DOCK_BAND = 130;
+    this.iaX = Math.max(8, Math.min(org[0] + (l.style.x + l.style.w) * z + 6, this.cw - POP_W - 8));
+    this.iaY = Math.max(8, Math.min(org[1] + l.style.y * z, this.ch - DOCK_BAND - POP_H));
     this.inlineAgent = true;
   }
 
