@@ -6450,7 +6450,7 @@ struct Index {
             .onChange((v: string) => { this.bindTarget = v; })
             .onFocus(() => { this.onInputFocus(); })
             .onBlur(() => { this.onInputBlur(); })
-            .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).lineHeight(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
+            .fontSize(this.fp(F_INSP_VAL)).placeholderFont({ size: this.fp(F_INSP_VAL) }).height(this.sp(H_BIND_CHIP)).lineHeight(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
             .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
             .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         }.width('100%')
@@ -6493,7 +6493,7 @@ struct Index {
           .onChange((v: string) => { this.stateName = v; })
           .onFocus(() => { this.onInputFocus(); })
           .onBlur(() => { this.onInputBlur(); })
-          .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).lineHeight(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
+          .fontSize(this.fp(F_INSP_VAL)).placeholderFont({ size: this.fp(F_INSP_VAL) }).height(this.sp(H_BIND_CHIP)).lineHeight(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
           .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
           .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         Text('+ 定义').fontSize(this.fp(F_INSP_ACT)).fontWeight(600).fontColor(this.T().accTx)   // r10 sz-bind-1：断点（10↔9）
@@ -7161,7 +7161,7 @@ struct Index {
                           .onSubmit(() => { this.sendInlineAgent(); })
                           .onFocus(() => { this.onInputFocus(); this.iaFocused = true; })
                           .onBlur(() => { this.onInputBlur(); this.iaFocused = false; })
-                          .fontSize(this.fp(F_IA)).height(this.sp(H_IA)).layoutWeight(1).borderRadius(7)   // r10 sz-ia-1 + h-ia-1：输入断点（11↔10 + 28↔25）
+                          .fontSize(this.fp(F_IA)).placeholderFont({ size: this.fp(F_IA) }).height(this.sp(H_IA)).layoutWeight(1).borderRadius(7)   // r10 sz-ia-1 + h-ia-1：输入断点（11↔10 + 28↔25）
                           .backgroundColor(this.iaFocused ? this.T().card : this.T().subtle)   // i:267 bg rgba(0,0,0,.02)→subtle；focus #fff
                           .border({ width: 1.5, color: this.iaFocused ? '#9d4edd' : this.T().line })   // i:267/.ap-input:focus 紫态
                           .padding({ left: 9, right: 9, top: 0, bottom: 0 })
@@ -7388,7 +7388,7 @@ struct Index {
                     .onSubmit(() => { this.sendClarify(); })
                     .onFocus(() => { this.onInputFocus(); })
                     .onBlur(() => { this.onInputBlur(); })
-                    .fontSize(this.fp(F_CLARIFY_INPUT)).height(this.sp(H_CLARIFY)).layoutWeight(1).borderRadius(this.T().rBtnDialog)   // batch-3 圆角；batch-5：字号/高断点（§3.3，12↔11 + 32↔28）
+                    .fontSize(this.fp(F_CLARIFY_INPUT)).placeholderFont({ size: this.fp(F_CLARIFY_INPUT) }).height(this.sp(H_CLARIFY)).layoutWeight(1).borderRadius(this.T().rBtnDialog)   // batch-3 圆角；batch-5：字号/高断点（§3.3，12↔11 + 32↔28）
                     .backgroundColor(this.T().card)
                     .border({ width: 1, color: this.T().purpleBorder })
                     .padding({ left: 9, right: 9, top: 0, bottom: 0 })
@@ -8312,7 +8312,7 @@ struct Index {
           TextInput({ placeholder: 'DDP 口令', text: this.exportPwd })
             .type(InputType.Password)
             .onChange((v: string) => { this.exportPwd = v; })
-            .fontSize(this.fp(F_MODAL_OPT)).height(this.sp(H_PWD_INPUT)).width('100%').borderRadius(this.T().rBtnDialog)   // batch-3：口令输入框圆角 8→HMOS 20（§4 text_field；两处口令框合并）+ r10 sz-export-1/h-pwd-1：断点（13↔12 + 36↔32 同行联动）
+            .fontSize(this.fp(F_MODAL_OPT)).placeholderFont({ size: this.fp(F_MODAL_OPT) }).height(this.sp(H_PWD_INPUT)).width('100%').borderRadius(this.T().rBtnDialog)   // batch-3：口令输入框圆角 8→HMOS 20（§4 text_field；两处口令框合并）+ r10 sz-export-1/h-pwd-1：断点（13↔12 + 36↔32 同行联动）
             .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
             .padding({ left: 10, right: 10 })
           Row({ space: 10 }) {
@@ -8366,7 +8366,7 @@ struct Index {
         TextInput({ placeholder: 'DDP 口令', text: this.pwdInput })
           .type(InputType.Password)
           .onChange((v: string) => { this.pwdInput = v; })
-          .fontSize(this.fp(F_MODAL_OPT)).height(this.sp(H_PWD_INPUT)).width('100%').borderRadius(this.T().rBtnDialog)   // batch-3：口令输入框圆角 8→HMOS 20（§4 text_field）+ r10 sz-pwd-1/h-pwd-1：断点（13↔12 + 36↔32 同行联动）
+          .fontSize(this.fp(F_MODAL_OPT)).placeholderFont({ size: this.fp(F_MODAL_OPT) }).height(this.sp(H_PWD_INPUT)).width('100%').borderRadius(this.T().rBtnDialog)   // batch-3：口令输入框圆角 8→HMOS 20（§4 text_field）+ r10 sz-pwd-1/h-pwd-1：断点（13↔12 + 36↔32 同行联动）
           .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
           .padding({ left: 10, right: 10 })
         Text(`第 ${this.openTries} 次 / 上限 3 次`).fontSize(this.fp(F_PWD_TRIES)).fontColor(this.T().tx3)   // r10 sz-pwd-1：次数断点（9.5↔9）
@@ -8612,7 +8612,7 @@ struct Index {
                     this.detectProviderFromUrl(false);   // batch-12：positive 反查（逐字符时机不误翻 custom）
                   })
                   .onBlur((): void => { this.detectProviderFromUrl(true); })   // batch-12：失败回落 custom
-                  .fontSize(this.fp(F_SET_MONO_URL)).fontFamily('monospace')
+                  .fontSize(this.fp(F_SET_MONO_URL)).placeholderFont({ size: this.fp(F_SET_MONO_URL) }).fontFamily('monospace')
                   .height(this.sp(H_SET_FIELD)).borderRadius(8).width('100%')   // r12 fix-aitab-2：i:466 h32/radius 8 单值（T().rIcon 非 hmos=5 退役）
                   .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                   .padding({ left: 9, right: 9, top: 0, bottom: 0 })   // i:466 padding 0 9
@@ -8629,7 +8629,7 @@ struct Index {
                 TextInput({ placeholder: '仅本机保存；留空则用环境变量 AI_GATEWAY_API_KEY；订阅计划填专属 Key（MiniMax 为 sk-cp- 前缀）', text: this.cfgApiKey })
                   .type(InputType.Password)
                   .onChange((v: string) => { this.cfgApiKey = v; })
-                  .fontSize(this.fp(F_SET_MONO_VAL)).fontFamily('monospace')
+                  .fontSize(this.fp(F_SET_MONO_VAL)).placeholderFont({ size: this.fp(F_SET_MONO_VAL) }).fontFamily('monospace')
                   .height(this.sp(H_SET_FIELD)).borderRadius(8).width('100%')
                   .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                   .padding({ left: 9, right: 9, top: 0, bottom: 0 })
@@ -8652,7 +8652,7 @@ struct Index {
                       this.cfgModel = v;
                       this.restrictThinking();   // batch-12：手输模型随收档位（零回退门）
                     })
-                    .fontSize(this.fp(F_SET_MONO_URL)).fontFamily('monospace')
+                    .fontSize(this.fp(F_SET_MONO_URL)).placeholderFont({ size: this.fp(F_SET_MONO_URL) }).fontFamily('monospace')
                     .height(this.sp(H_SET_FIELD)).borderRadius(8).layoutWeight(1)
                     .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                     .padding({ left: 9, right: 9, top: 0, bottom: 0 })
