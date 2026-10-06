@@ -2245,6 +2245,11 @@ struct Index {
 
   // ===== 行内 Agent（gap-right-5）=====
 
+  /** 悬浮 Agent 同步缩放系数（M3.6.9）：画布宽/1640，0.72 下限——窄窗等比缩小。 */
+  private iaScale(): number {
+    return Math.min(1, Math.max(0.72, this.cw / 1560));
+  }
+
   private openInlineAgent(b: Board, l: LayerNode): void {
     const org = this.boardOriginStack(b);   // batch-6：Stack-local 换基（浮层 .position 在内容 Stack 内）
     const z = this.zoomOf(b);
@@ -7179,6 +7184,9 @@ struct Index {
                     .transition(TransitionEffect.OPACITY
                       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
                       .animation({ curve: curves.springMotion(0.55, 0.825) }))
+                    // M3.6.9 同步缩放：浮层随画布宽等比（maximized 1640→1.0，窄窗→0.72 下限），
+                    // 渲染级 transform——文字矢量缩放不糊；位置钳制按未缩放 320 保守即可
+                    .scale({ x: this.iaScale(), y: this.iaScale() })
                     .position({ x: this.iaX, y: this.iaY })
                   }
                 }
