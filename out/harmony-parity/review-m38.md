@@ -36,3 +36,14 @@
 - N4 P2 ✅：execEngineOpRawAsync 死代码删除；SH_LOGO 导入移除 + Theme token 退役标注
 - 附带：docFlush 回灌前 appStore.docEpoch += 1（R10 缓解——线框活进度每轮强制板卡重建，
   不再依赖 rev/zoom 偶然再键）
+
+## review-m39（2026-10-06，复审后补丁批）——复审抓到「修复未落盘」并全部重落
+四路复审发现 8214f80 批次中 tools 回传/毒锁恢复/预算保审查三修因 python 断言中断未写盘
+（仅 JSON 转义经 Edit 落盘）——本批重落 + 收尾：
+- 重新落地：tools 全轮回传（4 处 llm 信封）/毒锁 into_inner 恢复（3 处）/预算保审查
+- 收尾新修：tool-budget done 信封补 events（失败事件丢轨迹）；泵事件渲染上移至
+  error throw 前（error 信封事件进轨迹）；partialOps 计数——loop 中断且已有产出时
+  不再重复执行兜底链（防模板重复落板）；消毒器空 tool_calls 数组视同无工具
+  （部分供应商 400）；session_stats 毒锁恢复；游离测试归位 mod tests
+- 契约测试 11/11 绿；e2e：11 ops · 4 画板交付，错误回喂→read_mbt→真 id 重试
+  自纠错闭环实证，无 ANR

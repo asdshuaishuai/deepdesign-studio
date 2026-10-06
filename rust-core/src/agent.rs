@@ -250,7 +250,7 @@ fn ev(kind: &str, label: &str, detail: &str, ok: bool) -> Value {
 
 /// 建会话：doc_b64 为空 = 空项目（首 op 由种子承载）。返回首动作信封。
 pub fn agent_start(instruction: &str, doc_b64: &str) -> Result<Value, String> {
-    let mut guard = AGENT_SESS.lock().map_err(|e| format!("agent_lock:{e}"))?;
+    let mut guard = AGENT_SESS.lock().unwrap_or_else(|p| p.into_inner());
     // 空文档检测：canonical 无 moonviz:artboard 标记 = 无板（引擎要求至少一个视觉块，
     // session_open 直接失败）→ 会话以种子承载首 op（桌面 agent.rs::seed_doc 同构）
     let has_board = crate::engine::decode_doc(doc_b64)
@@ -282,7 +282,7 @@ pub fn agent_start(instruction: &str, doc_b64: &str) -> Result<Value, String> {
 /// 喂回 LLM 响应（assistant message 原样 JSON）：执行工具调用（引擎人类门）、
 /// 推进审查/报告/澄清状态机。返回下一动作 + 轨迹事件。
 pub fn agent_feed(message_json: &str) -> Result<Value, String> {
-    let mut guard = AGENT_SESS.lock().map_err(|e| format!("agent_lock:{e}"))?;
+    let mut guard = AGENT_SESS.lock().unwrap_or_else(|p| p.into_inner());
     let sess = guard.as_mut().ok_or("agent_no_session")?;
     let feed: Value = serde_json::from_str(message_json).map_err(|e| format!("agent_feed_parse:{e}"))?;
     let msg: Value = feed.get("message").cloned().unwrap_or(json!({}));
@@ -339,7 +339,7 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
             let outline_after = sess.doc_b64.as_deref().map(outline).unwrap_or_default();
             let summary = format!("工具执行结果：{}/{} 项成功。\n当前画布结构：\n{}\n请继续剩余操作或给出中文报告。", done, op_lines.len(), outline_after);
             sess.messages.push(json!({"role": "user", "content": summary}));
-            return Ok(json!({"action": "llm", "messages": sess.messages, "events": events,
+            return Ok(json!({"action": "llm", "messages": sess.messages, "tools": tools_json(), "events": events,
                 "doc_b64": sess.doc_b64.clone().unwrap_or_default()}));
         }
     }
@@ -368,16 +368,20 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
             "继续：调用 moonviz_op 工具执行设计操作，或给出中文报告。"
         };
         sess.messages.push(json!({"role": "user", "content": nudge}));
-        return Ok(json!({"action": "llm", "messages": sess.messages, "events": [], "doc_b64": sess.doc_b64.clone().unwrap_or_default()}));
+        return Ok(json!({"action": "llm", "messages": sess.messages, "tools": tools_json(), "events": [], "doc_b64": sess.doc_b64.clone().unwrap_or_default()}));
     }
 
     if tcs.is_empty() && !truncated {
         // 无工具调用（且非截断）：审查注入点（桌面 review 语义，单次）或收报告
         if !sess.review_done && sess.ops > 0 {
             sess.review_done = true;
+            // 预算保审查（桌面 REVIEW_STEPS 同语义）：审查+修复+报告至少预留 3 轮
+            if sess.rounds + 3 > ROUNDS {
+                sess.rounds = ROUNDS.saturating_sub(3);
+            }
             sess.messages.push(msg);
             sess.messages.push(json!({"role": "user", "content": review_prompt(&sess.instruction)}));
-            return Ok(json!({"action": "llm", "doc_b64": sess.doc_b64.clone().unwrap_or_default(), "messages": sess.messages, "events": [ev("review", "🔎 收尾审查", "需求完整度 · 连线完整度 · 综合修复", true)]}));
+            return Ok(json!({"action": "llm", "messages": sess.messages, "tools": tools_json(), "doc_b64": sess.doc_b64.clone().unwrap_or_default(), "events": [ev("review", "🔎 收尾审查", "需求完整度 · 连线完整度 · 综合修复", true)]}));
         }
         sess.messages.push(msg);
         if sess.ops == 0 && is_clarify(&content) {
@@ -452,23 +456,20 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
     sess.rounds += 1;
     if sess.rounds >= ROUNDS {
         sess.finished = true;
-        events.push(ev("failed", "失败", "轮次预算内无可执行操作", false));
-        return Ok(json!({"action": "done", "doc_b64": sess.doc_b64.clone().unwrap_or_default(),
+        events.push(ev("failed", "失败", format!("轮次预算用尽（已执行 {} 项）", sess.ops).as_str(), false));
+        return Ok(json!({"action": "done", "doc_b64": sess.doc_b64.clone().unwrap_or_default(), "events": events,
             "outcome": {"ok": sess.ops > 0, "reply": format!("已完成 {} 项操作（轮次预算用尽）", sess.ops),
                 "executed": sess.ops > 0, "ops": sess.ops}}));
     }
-    Ok(json!({"action": "llm", "doc_b64": sess.doc_b64.clone().unwrap_or_default(), "messages": sess.messages, "events": events}))
+    Ok(json!({"action": "llm", "messages": sess.messages, "tools": tools_json(), "doc_b64": sess.doc_b64.clone().unwrap_or_default(), "events": events}))
 }
 
 /// 测试钩子：无 LLM 下直接查会话计数（契约测试消费）。
 pub fn session_stats() -> Value {
-    let guard = AGENT_SESS.lock().map_err(|e| format!("agent_lock:{e}"));
-    match guard {
-        Ok(g) => match g.as_ref() {
-            Some(s) => json!({"rounds": s.rounds, "ops": s.ops, "has_doc": s.doc_b64.is_some(), "messages": s.messages.len()}),
-            None => json!({"rounds": -1}),
-        },
-        Err(e) => json!({"error": format!("agent_lock:{e}")}),
+    let guard = AGENT_SESS.lock().unwrap_or_else(|p| p.into_inner());
+    match guard.as_ref() {
+        Some(s) => json!({"rounds": s.rounds, "ops": s.ops, "has_doc": s.doc_b64.is_some(), "messages": s.messages.len()}),
+        None => json!({"rounds": -1}),
     }
 }
 
@@ -535,7 +536,7 @@ mod tests {
         let last = s["messages"].as_array().expect("messages").last().expect("nudge");
         assert!(last["content"].as_str().unwrap_or("").contains("继续"), "必须带推进提示：{last}");
     }
-}
+
 
     /// M3.6.8 截断续跑：finish_reason=length 不收报告——注入「分批继续」提示，
     /// 且不触发审查注入（截断不是完成）。
@@ -577,3 +578,4 @@ mod tests {
         let last = s["messages"].as_array().expect("messages").last().expect("result msg");
         assert!(last["content"].as_str().unwrap_or("").contains("工具执行结果"), "必须回喂执行结果：{last}");
     }
+}

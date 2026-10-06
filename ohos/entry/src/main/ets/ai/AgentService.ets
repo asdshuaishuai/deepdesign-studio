@@ -180,6 +180,7 @@ export class AgentService {
       if (opts) {
         step('plan', `调优 思考=${opts.thinkingLevel} · 步数=${opts.maxSteps}`, '', true);
       }
+      let partialOps = 0;   // N4：loop 已执行 op 计数（事件 ok 聚合）
       try {
         const st = (await this.dispatch.dispatch('agent_start', {
           'instruction': instruction, 'docB64': docB64 ?? ''
@@ -194,10 +195,13 @@ export class AgentService {
         for (;;) {
           if (++guard > 64) throw new Error('pump guard');
           const action = String(sess['action'] ?? '');
-          if (action === 'error') throw new Error(String(sess['error'] ?? 'agent error'));
           for (const e2 of (sess['events'] ?? []) as Array<Record<string, Object>>) {
             step(String(e2['kind'] ?? 'tool_end'), String(e2['label'] ?? ''), String(e2['detail'] ?? ''), e2['ok'] === true);
+            if (e2['ok'] === true) {
+              partialOps += 1;   // N4：部分完成计数——中途降级时不再重复执行兜底链
+            }
           }
+          if (action === 'error') throw new Error(String(sess['error'] ?? 'agent error'));
           if (action === 'done') {
             const oc = (sess['outcome'] ?? {}) as Record<string, Object>;
             const ok = oc['ok'] === true;
@@ -239,6 +243,11 @@ export class AgentService {
           }
         }
       } catch (e) {
+        if (partialOps > 0) {
+          // N4：loop 已落部分 op——再走意图链会重复建板；诚实交还部分结果
+          step('tool_end', '工具循环中断', (e as Error).message.slice(0, 60), false);
+          return { ok: true, reply: `网络中断：已执行 ${partialOps} 项操作，可重试补充`, executed: true, ops: partialOps };
+        }
         step('tool_end', '工具循环不可用，降级单轮意图解析', (e as Error).message.slice(0, 60), false);
       }
     } else {
@@ -343,9 +352,11 @@ export class AgentService {
       const c = String(m['content'] ?? '');
       const tcs = m['tool_calls'] as Array<Object> | undefined;
       if (role === 'assistant') {
-        if (c === '' && (tcs === undefined || tcs === null)) continue;
+        const tcsArr = tcs as Array<Object> | undefined;
+        const hasTcs = tcsArr !== undefined && tcsArr !== null && tcsArr.length > 0;
+        if (c === '' && !hasTcs) continue;
         const clean: Record<string, Object> = { 'role': 'assistant', 'content': c };
-        if (tcs !== undefined && tcs !== null) clean['tool_calls'] = tcs;
+        if (hasTcs) clean['tool_calls'] = tcsArr as Object;
         wire.push(clean);
       } else {
         const clean: Record<string, Object> = { 'role': role, 'content': c };
