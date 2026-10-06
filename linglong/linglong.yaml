@@ -3,7 +3,7 @@ version: "1"
 package:
   id: com.deepcode.deepdesign
   name: deepDesign Studio
-  version: 0.4.0.0
+  version: 0.4.0-beta
   kind: app
   description: >
     AI 原生原型设计工具的桌面客户端（Tauri 2）。基于纯 MoonBit 引擎 MoonViz：

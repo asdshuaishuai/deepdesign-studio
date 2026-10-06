@@ -1,6 +1,6 @@
 [package]
 name = "deepdesign-studio"
-version = "0.3.0"
+version = "0.4.0-beta"
 edition = "2021"
 
 [build-dependencies]

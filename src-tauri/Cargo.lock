@@ -1015,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "deepdesign-studio"
-version = "0.3.0"
+version = "0.4.0-beta"
 dependencies = [
  "async-openai",
  "base64 0.22.1",

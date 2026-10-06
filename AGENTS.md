@@ -459,4 +459,9 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - `docs/linglong-package.md` + `linglong/`：玲珑打包**已落地**——统一入口
   `scripts/build-packages.sh --linglong`（layer 产线）/ `--deb --appimage`；
   方案细节、嵌套环境注意事项与 deb→玲珑转换配方见 `linglong/README-BUILD.md`。
+- `docs/plan-cli-mcp.md`：**1.0 规划**（本分支跟进）——deepDesign Agent 能力抽象为专属
+  CLI + MCP 出口，让 Codex/Claude Code 直接驱动 deepDesign；前置是 deepdesign-core 拆分
+  （与鸿蒙方案共享同一前置）。
+- `docs/plan-lan-share.md`：内网分享规划（建议 0.4.x）——export_html + 内嵌 HTTP 服务，
+  浏览器只读查看，免装 ddpView；serve-fresh-per-GET 设计，安全清单逐条锚定。
 - `README.md`：架构速览与打包产物说明。

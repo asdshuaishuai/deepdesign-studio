@@ -20,13 +20,19 @@ ok=0
 for f in \
   "linglong/linglong-bin_1.14.3-1_amd64.deb" \
   "linglong-box/linglong-box_2.3.4-1_amd64.deb" \
-  "linglong/linglong-builder_1.14.3-1_amd64.deb" \
-  "y/yaml-cpp/libyaml-cpp0.7_0.7.0+dfsg-8deepin0_amd64.deb"; do
+  "linglong/linglong-builder_1.14.3-1_amd64.deb"; do
   curl -4 -fsSL --retry 3 -o pkg.deb "$BASE/$f" || { echo "  !! fetch failed: $f"; continue; }
   sudo dpkg -x pkg.deb /usr/local/linglong
   ok=$((ok+1))
 done
-[ "$ok" -ge 2 ] || { echo "[ci-linyaps] not enough debs landed"; exit 1; }
+# libyaml-cpp0.7 在 pool/main/y/ 桶——deepin 池按源码包首字母分桶，不含 /l 段；
+# 此前拼进 BASE 变成 main/l/y/... 必 404，层构建静默降级（2026-10-06 逐 URL 实测后修正）
+rm -f pkg.deb
+curl -4 -fsSL --retry 3 -o pkg.deb \
+  "https://ci.deepin.com/repo/deepin/deepin-community/stable/pool/main/y/yaml-cpp/libyaml-cpp0.7_0.7.0+dfsg-8deepin0_amd64.deb" \
+  || echo "  !! fetch failed: libyaml-cpp0.7"
+if [ -f pkg.deb ]; then sudo dpkg -x pkg.deb /usr/local/linglong; ok=$((ok+1)); fi
+[ "$ok" -ge 4 ] || { echo "[ci-linyaps] not enough debs landed"; exit 1; }
 
 # ll-builder 硬编码 helper 路径
 sudo cp -a /usr/local/linglong/usr/libexec/linglong/. /usr/libexec/linglong/ 2>/dev/null || true
