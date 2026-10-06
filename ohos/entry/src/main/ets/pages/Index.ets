@@ -5461,7 +5461,7 @@ struct Index {
       Divider().vertical(true).height(12).color(this.T().bd)
       Text('⤢ 适配').fontSize(this.fp(F_TOOLROW_FIT)).fontColor(this.T().tx2)   // r10 sz-ctools-1：断点字号（11↔10，F_TOOLROW_FIT 独立档）
         .onClick(() => { this.fitWindow(); })
-    }.padding({ left: 10, right: 10, top: 5, bottom: 5 }).height(CANVAS_TOOLBAR_H)
+    }.padding(this.isNarrowBar() ? { left: 7, right: 7, top: 4, bottom: 4 } : { left: 10, right: 10, top: 5, bottom: 5 }).height(CANVAS_TOOLBAR_H)   // M3.6.9：窄窗收紧（窄画布占比失衡——用户圈点）
     .borderRadius(this.T().rFloatBar)   // batch-3：悬浮条圆角 12→HMOS 20（§4 button 档）
     .backgroundColor(this.T().floatBg).border({ width: 1, color: this.T().line })
     .shadow(this.T().shFloat)   // batch-3：{12,0,0,shadowMd}→shFloat sm 档 40/(0,10)（§6）
@@ -5473,7 +5473,7 @@ struct Index {
    * 11.5/600/tx/minWidth 56 monospace（i:206）；1:1 改 10.5/700/tx3（i:207 .fit）。 */
   @Builder
   czoomBar() {
-    Row({ space: 8 }) {
+    Row({ space: this.isNarrowBar() ? 5 : 8 }) {
       Text('−').fontSize(this.fp(F_ZOOM_GLYPH)).fontColor(this.T().tx2)   // r10 sz-czoom-1：断点字号（13↔12）
         .onClick(() => {
           // r5（判据 E）：FIT 态首步只落实际比例退出、不连乘步进（对齐桌面 zoomStep
@@ -5496,7 +5496,7 @@ struct Index {
           this.zoom = 100;
           this.fitMode = false;
         })
-    }.padding({ left: 10, right: 10, top: 5, bottom: 5 }).height(CANVAS_TOOLBAR_H)
+    }.padding(this.isNarrowBar() ? { left: 7, right: 7, top: 4, bottom: 4 } : { left: 10, right: 10, top: 5, bottom: 5 }).height(CANVAS_TOOLBAR_H)   // M3.6.9：窄窗收紧（窄画布占比失衡——用户圈点）
     .borderRadius(this.T().rFloatBar)   // batch-3：悬浮条圆角 12→HMOS 20（§4 button 档）
     .backgroundColor(this.T().floatBg).border({ width: 1, color: this.T().line })
     .shadow(this.T().shFloat)   // batch-3：{12,0,0,shadowMd}→shFloat sm 档 40/(0,10)（§6）
@@ -5590,7 +5590,7 @@ struct Index {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Text(`${c.default_size[0]} × ${c.default_size[1]}`).fontSize(this.fp(F_COMPCELL_SUB)).fontColor(this.T().tx3)   // r10 sz-compcell-1：尺寸行断点（8.5↔8）
     }
-    .width(106).padding({ top: 8, bottom: 7 })
+    .width(this.isNarrowBar() ? 88 : 106).padding({ top: 8, bottom: 7 })   // M3.6.9：窄窗 106→88（左栏 220 下 2 列卡占满失衡——用户圈点）
     .borderRadius(9).backgroundColor(this.T().card)
     .border({ width: 1, color: this.T().bd })
     .alignItems(HorizontalAlign.Center)
