@@ -117,7 +117,7 @@ fn tools_json() -> Value {
             "type": "function",
             "function": {
                 "name": "moonviz_op",
-                "description": "Execute MoonViz design operations (validated by the engine gates, committed to the canonical document). BATCHING: you MAY put multiple operations in one call — separate them with newlines, one op per line, executed in order. Batch aggressively (e.g. build a whole screen in one call). The full operation grammar is in your system prompt.",
+                "description": "Execute MoonViz MUTATING design operations (validated by the engine gates, committed to the canonical document): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/unflow/theme/token/fix. You MAY batch multiple operations in one call - separate them with newlines, one op per line, executed in order (batch one complete screen per call).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -336,7 +336,8 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
                     "outcome": {"ok": sess.ops > 0, "reply": format!("已完成 {} 项操作（轮次预算用尽）", sess.ops),
                         "executed": sess.ops > 0, "ops": sess.ops}}));
             }
-            let summary = format!("工具执行结果：{}/{} 项成功。请继续剩余操作或给出中文报告。", done, op_lines.len());
+            let outline_after = sess.doc_b64.as_deref().map(outline).unwrap_or_default();
+            let summary = format!("工具执行结果：{}/{} 项成功。\n当前画布结构：\n{}\n请继续剩余操作或给出中文报告。", done, op_lines.len(), outline_after);
             sess.messages.push(json!({"role": "user", "content": summary}));
             return Ok(json!({"action": "llm", "messages": sess.messages, "events": events,
                 "doc_b64": sess.doc_b64.clone().unwrap_or_default()}));
@@ -439,9 +440,11 @@ pub fn agent_feed(message_json: &str) -> Result<Value, String> {
             ));
         }
         let detail = details.join("\n").chars().take(1800).collect::<String>();
-        // tool 结果 JSON 用 serde_json 序列化——op 里的 text="..." 引号经 format! 手拼会
-        // 打穿 JSON 结构（模型收到畸形 tool 结果的实证风险）
-        let tool_content = serde_json::json!({"ok": done > 0, "executed": done, "total": total, "detail": detail}).to_string();
+        // 工具结果富化（桌面同语义：桌面回传完整引擎信封含 mbt——模型据 ids 继续
+        // 排布；ohos 附同源结构大纲，模型不再因「不知道画布现状」而停轮）
+        let outline_after = sess.doc_b64.as_deref().map(outline).unwrap_or_default();
+        let tool_obj = serde_json::json!({"ok": done > 0, "executed": done, "total": total, "detail": detail, "outline": outline_after});
+        let tool_content = tool_obj.to_string();
         sess.messages.push(json!({"role": "tool", "tool_call_id": tc_id,
             "content": tool_content}));
     }
