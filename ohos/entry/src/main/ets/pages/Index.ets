@@ -1297,6 +1297,7 @@ struct Index {
   @State iaX: number = 0;
   @State iaY: number = 0;
   @State iaInput: string = '';
+  @State iaFocused: boolean = false;   // M3.6.9：输入聚焦紫态（i:268 .ap-input:focus）
   @State cfgProvider: string = 'xiaoyi';  // 设置 AI 区（gap-settings-1；batch-9 默认 xiaoyi——
                                           // 初值仅首帧兜底，aboutToAppear 经 aiConfig.load() 覆写）
   @State cfgBaseUrl: string = 'https://api.deepseek.com';
@@ -7109,24 +7110,35 @@ struct Index {
                   }
 
                   // 行内 Agent 浮层（gap-right-5）：点选节点即弹，上下文行 + 快捷 chips + 指令
+                  // M3.6.9 视觉优化（对齐桌面 #agent-pop i:258-271）：宽 250→320、
+                  // 紫渐变星芒方块（22/7/白✦）、标题+mono 上下文行、聚焦紫态、
+                  // 紫描边环（border rgba(157,78,221,.25) 等价桌面 0 0 0 1px ring）
                   if (this.inlineAgent) {
-                    Column({ space: 6 }) {
-                      Row({ space: 5 }) {
-                        Text('✦').fontSize(this.fp(F_IA)).fontColor(this.T().purple)   // r10 sz-ia-1：✦ 断点（11↔10）
-                        Text('行内 Agent').fontSize(this.fp(F_IA_HEAD)).fontWeight(700).fontColor(this.T().tx)   // r10 sz-ia-1：题断点（10↔9）
-                        Blank()
-                        Text('✕').fontSize(this.fp(F_IA_MINI)).fontColor(this.T().tx3)   // r10 sz-ia-1：✕ 断点（9↔8）
+                    Column({ space: 7 }) {
+                      Row({ space: 7 }) {
+                        Column() {
+                          Text('✦').fontSize(12).fontColor(Color.White)
+                        }
+                        .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+                        .width(22).height(22).borderRadius(7)
+                        .linearGradient({ angle: 135, colors: [['#9d4edd', 0.0], ['#6d28d9', 1.0]] })   // i:261 .spark 渐变
+                        Column({ space: 1 }) {
+                          Text('行内 Agent').fontSize(this.fp(F_IA_HEAD)).fontWeight(700).fontColor(this.T().tx)   // r10 sz-ia-1：题断点（10↔9）
+                          Text(this.iaContext()).fontSize(this.fp(F_IA_MINI)).fontColor(this.T().tx3)   // r10 sz-ia-1：上下文行（9↔8）
+                            .fontFamily('monospace').maxLines(1).width('100%')
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+                        Text('✕').fontSize(this.fp(F_IA_MINI) + 2).fontColor(this.T().tx3)   // i:264 .x 14px→断点+2
+                          .padding({ left: 4, right: 4, top: 1, bottom: 1 }).borderRadius(6)
                           .onClick(() => { this.inlineAgent = false; })
                       }.width('100%')
-                      Text(this.iaContext()).fontSize(this.fp(F_IA_MINI)).fontColor(this.T().tx3)   // r10 sz-ia-1：上下文行断点（9↔8）
-                        .maxLines(1).width('100%')
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
                       Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
                         ForEach(['改文案', '换色', '删除', '放大'], (c: string) => {
-                          Text(c).fontSize(this.fp(F_IA_CHIP)).fontColor(this.T().tx)   // r10 sz-ia-1：chip 断点（9.5↔9）
-                            .padding({ left: 8, right: 8, top: 3, bottom: 3 }).borderRadius(this.T().rChipPill)   // batch-3：行内 chips 胶囊 99→HMOS 14（§4 piece）
+                          Text(c).fontSize(this.fp(F_IA_CHIP)).fontColor(this.T().tx2)   // r10 sz-ia-1：chip 断点（9.5↔9）
+                            .padding({ left: 9, right: 9, top: 3, bottom: 3 }).borderRadius(this.T().rChipPill)   // batch-3：行内 chips 胶囊 99→HMOS 14（§4 piece）
                             .backgroundColor(this.T().subtle)
-                            .margin({ right: 4, bottom: 4 })
+                            .border({ width: 1, color: Color.Transparent })   // i:270 .ap-chip border transparent
+                            .margin({ right: 4, bottom: 2 })
                             .stateStyles({
                               pressed: { .scale({ x: HMOS_PRESS_SCALE, y: HMOS_PRESS_SCALE }) },   // batch-4 iss-5：A 缩放式（chips）
                               normal: { .scale({ x: 1, y: 1 }) }
@@ -7141,21 +7153,21 @@ struct Index {
                         TextInput({ placeholder: '对这个节点下指令…', text: this.iaInput })
                           .onChange((v: string) => { this.iaInput = v; })
                           .onSubmit(() => { this.sendInlineAgent(); })
-                          .onFocus(() => { this.onInputFocus(); })
-                          .onBlur(() => { this.onInputBlur(); })
+                          .onFocus(() => { this.onInputFocus(); this.iaFocused = true; })
+                          .onBlur(() => { this.onInputBlur(); this.iaFocused = false; })
                           .fontSize(this.fp(F_IA)).height(this.sp(H_IA)).layoutWeight(1).borderRadius(7)   // r10 sz-ia-1 + h-ia-1：输入断点（11↔10 + 28↔25）
-                          .backgroundColor(this.T().card)
-                          .border({ width: 1, color: this.T().purpleBorder })
-                          .padding({ left: 8, right: 8 })
+                          .backgroundColor(this.iaFocused ? this.T().card : this.T().subtle)   // i:267 bg rgba(0,0,0,.02)→subtle；focus #fff
+                          .border({ width: 1.5, color: this.iaFocused ? '#9d4edd' : this.T().line })   // i:267/.ap-input:focus 紫态
+                          .padding({ left: 9, right: 9 })
                           .defaultFocus(true)
                         Text('↗').fontSize(this.fp(F_IA)).fontColor(this.T().onAcc)   // r10 sz-ia-1：↗ 断点（11↔10）
                           .width(28).height(this.sp(H_IA)).textAlign(TextAlign.Center).borderRadius(7)   // r10 h-ia-1：发送钮断点高（28↔25；宽 28 保持命中区）
                           .backgroundColor(this.T().purple)
                           .onClick(() => { this.sendInlineAgent(); })
                       }.width('100%')
-                    }.width(250).padding(10).borderRadius(11)
+                    }.width(320).padding(10).borderRadius(12)
                     .backgroundColor(this.T().card)
-                    .border({ width: 1, color: this.T().purpleBorder })
+                    .border({ width: 1, color: 'rgba(157,78,221,0.25)' })   // i:258 紫描边环（桌面 0 0 0 1px ring 等价）
                     .shadow(this.T().shPop)   // batch-3：行内 Agent 浮层阴影→shPop md 档（§6；同上合并）
                     // batch-5 iss-7 入场（popIn 族近似：淡入+0.97 缩放，物理弹性同 veil）
                     .transition(TransitionEffect.OPACITY
