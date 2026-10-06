@@ -6450,7 +6450,7 @@ struct Index {
             .onChange((v: string) => { this.bindTarget = v; })
             .onFocus(() => { this.onInputFocus(); })
             .onBlur(() => { this.onInputBlur(); })
-            .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
+            .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).lineHeight(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
             .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
             .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         }.width('100%')
@@ -6493,7 +6493,7 @@ struct Index {
           .onChange((v: string) => { this.stateName = v; })
           .onFocus(() => { this.onInputFocus(); })
           .onBlur(() => { this.onInputBlur(); })
-          .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
+          .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).lineHeight(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
           .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
           .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         Text('+ 定义').fontSize(this.fp(F_INSP_ACT)).fontWeight(600).fontColor(this.T().accTx)   // r10 sz-bind-1：断点（10↔9）
@@ -6660,7 +6660,7 @@ struct Index {
             Row({ space: 6 }) {
               Text('＋ 新建').fontSize(this.fp(F_LBTN)).fontWeight(500).fontColor(this.T().tx2)   // r10 sz-lproj-2：断点字号（11.5↔10.5）
                 .textAlign(TextAlign.Center)
-                .height(this.sp(H_LBTN)).borderRadius(this.T().rBtnSecondary).layoutWeight(1)   // batch-3：＋新建/打开 7→HMOS 14（§4 small_button；两处合并）+ r10 h-lbtn-1：断点高（28↔25）
+                .height(this.sp(H_LBTN)).lineHeight(this.sp(H_LBTN)).borderRadius(this.T().rBtnSecondary).layoutWeight(1)   // batch-3：＋新建/打开 7→HMOS 14（§4 small_button；两处合并）+ r10 h-lbtn-1：断点高（28↔25）
                 .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                 .stateStyles({
                   pressed: { .backgroundColor(this.T().pressFill) },   // batch-4 iss-5：B 底色叠加（中性钮=subtle 提一档）
@@ -6669,7 +6669,7 @@ struct Index {
                 .onClick(() => { this.actNew(); })
               Text('打开…').fontSize(this.fp(F_LBTN)).fontWeight(500).fontColor(this.T().tx2)   // r10 sz-lproj-2：断点字号（11.5↔10.5）
                 .textAlign(TextAlign.Center)
-                .height(this.sp(H_LBTN)).borderRadius(this.T().rBtnSecondary).layoutWeight(1)   // batch-3：＋新建/打开 7→HMOS 14（§4 small_button；两处合并）+ r10 h-lbtn-1：断点高（28↔25）
+                .height(this.sp(H_LBTN)).lineHeight(this.sp(H_LBTN)).borderRadius(this.T().rBtnSecondary).layoutWeight(1)   // batch-3：＋新建/打开 7→HMOS 14（§4 small_button；两处合并）+ r10 h-lbtn-1：断点高（28↔25）
                 .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                 .stateStyles({
                   pressed: { .backgroundColor(this.T().pressFill) },   // batch-4 iss-5：B 底色叠加（同上）
@@ -6844,13 +6844,13 @@ struct Index {
                   Row({ space: 6 }) {
                     Text('◆ 画板 → 组件').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().accTx)   // r10 sz-lcomp-1：断点字号（10.5↔9.5）
                       .textAlign(TextAlign.Center)
-                      .height(this.sp(H_LBTN)).borderRadius(7).layoutWeight(1.2)   // r10 h-lbtn-1：画板→组件断点高（28↔25）
+                      .height(this.sp(H_LBTN)).lineHeight(this.sp(H_LBTN)).borderRadius(7).layoutWeight(1.2)   // r10 h-lbtn-1：画板→组件断点高（28↔25）
                       .backgroundColor('rgba(0,122,255,0.06)')
                       .border({ width: 1, color: 'rgba(0,122,255,0.3)' })
                       .onClick(() => { this.toast('用户组件库尚未接线——画板沉淀暂不可用'); })
                     Text('导入 MCF').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2)   // r10 sz-lcomp-1：断点字号（10.5↔9.5）
                       .textAlign(TextAlign.Center)
-                      .height(this.sp(H_LBTN)).borderRadius(7).layoutWeight(1)   // batch-3 登记：导入 MCF stub 未列明于 rBtnSecondary 表面清单，保持桌面现值 7 不动 + r10 h-lbtn-1：断点高（28↔25）
+                      .height(this.sp(H_LBTN)).lineHeight(this.sp(H_LBTN)).borderRadius(7).layoutWeight(1)   // batch-3 登记：导入 MCF stub 未列明于 rBtnSecondary 表面清单，保持桌面现值 7 不动 + r10 h-lbtn-1：断点高（28↔25）
                       .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                       .onClick(() => { this.toast('用户组件库尚未接线——MCF 导入暂不可用'); })
                   }.width('100%')
