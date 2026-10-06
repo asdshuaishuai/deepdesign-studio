@@ -5275,7 +5275,7 @@ struct Index {
         'v0.4.0-beta')
         .fontSize(this.fp(F_FILECHIP)).fontFamily('monospace').fontColor(this.T().tx2).maxLines(1)   // r10 sz-topbar-2：路径 chip 断点字号（10.5↔9.5）
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }.height(this.sp(H_FILECHIP)).padding({ left: 9, right: 9 }).borderRadius(99)   // r10 h-topbar-2：chip 断点高（22↔20）
+    }.height(this.sp(H_FILECHIP)).padding({ left: 9, right: 9, top: 0, bottom: 0 }).borderRadius(99)   // r10 h-topbar-2：chip 断点高（22↔20）
     .backgroundColor(this.T().subtle)
     .constraintSize({ maxWidth: 200 })   // i:86 .filechip max-width:200px
   }
@@ -5352,7 +5352,7 @@ struct Index {
         Text('⇩').fontSize(this.fp(F_TOOLBAR_BADGE)).fontColor(this.T().tx2)   // batch-5：徽章档（§3.3，11↔10）
         Text('导出').fontSize(this.fp(F_TOOLBAR)).fontWeight(500).fontColor(this.T().tx2)   // batch-5：工具行断点字号（§3.3，12.5↔11.5）
         Text('▾').fontSize(8).fontColor(this.T().tx2)   // r10 sz-topbar-3：箭头 8 两态同值保底不接 token
-      }.height(this.sp(H_PILL)).padding({ left: 8, right: 8 }).borderRadius(7)   // r10 h-topbar-3：导出▾ 药丸断点高（28↔25）
+      }.height(this.sp(H_PILL)).padding({ left: 8, right: 8, top: 0, bottom: 0 }).borderRadius(7)   // r10 h-topbar-3：导出▾ 药丸断点高（28↔25）
       .bindMenu(this.exportMenuPanel)   // batch-2 dd-menu-export：自绘面板（r9 实测修正：箭头形 bindMenu builder 零求值 6 处全死，统一改引用形=recentMenu 顶栏先例；builder 展开时求值，canUndo 仍读当帧值）
       Row({ space: 5 }) {
         Text('↧').fontSize(this.fp(F_TOOLBAR_GLYPH)).fontColor(this.T().onAcc)   // r10 sz-topbar-3：字形断点（12↔11）
@@ -5436,7 +5436,7 @@ struct Index {
         .fontColor(this.toolMode === mode ? this.T().onAcc : (magic ? '#7c3aed' : this.T().tx2))
       Text(label).fontSize(this.fp(F_TOOLROW)).fontWeight(this.toolMode === mode ? 600 : 500)   // r10 sz-ctools-1：label 断点（11.5↔10.5）
         .fontColor(this.toolMode === mode ? this.T().onAcc : (magic ? '#7c3aed' : this.T().tx2))
-    }.height(this.sp(H_TOOLBTN)).padding({ left: 9, right: 9 }).borderRadius(7)   // r10 h-toolbtn-1：断点高（24↔22）
+    }.height(this.sp(H_TOOLBTN)).padding({ left: 9, right: 9, top: 0, bottom: 0 }).borderRadius(7)   // r10 h-toolbtn-1：断点高（24↔22）
     .backgroundColor(this.toolMode === mode ? this.T().acc : Color.Transparent)
     .shadow(this.toolMode === mode ?
       { radius: SH_TOOL_SELECTED.radius, offsetX: SH_TOOL_SELECTED.dx, offsetY: SH_TOOL_SELECTED.dy, color: this.T().shadowMd } :
@@ -6270,7 +6270,7 @@ struct Index {
   @Builder
   segRow(label: string, sp: SegChipsSpec) {
     Row({ space: 6 }) {
-      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
+      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
       ForEach(sp.values, (v: string, i: number) => {
         Column() {
           this.segBtn(sp.labels[i], sp.current === v, (): void => { sp.onPick(v); })
@@ -6285,7 +6285,7 @@ struct Index {
   @Builder
   shadowSegRow(label: string, sp: SegChipsSpec) {
     Row({ space: 6 }) {
-      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
+      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
       ForEach(sp.values, (v: string, i: number) => {
         Column({ space: 3 }) {
           // demo 块阴影随档递增（i:317-319 逐值）
@@ -6312,12 +6312,12 @@ struct Index {
   @Builder
   draftPairRow(label: string, a: DraftRowSpec, b2: DraftRowSpec) {
     Row({ space: 6 }) {
-      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
+      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
       TextInput({ text: a.val })
         .fontSize(this.fp(F_INSP_INPUT)).height(this.sp(H_DRAFT_INPUT)).borderRadius(7).layoutWeight(1)   // r10 sz-insp-2 + h-insp-3：草稿输入断点（11.5↔10.5 + 27↔24 同行联动）
         .fontFamily('monospace')
         .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-        .padding({ left: 7, right: 7 })
+        .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         .onChange((v: string) => {
           if (v === a.val) { return; }   // 程序化回声守卫（同 draftRow）
           a.onCh(v);
@@ -6328,7 +6328,7 @@ struct Index {
         .fontSize(this.fp(F_INSP_INPUT)).height(this.sp(H_DRAFT_INPUT)).borderRadius(7).layoutWeight(1)   // r10 sz-insp-2 + h-insp-3：草稿输入断点（11.5↔10.5 + 27↔24 同行联动）
         .fontFamily('monospace')
         .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-        .padding({ left: 7, right: 7 })
+        .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         .onChange((v: string) => {
           if (v === b2.val) { return; }
           b2.onCh(v);
@@ -6342,12 +6342,12 @@ struct Index {
   @Builder
   draftSingleRow(label: string, sp: DraftRowSpec) {
     Row({ space: 6 }) {
-      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
+      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
       TextInput({ text: sp.val })
         .fontSize(this.fp(F_INSP_INPUT)).height(this.sp(H_DRAFT_INPUT)).borderRadius(7).layoutWeight(1)   // r10 sz-insp-2 + h-insp-3：草稿输入断点（11.5↔10.5 + 27↔24 同行联动）
         .fontFamily('monospace')
         .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-        .padding({ left: 7, right: 7 })
+        .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         .onChange((v: string) => {
           if (v === sp.val) { return; }
           sp.onCh(v);
@@ -6375,12 +6375,12 @@ struct Index {
   @Builder
   colorDraftRow(label: string, sp: DraftRowSpec) {
     Row({ space: 6 }) {
-      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
+      Text(label).fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-insp-1/2：行标断点（10.5↔9.5）
       TextInput({ text: sp.val })
         .fontSize(this.fp(F_INSP_INPUT)).height(this.sp(H_DRAFT_INPUT)).borderRadius(7).layoutWeight(1)   // r10 sz-insp-2 + h-insp-3：草稿输入断点（11.5↔10.5 + 27↔24 同行联动）
         .fontFamily('monospace')
         .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-        .padding({ left: 7, right: 7 })
+        .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         .onChange((v: string) => {
           if (v === sp.val) { return; }
           sp.onCh(v);
@@ -6397,7 +6397,7 @@ struct Index {
   @Builder
   visibilityRow() {
     Row({ space: 6 }) {
-      Text('可见性').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-insp-2：行标断点（10.5↔9.5）
+      Text('可见性').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-insp-2：行标断点（10.5↔9.5）
       Column() {
         this.segBtn((this.curLayer()?.style.visible ?? true) ? '● 可见' : '○ 已隐藏',
           this.curLayer()?.style.visible ?? true, (): void => {
@@ -6418,7 +6418,7 @@ struct Index {
         Row({ space: 4 }) {
           Text(this.bindTrigger).fontSize(this.fp(F_INSP_VAL)).fontColor(this.T().tx).maxLines(1)   // r10 sz-bind-1：值断点（10.5↔9.5）
           Text('▾').fontSize(8).fontColor(this.T().tx2)   // r10 sz-bind-1：箭头 8 两态同值保底
-        }.height(this.sp(H_BIND_CHIP)).padding({ left: 8, right: 8 }).borderRadius(6)   // r10 h-bind-1：胶囊断点高（24↔21）
+        }.height(this.sp(H_BIND_CHIP)).padding({ left: 8, right: 8, top: 0, bottom: 0 }).borderRadius(6)   // r10 h-bind-1：胶囊断点高（24↔21）
         .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
         .bindMenu(this.triggerMenuPanel)   // batch-4 dd-menu-trigger：自绘面板 168 宽（r9 修正：箭头形→引用形，同 exportMenuPanel）
       }.width('100%')
@@ -6439,7 +6439,7 @@ struct Index {
             Text(this.bindTarget === '' ? '选择画板…' : this.boardName(this.bindTarget))
               .fontSize(this.fp(F_INSP_VAL)).fontColor(this.bindTarget === '' ? this.T().tx3 : this.T().tx).maxLines(1)   // r10 sz-bind-1
             Text('▾').fontSize(8).fontColor(this.T().tx2)   // 保底 8
-          }.height(this.sp(H_BIND_CHIP)).padding({ left: 8, right: 8 }).borderRadius(6)   // r10 h-bind-1
+          }.height(this.sp(H_BIND_CHIP)).padding({ left: 8, right: 8, top: 0, bottom: 0 }).borderRadius(6)   // r10 h-bind-1
           .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
           .bindMenu(this.boardMenuPanel)   // batch-4 dd-menu-board：自绘面板 176 宽（boards 空时空组；箭头形→引用形）
         }.width('100%')
@@ -6452,7 +6452,7 @@ struct Index {
             .onBlur(() => { this.onInputBlur(); })
             .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
             .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-            .padding({ left: 7, right: 7 })
+            .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         }.width('100%')
       }
       Row() {
@@ -6495,7 +6495,7 @@ struct Index {
           .onBlur(() => { this.onInputBlur(); })
           .fontSize(this.fp(F_INSP_VAL)).height(this.sp(H_BIND_CHIP)).borderRadius(6).layoutWeight(1)   // r10 sz-bind-1 + h-bind-1：输入断点（10.5↔9.5 + 24↔21 同行联动）
           .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-          .padding({ left: 7, right: 7 })
+          .padding({ left: 7, right: 7, top: 0, bottom: 0 })
         Text('+ 定义').fontSize(this.fp(F_INSP_ACT)).fontWeight(600).fontColor(this.T().accTx)   // r10 sz-bind-1：断点（10↔9）
           .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(6)
           .backgroundColor(this.T().accSoft)
@@ -6838,7 +6838,7 @@ struct Index {
                     // i:164 .compsearch：rgba(0,0,0,.045) 弱填充底/focus 白底+acc 边（batch-6 audit-left-11）
                     .backgroundColor(this.compSearchFocused ? this.T().card : (this.isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.045)'))
                     .border({ width: 1, color: this.compSearchFocused ? this.T().accTx : this.T().chipLine })   // 未聚焦边 iss-4 token 化（原 rgba(0,0,0,0.07) 深档不可见）
-                    .padding({ left: 8, right: 8 })
+                    .padding({ left: 8, right: 8, top: 0, bottom: 0 })
                   // stub 双钮（batch-6，audit-left-9 对齐 i:856-858：◆ 画板→组件 acc 描边 tint 底
                   // flex 1.2 / 导入 MCF；点击统一诚实降级 toast——USERCOMP_UNAVAILABLE 语义）
                   Row({ space: 6 }) {
@@ -7105,7 +7105,7 @@ struct Index {
                         .fontFamily('monospace')   // i:384 ui-monospace 12（audit-canvas-6）
                         .backgroundColor(Color.Transparent)
                         .border({ width: 0 })
-                        .padding({ left: 8, right: 8 })
+                        .padding({ left: 8, right: 8, top: 0, bottom: 0 })
                     }
                     .padding(4)   // i:383
                     .borderRadius(9)
@@ -7164,7 +7164,7 @@ struct Index {
                           .fontSize(this.fp(F_IA)).height(this.sp(H_IA)).layoutWeight(1).borderRadius(7)   // r10 sz-ia-1 + h-ia-1：输入断点（11↔10 + 28↔25）
                           .backgroundColor(this.iaFocused ? this.T().card : this.T().subtle)   // i:267 bg rgba(0,0,0,.02)→subtle；focus #fff
                           .border({ width: 1.5, color: this.iaFocused ? '#9d4edd' : this.T().line })   // i:267/.ap-input:focus 紫态
-                          .padding({ left: 9, right: 9 })
+                          .padding({ left: 9, right: 9, top: 0, bottom: 0 })
                           .defaultFocus(true)
                         Text('↗').fontSize(this.fp(F_IA)).fontColor(this.T().onAcc)   // r10 sz-ia-1：↗ 断点（11↔10）
                           .width(28).height(this.sp(H_IA)).textAlign(TextAlign.Center).borderRadius(7)   // r10 h-ia-1：发送钮断点高（28↔25；宽 28 保持命中区）
@@ -7391,7 +7391,7 @@ struct Index {
                     .fontSize(this.fp(F_CLARIFY_INPUT)).height(this.sp(H_CLARIFY)).layoutWeight(1).borderRadius(this.T().rBtnDialog)   // batch-3 圆角；batch-5：字号/高断点（§3.3，12↔11 + 32↔28）
                     .backgroundColor(this.T().card)
                     .border({ width: 1, color: this.T().purpleBorder })
-                    .padding({ left: 9, right: 9 })
+                    .padding({ left: 9, right: 9, top: 0, bottom: 0 })
                   Row({ space: 4 }) {
                     Text('↗').fontSize(this.fp(F_CLARIFY_HEAD)).fontColor(this.T().onAcc)   // r10 sz-dock-1：↗ 断点（11↔10，复用 F_CLARIFY_HEAD）
                     Text('发送').fontSize(this.fp(F_CLARIFY_INPUT)).fontWeight(600).fontColor(this.T().onAcc)   // batch-5：发送钮字号（§3.3，12↔11）
@@ -7457,7 +7457,7 @@ struct Index {
             if (this.agentMsg !== '') {
               Text(this.agentMsg).fontSize(this.fp(F_AGENTMSG)).fontColor(this.T().purple)   // batch-5：agentMsg（§3.3，11↔10）
                 .maxLines(this.msgExpanded ? 12 : 1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis }).padding({ left: 8, right: 8 })
+                .textOverflow({ overflow: TextOverflow.Ellipsis }).padding({ left: 8, right: 8, top: 0, bottom: 0 })
                 .width('100%')
                 .onClick(() => { this.msgExpanded = !this.msgExpanded; })   // 点击展开多行（gap-bottom-1）
             }
@@ -7604,7 +7604,7 @@ struct Index {
                 // 约束只读行（batch-5，gap-detail-12）：widthMode·layout 现值只读；constraints
                 // 谓词语义差距登记归 gap-global-3（引擎接线回收）
                 Row({ space: 6 }) {
-                  Text('约束').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-rcons-1：行标断点（10.5↔9.5）
+                  Text('约束').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-rcons-1：行标断点（10.5↔9.5）
                   Text(`${this.curLayer()?.style.widthMode ?? 'fixed'} · ${this.curLayer()?.style.layout ?? 'none'}`)
                     .fontSize(this.fp(F_INSP_INPUT)).fontFamily('monospace').fontColor(this.T().tx3).layoutWeight(1)   // r10 sz-rcons-1：约束值断点（11.5↔10.5）
                 }.width('100%').margin({ top: 6 })
@@ -7631,7 +7631,7 @@ struct Index {
                   Slider({ value: Math.round(Math.min(1, Math.max(0, Number(this.draftOp) || 0)) * 100), min: 0, max: 100, step: 1 })
                     .onChange((v: number) => { this.draftOp = String(Math.round(v) / 100); })
                     .width('100%').height(this.sp(H_BIND_ROW))   // r10 h-bind-2：约束行断点高（22↔20）
-                }.width('100%').padding({ left: 58, right: 0 })
+                }.width('100%').padding({ left: this.isNarrowBar() ? 46 : 58, right: 0 })
                 // 阴影 4 等分演示档（audit-right-2 对齐 i:315-321）；保留存量 sm/lg 值不破坏
                 // 旧文件；xl 顶档渲染 radius 18/offsetY 8（桌面 e1-e3 命名差异登记）
                 this.shadowSegRow('阴影', {
@@ -7658,7 +7658,7 @@ struct Index {
                 })
                 // 斜体/线型（斜体单钮 + 线型三钮同排，i:3188 双 seg2 组合）
                 Row({ space: 6 }) {
-                  Text('斜体/线型').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(52)   // r10 sz-rcons-1：行标断点（10.5↔9.5）
+                  Text('斜体/线型').fontSize(this.fp(F_INSP_LABEL)).fontWeight(500).fontColor(this.T().tx2).width(this.isNarrowBar() ? 40 : 52)   // r10 sz-rcons-1：行标断点（10.5↔9.5）
                   Column() {
                     this.segBtn('I 斜体', this.curLayer()?.style.italic ?? false, (): void => {
                       const b = this.curBoard(); const l = this.curLayer();
@@ -8234,7 +8234,7 @@ struct Index {
             .fontWeight(it.path === appStore.filePath ? 600 : 400).fontColor(this.T().tx)   // r10 sz-recentmenu-1：名断点（12↔11）
             .maxLines(1).layoutWeight(1)
           Text(this.relTime(it.ts)).fontSize(this.fp(F_RMENU_TIME)).fontColor(this.T().tx3)   // 行尾相对时间（batch-3，audit-modal-11）+ r10 sz-recentmenu-1：时间断点（9↔8）
-        }.width(216).height(this.sp(H_RMENU_ROW)).padding({ left: 8, right: 8 }).borderRadius(7)   // r10 h-recentmenu-1：菜单行断点高（30↔27）
+        }.width(216).height(this.sp(H_RMENU_ROW)).padding({ left: 8, right: 8, top: 0, bottom: 0 }).borderRadius(7)   // r10 h-recentmenu-1：菜单行断点高（30↔27）
         .backgroundColor(it.path === appStore.filePath ? this.T().accSoft : Color.Transparent)
         .stateStyles({
           pressed: { .scale({ x: HMOS_PRESS_SCALE, y: HMOS_PRESS_SCALE }) },   // batch-2 dd-menu-recent：按压态补齐（对照 menuRow；顶栏/左栏项目区两锚点共用本 builder）
@@ -8615,7 +8615,7 @@ struct Index {
                   .fontSize(this.fp(F_SET_MONO_URL)).fontFamily('monospace')
                   .height(this.sp(H_SET_FIELD)).borderRadius(8).width('100%')   // r12 fix-aitab-2：i:466 h32/radius 8 单值（T().rIcon 非 hmos=5 退役）
                   .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-                  .padding({ left: 9, right: 9 })   // i:466 padding 0 9
+                  .padding({ left: 9, right: 9, top: 0, bottom: 0 })   // i:466 padding 0 9
                   .enabled(this.cfgProvider !== 'xiaoyi')   // batch-9：小艺档免 baseUrl（零回退门）
                 if (this.cfgProvider !== 'xiaoyi') {
                   Text('留空=DeepSeek 默认；本地地址仅限内网')
@@ -8632,7 +8632,7 @@ struct Index {
                   .fontSize(this.fp(F_SET_MONO_VAL)).fontFamily('monospace')
                   .height(this.sp(H_SET_FIELD)).borderRadius(8).width('100%')
                   .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-                  .padding({ left: 9, right: 9 })
+                  .padding({ left: 9, right: 9, top: 0, bottom: 0 })
                   .enabled(this.cfgProvider !== 'xiaoyi')   // batch-9：小艺档免 Key（零回退门）
                 if (this.cfgProvider !== 'xiaoyi') {
                   Text('仅本机保存；订阅计划填专属 Key（sk-cp-…）')
@@ -8655,7 +8655,7 @@ struct Index {
                     .fontSize(this.fp(F_SET_MONO_URL)).fontFamily('monospace')
                     .height(this.sp(H_SET_FIELD)).borderRadius(8).layoutWeight(1)
                     .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
-                    .padding({ left: 9, right: 9 })
+                    .padding({ left: 9, right: 9, top: 0, bottom: 0 })
                     .enabled(this.cfgProvider !== 'xiaoyi')   // batch-9：小艺档免 model（零回退门）
                   // M3.6.3：▾ 帽内嵌输入行（用户决策）——获取模型成功后出现在输入框尾部，
                   // 点击展开模型清单（bindMenu 引用形），选中经 pickModel 回填本输入框；
@@ -8711,7 +8711,7 @@ struct Index {
                     .fontSize(this.fp(F_SET_MONO_VAL)).fontFamily('monospace')
                     .fontColor(this.T().tx).maxLines(1).layoutWeight(1)
                   Text('▾').fontSize(8).fontColor(this.T().tx2)
-                }.width('100%').height(this.sp(H_SET_FIELD)).padding({ left: 9, right: 9 }).borderRadius(8)
+                }.width('100%').height(this.sp(H_SET_FIELD)).padding({ left: 9, right: 9, top: 0, bottom: 0 }).borderRadius(8)
                 .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                 .bindMenu(this.thinkMenuPanel)   // 箭头形→引用形（r9 实测箭头形 builder 不求值）
                 Text(THINK_NOTE).fontSize(this.fp(F_SET_SEC)).fontColor(this.T().tx3).width('100%')   // :1175 等级说明 10.5/tx3
@@ -8726,7 +8726,7 @@ struct Index {
                     .fontSize(this.fp(F_SET_MONO_VAL)).fontFamily('monospace')
                     .fontColor(this.T().tx).maxLines(1).layoutWeight(1)
                   Text('▾').fontSize(8).fontColor(this.T().tx2)
-                }.width('100%').height(this.sp(H_SET_FIELD)).padding({ left: 9, right: 9 }).borderRadius(8)
+                }.width('100%').height(this.sp(H_SET_FIELD)).padding({ left: 9, right: 9, top: 0, bottom: 0 }).borderRadius(8)
                 .backgroundColor(this.T().card).border({ width: 1, color: this.T().line })
                 .bindMenu(this.stepMenuPanel)   // 箭头形→引用形（r9 实测箭头形 builder 不求值）
               }.width('100%')

@@ -309,7 +309,7 @@ export const LH_DECL: HmosSizePair = { narrow: 17, wide: 19 };
 // —— 高度族（batch-4 r10 §四 A 组；:5580-5582 阴影档预览 chip 半径 3/9/16 属预览数据不改）——
 export const H_SEG: HmosSizePair = { narrow: 23, wide: 26 };             // 检视段钮高
 export const H_SHADOW_ROW: HmosSizePair = { narrow: 36, wide: 40 };      // 阴影档预览行高
-export const H_DRAFT_INPUT: HmosSizePair = { narrow: 24, wide: 27 };     // 草稿输入高 ×4（与 F_INSP_INPUT 同行联动）
+export const H_DRAFT_INPUT: HmosSizePair = { narrow: 26, wide: 30 };     // 草稿输入高 ×4（与 F_INSP_INPUT 同行联动；M3.6.9 24/27→26/30——11.5 字+行高在 24 下垂直裁切实证）
 export const H_BIND_CHIP: HmosSizePair = { narrow: 21, wide: 24 };       // 绑定胶囊/输入高 ×4
 export const H_BIND_ROW: HmosSizePair = { narrow: 20, wide: 22 };        // 绑定行/约束行高 ×2
 export const H_DECL_BTN: HmosSizePair = { narrow: 23, wide: 26 };        // 重新序列化钮高
