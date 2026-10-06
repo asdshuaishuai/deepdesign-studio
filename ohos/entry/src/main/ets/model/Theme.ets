@@ -196,6 +196,7 @@ export const SH_LOGO: HmosShadow = { radius: 4, dx: 0, dy: 1 };
 // ===== 画布周边族（batch-2 r10 收编：sz-ctools-1/sz-czoom-1/sz-tpl-1/sz-welcome-1/
 //      sz-welcome-2/sz-ia-1/sz-tail-1/sz-dock-1，r10-sweep §二；wide=现 inline 值零漂移）=====
 export const F_TOOLROW: HmosSizePair = { narrow: 10.5, wide: 11.5 };     // toolBtn 图标/label + 缩放百分比读数（复用）
+export const F_TOOLROW_ICON: HmosSizePair = { narrow: 9, wide: 10 };   // ctools icon 字形档（M3.6.9：Unicode 符号字形天然偏高，与 label 同档渲染臃肿——独立降档）
 export const F_TOOLROW_FIT: HmosSizePair = { narrow: 10, wide: 11 };     // ⤢ 适配（11→10——sweep 单名 F_TOOLROW 盖不住，拆分登记）
 export const F_ZOOM_GLYPH: HmosSizePair = { narrow: 12, wide: 13 };      // 缩放条 −/＋
 export const F_ZOOM: HmosSizePair = { narrow: 9.5, wide: 10.5 };         // 缩放条 1:1
@@ -218,7 +219,7 @@ export const F_CLARIFY_GLYPH: HmosSizePair = { narrow: 11, wide: 12 };   // 澄�
 export const F_CLARIFY_X: HmosSizePair = { narrow: 9, wide: 10 };        // 澄清面板 ✕（↗ 复用 F_CLARIFY_HEAD）
 
 // —— 高度族（batch-2 r10 §四 A 组）——
-export const H_TOOLBTN: HmosSizePair = { narrow: 22, wide: 24 };         // 画布工具钮高
+export const H_TOOLBTN: HmosSizePair = { narrow: 20, wide: 22 };         // 画布工具钮高
 export const H_IA: HmosSizePair = { narrow: 25, wide: 28 };              // 行内 Agent 输入/发送钮高
 export const H_WELCOME_ROW: HmosSizePair = { narrow: 27, wide: 30 };     // 欢迎最近行高
 export const H_TAIL: HmosSizePair = { narrow: 28, wide: 32 };            // 板尾栏高

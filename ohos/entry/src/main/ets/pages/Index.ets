@@ -22,7 +22,7 @@ import { HMOS_BRAND, HMOS_PRESSED, HMOS_WARNING, HMOS_SUCCESS, HMOS_PURPLE, HMOS
   F_PROJNAME, F_PROJNAME_L, HMOS_H_CHIP, PAD_CHIP, H_DOCK_INPUT, H_CLARIFY,
   PAD_TRACK_CARD_H, PAD_TRACK_CARD_V, PAD_TRACK_FINAL_H, PAD_TRACK_FINAL_V,
   F_FILECHIP, F_TOOLBAR_GLYPH, H_TOPBAR, H_FILECHIP, H_PILL, T_ICON_TBTN, SH_SEG_SELECTED,
-  F_TOOLROW, F_TOOLROW_FIT, F_ZOOM_GLYPH, F_ZOOM, F_TPL, F_TPL_META, F_GHOST, F_GHOST_DIM,
+  F_TOOLROW, F_TOOLROW_ICON, F_TOOLROW_FIT, F_ZOOM_GLYPH, F_ZOOM, F_TPL, F_TPL_META, F_GHOST, F_GHOST_DIM,
   F_IA, F_IA_HEAD, F_IA_MINI, F_IA_CHIP, F_WELCOME_SUB, F_WELCOME_KBD, F_WELCOME_SEC,
   F_WELCOME, F_WELCOME_NAME, F_WELCOME_TIME, F_TAIL, F_CLARIFY_GLYPH, F_CLARIFY_X,
   H_TOOLBTN, H_IA, H_WELCOME_ROW, H_TAIL, SH_TOOL_SELECTED, SH_PMAIN_FOCUS,
@@ -5432,7 +5432,7 @@ struct Index {
   @Builder
   toolBtn(icon: string, label: string, mode: string, magic: boolean) {
     Row({ space: 4 }) {
-      Text(icon).fontSize(this.fp(F_TOOLROW))   // r10 sz-ctools-1：toolBtn 图标断点字号（11.5↔10.5）
+      Text(icon).fontSize(this.fp(F_TOOLROW_ICON))   // M3.6.9：icon 独立降档（Unicode 符号字形天然偏高，与 label 同档臃肿——用户圈点 ctools）
         .fontColor(this.toolMode === mode ? this.T().onAcc : (magic ? '#7c3aed' : this.T().tx2))
       Text(label).fontSize(this.fp(F_TOOLROW)).fontWeight(this.toolMode === mode ? 600 : 500)   // r10 sz-ctools-1：label 断点（11.5↔10.5）
         .fontColor(this.toolMode === mode ? this.T().onAcc : (magic ? '#7c3aed' : this.T().tx2))
