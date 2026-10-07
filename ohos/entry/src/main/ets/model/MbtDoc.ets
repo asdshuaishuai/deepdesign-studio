@@ -87,7 +87,10 @@ function normalizeDash(v: string): string {
   return 'solid';
 }
 
-/** "…" 字段值还原：逐字符扫描，反斜杠转义取后一字（\"→"、\\→\；顺序安全）。 */
+/** "…" 字段值还原：逐字符扫描，反斜杠转义取后一字（\"→"、\\→\；顺序安全）。
+ * 【转义族补齐】\n/\t/\r 解码为真实控制符——引擎 mbt 串义同（web_login 的 brand_title
+ * "Design together\nwith your agent" 引擎渲染为两行 tspan，此前字面进文本=「togethern」
+ * 连写，用户实测点名）。 */
 function unquote(s: string): string {
   if (s.length < 2 || s.charAt(0) !== '"') return s;
   const body = s.substring(1, s.length - 1);
@@ -96,7 +99,8 @@ function unquote(s: string): string {
     const c = body.charAt(i);
     if (c === '\\' && i + 1 < body.length) {
       i++;
-      out += body.charAt(i);
+      const e = body.charAt(i);
+      out += e === 'n' ? '\n' : e === 't' ? '\t' : e === 'r' ? '\r' : e;
     } else {
       out += c;
     }
@@ -260,6 +264,7 @@ export function parseMbtDoc(text: string): MbtDoc {
 
   // ② body 扫描：ink 捕获 + 画板块（artboard 注释 → ```mbt 围栏）+ check 围栏跳过
   let board: MbtBoard | null = null;
+  let nodeAbs: Map<string, number[]> = new Map();   // 节点绝对坐标表（add_to 展平查父；随板重置）
   let inVisual = false;   // 正在收集 visual ```mbt 围栏
   let inSkip = false;     // ```mbt check 等非 visual 围栏
   for (let i = fmEnd + 1; i < lines.length; i++) {
@@ -282,7 +287,23 @@ export function parseMbtDoc(text: string): MbtDoc {
       if (addIdx >= 0 && board !== null) {
         const node = parseNode(raw.substring(addIdx + '@decl.generic_node('.length)
           .replace(/\)\s*$/, ''));
-        if (node !== null) board.layers.push(node);
+        if (node !== null) {
+          // 【add_to 父内相对坐标展平（用户实测 web_login 整组错位点名）】`page.add_to
+          // (parent_id=…,x=36,y=40)` 的 x/y 是父内相对；引擎模型/渲染为页面绝对
+          // （doc-json rect 716,220 = form_card 680,180 + 36,40，探针实测）。本地解析
+          // 此前原样取值，原生层平铺画板 Stack → 嵌套子元素（表单文字/徽标）整组贴错
+          // 到板左上。按父绝对累加展平，同源对齐引擎；父缺失（乱序/跨板）回落原值。
+          const pid = raw.match(/add_to\(parent_id="([^"]+)"/);
+          if (pid !== null) {
+            const pa = nodeAbs.get(pid[1]);
+            if (pa !== undefined) {
+              node.x = pa[0] + node.x;
+              node.y = pa[1] + node.y;
+            }
+          }
+          nodeAbs.set(node.id, [node.x, node.y]);
+          board.layers.push(node);
+        }
       }
       if (t === '```') {
         if (board !== null && board.width > 0 && board.height > 0) {
@@ -300,6 +321,7 @@ export function parseMbtDoc(text: string): MbtDoc {
     const art = t.match(/^<!--\s*moonviz:artboard\s+(\S+)\s*-->$/);
     if (art !== null) {
       board = { id: art[1], name: art[1], kind: 'adaptive', width: 0, height: 0, layers: [] };
+      nodeAbs = new Map();   // 坐标表随板重置（跨板 id 同名不相扰）
       continue;
     }
     if (t === '```mbt') {

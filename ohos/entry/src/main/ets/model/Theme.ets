@@ -156,7 +156,7 @@ export const F_PROJNAME_L: HmosSizePair = { narrow: 11.5, wide: 12.5 };       //
 // —— 尺寸族（与字号降档联动同改防「小字大框」，§3.3 要点 3；按列值，不套字号降档规则）——
 export const HMOS_H_CHIP: HmosSizePair = { narrow: 24, wide: 30 };             // pchip 高（M3.6.9 窄窗 27→24）
 export const PAD_CHIP: HmosSizePair = { narrow: 9, wide: 13 };                 // pchip 水平 padding（M3.6.9 窄窗 11→9）
-export const H_DOCK_INPUT: HmosSizePair = { narrow: 27, wide: 34 };    // pmain 指令条高（M3.6.9 窄窗 30→27）
+export const H_DOCK_INPUT: HmosSizePair = { narrow: 31, wide: 34 };    // pmain 指令条高（M3.6.9 窄窗 30→27；用户点名内框偏小回调 27→31——主钮同高联动）
 export const H_CLARIFY: HmosSizePair = { narrow: 28, wide: 32 };       // 澄清回答框/发送钮高
 export const PAD_TRACK_CARD_H: HmosSizePair = { narrow: 8, wide: 11 };   // tlCard 水平 padding（§3.2 11×2）
 export const PAD_TRACK_CARD_V: HmosSizePair = { narrow: 7, wide: 9 };    // tlCard 垂直 padding
@@ -220,7 +220,7 @@ export const F_CLARIFY_X: HmosSizePair = { narrow: 9, wide: 10 };        // 澄�
 
 // —— 高度族（batch-2 r10 §四 A 组）——
 export const H_TOOLBTN: HmosSizePair = { narrow: 20, wide: 22 };         // 画布工具钮高
-export const H_IA: HmosSizePair = { narrow: 25, wide: 28 };              // 行内 Agent 输入/发送钮高
+export const H_IA: HmosSizePair = { narrow: 28, wide: 28 };              // 行内 Agent 输入/发送钮高（窄窗 25→28 两态同值——用户点名内框偏小，与 dock 同批回调）
 export const H_WELCOME_ROW: HmosSizePair = { narrow: 27, wide: 30 };     // 欢迎最近行高
 export const H_TAIL: HmosSizePair = { narrow: 28, wide: 32 };            // 板尾栏高
 

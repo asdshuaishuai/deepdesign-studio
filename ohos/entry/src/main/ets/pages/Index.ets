@@ -915,6 +915,9 @@ const THEME_HMOS_D: ThemeColors = {
 const TRIGGERS: string[] = ['tap', 'long_press', 'swipe_left', 'swipe_right', 'swipe_up',
   'swipe_down', 'scroll_end', 'key_enter', 'focus', 'blur'];
 const ACTIONS: string[] = ['navigate_to', 'show_toast', 'back'];
+// pmain 主输入占位文案（dock 等比字号适配与 TextInput placeholder 共用单一事实源——
+// 两处各写一份字面量会漂移，emWidth 估的就是它）
+const DOCK_PH: string = '描述意图（如：生成 Web 登录页 / 一键修复 / 深色主题）…';
 
 // ===== 画布几何常量（batch-2，iss-2 方案 A：工具行入流后 boardOrigin y 的单一推导源）=====
 // 【复审修订】不把 108 当拍定值：此处常量推导 + 模拟器 dump 实测双重校验（boardOrigin 有真实
@@ -4628,7 +4631,7 @@ struct Index {
             this.hasFlowOn(b, l) ? '#1F7A38' : l.style.color)   // 触发态文字绿染（i:508）
           .fontWeight(l.style.bold ? 700 : 400)   // 引擎按钮文字同样吃 bold（batch-3，gap-detail-7）
           .fontStyle(l.style.italic ? FontStyle.Italic : FontStyle.Normal)
-          .maxLines(1)
+          .maxLines(Math.max(1, l.style.text.split('\n').length))   // 授权换行随行数（\n 解码后多行文案不被截，自造折行仍无）
       }.width('100%').height('100%').justifyContent(FlexAlign.Center)
       .backgroundColor(this.isWire() ? this.T().card : l.style.fill).borderRadius(l.style.radius)
       .border(this.isWire() ? { width: 1, color: this.T().wireStroke } :
@@ -4640,7 +4643,7 @@ struct Index {
             this.hasFlowOn(b, l) ? '#1F7A38' : l.style.color)   // 触发态文字绿染（i:508）
           .fontWeight(l.style.bold ? 700 : 400)
           .fontStyle(l.style.italic ? FontStyle.Italic : FontStyle.Normal)
-          .maxLines(1)   // SVG text 单行语义（batch-3，gap-detail-7：双行折行自造去除）
+          .maxLines(Math.max(1, l.style.text.split('\n').length))   // 单行语义=无自造折行；授权 \n（引擎 tspan 多行）随行数放开
       }.width('100%').justifyContent(l.style.align === 'center' ? FlexAlign.Center :
         l.style.align === 'right' ? FlexAlign.End : FlexAlign.Start)
     } else if (l.type === 'image') {
@@ -4966,7 +4969,12 @@ struct Index {
           // M3 引擎渲染层（gap-global-3）：视觉真相=引擎 render SVG（随每 op/undo/redo 刷新）。
           // hitTest None：触摸穿透到下方原生层（交互零改动）；选中时 0.35 透明让原生
           // 选中描边/chip 透出。SVG 缺失（引擎离线/未刷新）=原生渲染兜底，不阻断。
-          if (this.modeIdx !== 2 && this.hifiSvgOf(b.id) !== '') {
+          // 【仅高保真档挂（用户实测：线框图/高保真两档同图）】桌面线框档经 CSS !important
+          // 把同一份 SVG 强制改色（mode-wireframe rect 白底/#9aa4b2 边/text #52606d）；
+          // 鸿蒙 SVG 走 Image 无法等价覆盖，线框视觉由下方原生层 isWire 门控承担——
+          // SVG 门曾是 modeIdx!==2，线框档也被高保真 SVG 整盖（两档恒同图、选中 0.35
+          // 半透明叠原生线框=整板「洗白」观感，用户截图点名），改 modeIdx===1 归位。
+          if (this.modeIdx === 1 && this.hifiSvgOf(b.id) !== '') {
             Image('data:image/svg+xml;base64,' + this.hifiSvgOf(b.id))
               .width(b.width).height(b.height)
               .hitTestBehavior(HitTestMode.None)
@@ -4979,13 +4987,13 @@ struct Index {
                 .fontColor(l.style.color)
                 .fontWeight(l.style.bold ? 700 : 400)
                 .fontStyle(l.style.italic ? FontStyle.Italic : FontStyle.Normal)
-                .maxLines(1)
                 .width(l.style.w)
                 .height(l.style.h)
                 .padding(l.type === 'input' ? { left: 9 + l.style.padding } : { left: 0 })
                 .textAlign(l.type === 'btn' ? TextAlign.Center :
                   l.style.align === 'center' ? TextAlign.Center :
                   l.style.align === 'right' ? TextAlign.End : TextAlign.Start)
+                .maxLines(Math.max(1, l.style.text.split('\n').length))   // 与线框档同口径：授权换行随行数
                 .position({ x: l.style.x, y: l.style.y })
                 .hitTestBehavior(HitTestMode.None)
                 .opacity(this.selLayer !== '' ? 0.35 : 1)
@@ -5110,6 +5118,49 @@ struct Index {
    * 直读（r9-sweep §3.3 要点 3：高度/内边距联动同改防「小字大框」）。 */
   private sp(p: HmosSizePair): number {
     return this.fp(p);
+  }
+
+  /** 字符串 em 宽估算（CJK/全角 1.0、ASCII 0.65、空格 0.3）：HarmonyOS Sans 的近似
+   * **上界**——估算偏宽只会让下方适配字号偏小半档，方向安全（宁可字小不可截断）。
+   * 不用 getMeasureUtils().measureText：单位语义（px/vp）跨版本有歧义，而本场景只需
+   * 确定性的 em×fp 算术。 */
+  private emWidth(s: string): number {
+    let em: number = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c: number = s.charCodeAt(i);
+      em += c === 0x20 ? 0.3 : (c < 0x7f ? 0.65 : 1.0);
+    }
+    return em;
+  }
+
+  /** dock 主输入可用宽估算（vp）：壳定宽链（min(680,max(320,cw−24))，与 pmain 壳同式）
+   * −外层 padding 6−行 padding 18−三个固定兄弟（✦ 图标/Ctrl+K 键帽/⚡一键生成钮，文字部分
+   * 按 emWidth×档位字号，框体 padding/边按实值）−行间距 3×8−TextInput **内建水平内边距
+   * 30**（模拟器 dump 实测：字形墨迹距组件边 ~16vp/侧，默认 padding 不随档位变）−10vp
+   * 余量。窄/宽窗档联动 isNarrowBar（kbd 字号/钮 padding/fBtnPrimary 降档同源）。只服务
+   * placeholder 等比字号，不参与布局。 */
+  private dockInputAvailW(): number {
+    const shell: number = Math.min(680, Math.max(320, this.cw - 24));
+    const kbd: number = this.emWidth('Ctrl+K') * this.fp(F_KBD) + 14;   // 键帽 padding 6×2+边框 2
+    const btn: number = this.emWidth('⚡一键生成') * this.sd(this.T().fBtnPrimary) +
+      (this.isNarrowBar() ? 24 : 36) + 6;                               // 主钮 padding + ⚡与文字 space 6
+    return shell - 6 - 18 - this.fp(F_DOCK_ICON) - kbd - btn - 24 - 30 - 10;
+  }
+
+  /** 主输入 placeholder 等比字号（用户点名：占位文案保持等比、完整可见于输入框内）。
+   * 基准=输入框同档 F_DOCK_INPUT（placeholderFont 此前缺失——ArkUI 占位字号独立默认
+   * 16，2997e4d 批漏改本处，截图实证「描述意图（如：生成 Web 登…」以大字号被截）；
+   * 估宽超可用宽时随可用宽**线性等比缩**，0.5 步进【向下】取整（向上取会在量化处
+   * 反超 1-2vp 复截，模拟器实测），下限 8（字号族最低档 F_TRACK_DETAIL.narrow 贴地）
+   * ——极限窄浮窗宁可回到截断也不再缩。 */
+  private dockPhFont(): number {
+    const base: number = this.fp(F_DOCK_INPUT);
+    const avail: number = this.dockInputAvailW();
+    const need: number = this.emWidth(DOCK_PH) * base;
+    const v: number = need <= avail ? base : Math.max(8, Math.floor((base * avail / need) * 2) / 2);
+    hilog.info(0x0000, 'ddDock', 'phFont base=%{public}s avail=%{public}s need=%{public}s -> %{public}s',
+      base.toString(), avail.toString(), need.toString(), v.toString());
+    return v;
   }
 
   /** 断点全 token applied 值留痕（batch-5 ④，r9-sweep §3.3）：挂 applyWindowW 尾部随窗
@@ -6249,13 +6300,18 @@ struct Index {
   // ===== 右栏段钮族/单列行 builders（batch-5，audit-right-1/2/9）=====
 
   /** seg2 单钮（batch-5，audit-right-2 对齐 i:308-312 .seg2 button：高 26/1px rgba(0,0,0,.1)
-   * 边/card 底/radius 7/10.5-600-tx2；on=acc 底白字+accTx 边；深色档 i:311 card 系近似）。 */
+   * 边/card 底/radius 7/10.5-600-tx2；on=acc 底白字+accTx 边；深色档 i:311 card 系近似）。
+   * 【形态统一（用户截图点名「胶囊容器不协调」）】桌面 button flex:1 等宽；鸿蒙侧 Text
+   * 自适应宽——单字钮（左/定/无…）宽≈字宽 < 高 26，radius 7 被钳制半宽渲染成**竖向小胶囊**，
+   * 与「I 斜体/● 可见」宽钮（横向圆角矩形）同排混杂。width 100% 填满均分列回到桌面同形：
+   * 全体等宽横向圆角矩形（宽>高，radius 7 不再触钳制）。 */
   @Builder
   segBtn(label: string, on: boolean, action: () => void) {
     Text(label)
       .fontSize(this.fp(F_INSP_LABEL)).fontWeight(600)   // r10 sz-insp-1：段钮断点字号（10.5↔9.5，复用 F_INSP_LABEL）
       .fontColor(on ? this.T().onAcc : this.T().tx2)
       .textAlign(TextAlign.Center)
+      .width('100%')
       .height(this.sp(H_SEG)).borderRadius(7)   // r10 h-insp-1：段钮断点高（26↔23）
       .backgroundColor(on ? this.T().acc : this.T().card)
       .border({ width: 1, color: on ? this.T().accTx : 'rgba(0,0,0,0.1)' })
@@ -6833,7 +6889,7 @@ struct Index {
                       this.onInputBlur();
                       this.compSearchFocused = false;
                     })
-                    .fontSize(this.fp(F_LSEARCH)).height(this.sp(H_LSEARCH)).borderRadius(this.T().rInput)   // r10 sz-lsearch-1 + h-lsearch-1：断点（12↔11 + 30↔27 同行联动）
+                    .fontSize(this.fp(F_LSEARCH)).placeholderFont({ size: this.fp(F_LSEARCH) }).height(this.sp(H_LSEARCH)).borderRadius(this.T().rInput)   // r10 sz-lsearch-1 + h-lsearch-1：断点（12↔11 + 30↔27 同行联动）；占位字号对齐（2997e4d 同类漏网补齐）
                     // batch-3：输入框圆角 7→HMOS 20（§4 text_field）。
                     // i:164 .compsearch：rgba(0,0,0,.045) 弱填充底/focus 白底+acc 边（batch-6 audit-left-11）
                     .backgroundColor(this.compSearchFocused ? this.T().card : (this.isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.045)'))
@@ -7161,13 +7217,13 @@ struct Index {
                           .onSubmit(() => { this.sendInlineAgent(); })
                           .onFocus(() => { this.onInputFocus(); this.iaFocused = true; })
                           .onBlur(() => { this.onInputBlur(); this.iaFocused = false; })
-                          .fontSize(this.fp(F_IA)).placeholderFont({ size: this.fp(F_IA) }).height(this.sp(H_IA)).layoutWeight(1).borderRadius(7)   // r10 sz-ia-1 + h-ia-1：输入断点（11↔10 + 28↔25）
+                          .fontSize(this.fp(F_IA)).placeholderFont({ size: this.fp(F_IA) }).height(this.sp(H_IA)).layoutWeight(1).borderRadius(7)   // r10 sz-ia-1 + h-ia-1：输入断点（11↔10 + 高 28 两态同值——用户点名内框偏小）
                           .backgroundColor(this.iaFocused ? this.T().card : this.T().subtle)   // i:267 bg rgba(0,0,0,.02)→subtle；focus #fff
                           .border({ width: 1.5, color: this.iaFocused ? '#9d4edd' : this.T().line })   // i:267/.ap-input:focus 紫态
                           .padding({ left: 9, right: 9, top: 0, bottom: 0 })
                           .defaultFocus(true)
                         Text('↗').fontSize(this.fp(F_IA)).fontColor(this.T().onAcc)   // r10 sz-ia-1：↗ 断点（11↔10）
-                          .width(28).height(this.sp(H_IA)).textAlign(TextAlign.Center).borderRadius(7)   // r10 h-ia-1：发送钮断点高（28↔25；宽 28 保持命中区）
+                          .width(28).height(this.sp(H_IA)).textAlign(TextAlign.Center).borderRadius(7)   // r10 h-ia-1：发送钮断点高（随输入 28 两态同值；宽 28 保持命中区）
                           .backgroundColor(this.T().purple)
                           .onClick(() => { this.sendInlineAgent(); })
                       }.width('100%')
@@ -7467,7 +7523,7 @@ struct Index {
             Column() {
               Row({ space: 8 }) {
                 Text('✦').fontSize(this.fp(F_DOCK_ICON)).fontColor(this.T().purple)   // batch-5：dock 图标字形（§3.3，14↔13）
-                TextInput({ placeholder: '描述意图（如：生成 Web 登录页 / 一键修复 / 深色主题）…', text: this.prompt })
+                TextInput({ placeholder: DOCK_PH, text: this.prompt })
                   .onChange((v: string) => { this.prompt = v; })
                   .onSubmit(() => this.runPrompt())
                   .onFocus(() => {
@@ -7478,7 +7534,7 @@ struct Index {
                     this.onInputBlur();
                     this.promptFocused = false;
                   })
-                  .fontSize(this.fp(F_DOCK_INPUT)).height(this.sp(H_DOCK_INPUT)).layoutWeight(1)   // batch-5：pmain 输入断点（§3.3 fDockInput 13↔12 + h34→30）
+                  .fontSize(this.fp(F_DOCK_INPUT)).placeholderFont({ size: this.dockPhFont() }).height(this.sp(H_DOCK_INPUT)).layoutWeight(1)   // batch-5：pmain 输入断点（§3.3 fDockInput 13↔12 + 高 34↔31，窄窗回调用户点名内框偏小）；占位字号=dockPhFont 等比适配（用户点名完整可见，见 helper 注）
                   .backgroundColor(Color.Transparent).border({ width: 0 })
                   .placeholderColor(this.T().tx3)
                 Text('Ctrl+K').fontSize(this.fp(F_KBD)).fontColor(this.T().tx3)   // batch-5：kbd 键帽（§3.3，10↔9）
@@ -7491,7 +7547,7 @@ struct Index {
                 Row({ space: 6 }) {
                   Text('⚡').fontSize(this.fp(F_DOCK_CHIP)).fontColor(this.T().onAcc)   // batch-5：chip 档（§3.3，12↔11）
                   Text('一键生成').fontSize(this.sd(this.T().fBtnPrimary)).fontWeight(600).fontColor(this.T().onAcc)   // batch-3：13→HMOS 16（§3 button 档）；batch-5：主题变量走 sd 离散降档（HMOS 16→14/桌面 13→12，r9-sweep §3.3 要点 3）
-                }.height(this.sp(H_DOCK_INPUT)).padding({ left: this.isNarrowBar() ? 12 : 18, right: this.isNarrowBar() ? 12 : 18 }).borderRadius(this.T().rBtnPrimary)   // batch-3 圆角；batch-5：主钮高随输入条（§3.3，34↔30）；M3.6.9 窄窗 padding 18→12
+                }.height(this.sp(H_DOCK_INPUT)).padding({ left: this.isNarrowBar() ? 12 : 18, right: this.isNarrowBar() ? 12 : 18 }).borderRadius(this.T().rBtnPrimary)   // batch-3 圆角；batch-5：主钮高随输入条（§3.3，34↔31 同高联动）；M3.6.9 窄窗 padding 18→12
                 .backgroundColor(this.T().acc)
                 .stateStyles({
                   pressed: { .backgroundColor(this.T().accTx) },   // batch-4 iss-5：B 底色叠加（acc 主钮按压色=accTx；HMOS=悬浮按钮 pressed #0070E5/#1A7AE1，§9 实证）
