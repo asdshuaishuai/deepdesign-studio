@@ -3,3 +3,4 @@ frontend/vendor/moonviz.wasm
 frontend/vendor/engine-manifest.json
 src-tauri/gen/
 dist/
+rust-core/.cargo/
