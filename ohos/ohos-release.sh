@@ -29,6 +29,16 @@ for f in "$CER" "$P7B"; do
   [ -f "$f" ] || { echo "✗ 缺 $f —— 见脚本头注（AGC 上传 CSR 后下载，放入 $SIGN_DIR/）"; exit 1; }
 done
 
+# 证书自检（AGC 991 实测防回归）：下载到 .cer 必须是【从本 CSR 签发的发布证书】
+# （subject 含 O=deepcode），不是华为根证书（CN=Huawei CBG Root CA G2，证书管理页
+# 另有根证书下载入口，点错文件 = 签名校验必然失败 = 991 非法软件包）
+CERT_SUBJECT=$(openssl x509 -in "$CER" -noout -subject 2>/dev/null)
+echo "$CERT_SUBJECT" | grep -q "O=deepcode" || {
+  echo "✗ $CER 不是从本 CSR 签发的发布证书（subject: ${CERT_SUBJECT:-读取失败}）"
+  echo "  请在 AGC 证书管理找到状态「已生效」的发布证书重新下载覆盖"
+  exit 1
+}
+
 echo "→ rust-core 引擎交叉编译（双目标）+ 替换 rust-libs..."
 (cd "$HOME/code/deepdesign-studio/rust-core" && PATH="$HOME/.cargo/bin:$PATH" \
   cargo build --release --target x86_64-unknown-linux-ohos --target aarch64-unknown-linux-ohos) || {
@@ -56,6 +66,20 @@ echo "→ 打 .app 上架包..."
 "$JAVA_HOME/bin/java" -jar "$LIB/app_packing_tool.jar" --mode app \
   --out-path "$APP_OUT" --force true \
   --hap-path "$HAP_SIGNED" --pack-info-path "$OUT/pack.info" >/dev/null
+
+# 打包自检（991 实测防回归）：app_packing_tool 遇无效签名会静默剥签名块——.app 内
+# HAP 必须与签名产物逐字节一致，且内嵌发布证书 subject（缺一即上架 991「未签名」）
+python3 - "$APP_OUT" "$HAP_SIGNED" <<'PY'
+import sys, zipfile, hashlib
+app, signed = sys.argv[1], sys.argv[2]
+z = zipfile.ZipFile(app)
+inner_name = [i.filename for i in z.infolist() if i.filename.endswith('.hap')][0]
+inner = z.read(inner_name)
+on_disk = open(signed, 'rb').read()
+assert inner == on_disk, f'.app 内 HAP 与签名产物不一致（{len(inner)} vs {len(on_disk)}）——打包工具剥了签名'
+assert 'O=deepcode' in inner.decode('latin1'), '签名块内未找到发布证书 subject——证书/私钥不匹配'
+print(f'✓ 打包自检通过：{inner_name} {len(inner)} bytes（含发布证书签名块）')
+PY
 
 echo "✓ 上架包就绪：$APP_OUT"
 echo "  （AGC → 我的应用 → 版本管理 上传；上架材料另需：ICP 备案号/软著或承诺函/隐私政策 URL）"
