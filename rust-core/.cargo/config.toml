@@ -1,0 +1,16 @@
+# 本机（Deepin 25，无 root）没有 `cc` 别名、/usr/bin 无编译器——可用宿主工具链在
+# ~/.local/dd-sysroot（重定位 GCC 13），包装脚本见 ~/.local/bin/。
+# - linker/CC 钉到 **~/.local/bin/gcc-c**（真 gcc-13 C 驱动）：rustc 默认 linker=cc
+#   在构建脚本/测试二进制链接阶段必失败（`error: linker \`cc\` not found`，首跑实测）；
+#   而 ~/.local/bin/gcc（g++-13 驱动，为 C++ 项目设）会把 .c 当 C++ 编译——cc-rs 产物
+#   符号被 C++ 修饰（wasmtime gdbjit.c/helpers.c 的 extern "C" 链接不到）且引用
+#   __gxx_personality_v0（rustc 链接行无 -lstdc++）——两条失败路径均已实测。
+# 运行时 libstdc++.so.6 由系统提供（ldconfig 已核实）；ohos 交叉目标 linker 见
+# ~/.cargo/config.toml，互不影响。
+[target.x86_64-unknown-linux-gnu]
+linker = "/home/superShuai/.local/bin/gcc-c"
+
+[env]
+CC = "/home/superShuai/.local/bin/gcc-c"
+# hilog-binding 的 build.rs 从此变量定位 NDK（ohos 目标构建必需；host 不受影响）
+OHOS_NDK_HOME = "/home/superShuai/deveco-clt/sdk/default/openharmony"

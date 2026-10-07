@@ -11,4 +11,4 @@ src/agent.rs:
 /home/superShuai/code/deepdesign-studio/rust-core/../frontend/vendor/moonviz.wasm:
 
 # env-dep:CARGO_MANIFEST_DIR=/home/superShuai/code/deepdesign-studio/rust-core
-# env-dep:CARGO_PKG_VERSION=0.4.0-beta
+# env-dep:CARGO_PKG_VERSION=0.4.1-beta
