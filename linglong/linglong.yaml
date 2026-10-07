@@ -5,7 +5,7 @@ package:
   name: deepDesign Studio
   # linyaps 硬性要求四段数字版本（MAJOR.MINOR.PATCH.TWEAK，0.4.0-beta 实测被
   # ll-builder export 拒绝）；发布资产名由 release workflow 改写为 v0.4.0-beta
-  version: 0.4.0.0
+  version: 0.4.1.0
   kind: app
   description: >
     AI 原生原型设计工具的桌面客户端（Tauri 2）。基于纯 MoonBit 引擎 MoonViz：

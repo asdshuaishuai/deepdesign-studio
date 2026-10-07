@@ -47,8 +47,10 @@ cp "$HOME/code/deepdesign-studio/rust-core/target/aarch64-unknown-linux-ohos/rel
 echo "→ 构建 release HAP（未签名；.app 打包工具会剥 HAP 签名，签 .app 而非签 HAP）..."
 (cd "$PROJ" && devecocli build --build-mode release)
 HAP_SRC="$OUT/entry-default-unsigned.hap"
-APP_UNSIGNED="$OUT/deepdesign-0.4.0-unsigned.app"
-APP_SIGNED="$OUT/deepdesign-0.4.0.app"
+# 版本取自 AppScope/app.json5 versionName（单一事实源），产物名随版走
+VERSION_NAME=$(sed -n 's/.*"versionName": "\([^"]*\)".*/\1/p' "$PROJ/AppScope/app.json5")
+APP_UNSIGNED="$OUT/deepdesign-$VERSION_NAME-unsigned.app"
+APP_SIGNED="$OUT/deepdesign-$VERSION_NAME.app"
 
 echo "→ 打未签名 .app（工具注入 pack.info）..."
 (cd "$OUT" && unzip -o -q "$HAP_SRC" pack.info)
