@@ -335,6 +335,7 @@ code{font-family:var(--mono);font-size:.88em}
       <a class="dl" id="dl-deb" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ Linux<small>deb · x64</small></span></a>
       <a class="dl" id="dl-appimage" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ AppImage<small>x64 · 免安装</small></span></a>
       <a class="dl" id="dl-layer" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ 玲珑<small>linyaps layer</small></span></a>
+      <a class="dl" id="dl-hos" href="https://github.com/asdshuaishuai/deepdesign-studio/releases/latest"><span>⬇ 鸿蒙<small>HarmonyOS · zip</small></span></a>
     </div>
     <p class="dl-note">最新版本：<span id="dl-ver">加载中…</span>。全部分发包见
       <a href="https://github.com/asdshuaishuai/deepdesign-studio/releases" target="_blank" rel="noopener" style="text-decoration:underline">GitHub Releases</a>。</p>
@@ -533,6 +534,7 @@ else { document.querySelectorAll('.sc').forEach(function(s){ s.classList.add('li
       set('dl-deb','-linux-amd64.deb');
       set('dl-appimage','-x86_64.AppImage');
       set('dl-layer','-x86_64.layer');
+      set('dl-hos','-harmonyos.app.zip');
       var v=document.getElementById('dl-ver');
       if(v)v.textContent=(rel.tag_name||'')+' · '+assets.length+' 个分发包';
     }).catch(function(){});
