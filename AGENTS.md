@@ -59,10 +59,9 @@ node scripts/i18n-catalog.cjs && python scripts/gen-i18n.py --write   # i18n 字
 ./dev.sh                          # debug 编译启动（Windows 用 Git Bash）
 dev.bat                           # 同上的 CMD 原生版（免 Git Bash；--fresh 杀旧实例+清 WebView2 HTTP 缓存，绝不动 Local Storage）
 npx @tauri-apps/cli build         # 打包（beforeBuildCommand 自动 sync-engine）
-scripts/build-packages.sh --all   # 三格式打包：deb（标准 FHS）+ AppImage + 玲珑 layer → dist/
-                                  #   玲珑段需本机 ll-builder（linyaps）；嵌套容器内环境见 linglong/README-BUILD.md
+scripts/build-packages.sh --all   # Linux 两格式打包：deb（标准 FHS）+ AppImage → dist/
+                                  #   WebKitGTK 运行库随包捆绑（从 deepin 仓库现场收集）
 .github/workflows/release-all.yml # 全平台构建流：tag v* 触发，产物自动附 GitHub Release（固定名副本供官网直链）
-scripts/ci-install-linyaps.sh     # CI（ubuntu-24.04）上安装 linyaps 工具链
 ```
 
 仓库**没有配置 lint / formatter**（无 rustfmt.toml、clippy 配置、eslint、prettier）。
@@ -449,35 +448,14 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   副本）只聚焦既有主窗，不并跑（已实测 `open -a` ×3 与 DMG 副本启动均单进程）。
 - `install-app.sh --uninstall` 彻底卸载；`--uninstall --purge` 连用户数据目录一起清。
 
-## 发布完整性（用户决策，2026-10-06）
+## 发布完整性（用户决策，2026-10-07 修订）
 
-- **每次发布必须包含全部五个资产**：Windows NSIS / macOS DMG / Linux deb / AppImage /
-  **玲珑 layer**。layer 缺席不算完整发布——CI 的 linyaps 装不上时工作流会「降级跳过」，
-  那只是不阻塞其它资产，**不等于发布完成**；必须宿主构建补齐后上传才算收尾。
-- 玲珑 layer 构建纪律（2026-10-06 实战全部实证）：
-  - `linglong/linglong.yaml` 的 version **只能是四段数字**（MAJOR.MINOR.PATCH.TWEAK），
-    `0.4.0-beta` 会被 `ll-builder export` 拒绝；发布资产名由 release workflow 改写成
-    `v0.4.0-beta`，应用内显示版本由 tauri.conf/APP_VER 承担——两套版本号并存是有意的。
-  - layer 走 **deepin 25 宿主构建**：`cd linglong && ./host-build.sh`（本机 ll-builder 在
-    `~/.local/opt/tauri-env.sh` 环境的 tauri-deps 里，须先 source；它**不进 PATH**，
-    build-packages.sh 只在需要 cargo 编译时才 source 环境，二进制已存在时会误报
-    「ll-builder not installed」并静默 SKIP）。宿主构建产物在 linglong/ 下。
-  - **`gh release upload` 不支持 `file#改名` 语法**——上传前先把本地文件改名成目标资产名
-    （`#后缀` 会被当字面量收进资产名，2026-10-06 实测）。CI（ubuntu runner）的两层坑：
-    libyaml-cpp0.7 在 deepin 池 `pool/main/y/` 桶（`ci-install-linyaps.sh` 已修，勿再拼进
-    `/l` BASE）；**ll-builder 需要 Qt 6.8**，ubuntu 24.04 只有 6.4（未解——CI 过不了就按
-    本规则宿主补齐）。
-  - 宿主构建依赖 `~/.linglong` 的 base/runtime 层缓存或 `repo.linyaps.org.cn` 可达；
-    2026-10-06 该源曾返回 Traefik 默认证书（官方侧故障），届时构建会报
-    `stage prepare error`——查 `openssl s_client`，等恢复即可，不是本侧问题。
-  - **离线兜底（源故障期间实测打通）**：layer = 36B 魔数 `<<< deepin linglong layer
-    archive >>>` + 3B 填充 + u32 LE JSON 长度 + JSON 元数据 + erofs 镜像（lz4），无签名
-    字段。手术法：fsck.erofs --extract 拆旧 layer → 换 `files/bin/deepdesign-studio` 与
-    `files/share/deepdesign-studio/frontend/` 为当日产物 → 外层与内层 info.json 的 size
-    同步重算 → `mkfs.erofs -z lz4` 重打包 → 按序重组装 → fsck 校验。新 layer 可由
-    ll-pica 起步（组 /opt/apps 布局 deb → 配方见 linglong/README-BUILD.md；无 apt 环境垫
-    `apt-cache show <deb>` 垫片、输出 dpkg-deb -f 并抹掉 Depends），但 convert 只生成
-    项目不构建——最终以手术法收尾。整套工具在 tauri-deps（fsck/dump/mkfs.erofs）。
+- **每次发布包含四个资产**：Windows NSIS / macOS DMG / Linux deb / AppImage（release-all.yml
+  tag 触发自动构建上传）+ **鸿蒙 app.zip**（CI 无 AGC 签名材料——走本机 `ohos/ohos-release.sh`
+  签名打包后 `gh release upload` 手动补传，.app 用 zip 容器因 GitHub 禁 .app 后缀附件）。
+- **玲珑（linyaps）支持已移除（用户决策 2026-10-07）**：Linux 只保留 deb + AppImage。
+  linglong/ 目录、docs/linglong-package.md、ci-install-linyaps.sh 已删除；当时的构建
+  纪律与离线手术法完整快照在 git 历史（tag `archive/harmonyos-port` 前后区间均可考）。
 
 ## 提交与文档
 
@@ -486,9 +464,6 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - `docs/menus.md`：原生菜单 + 右键菜单的文案与动作映射，改菜单必读。
 - `docs/harmonyos-port.md`：鸿蒙适配方案（**仅方案未实施**；Rust 侧工具链已在
   Linux 就位：ohrs + aarch64-unknown-linux-ohos target）。
-- `docs/linglong-package.md` + `linglong/`：玲珑打包**已落地**——统一入口
-  `scripts/build-packages.sh --linglong`（layer 产线）/ `--deb --appimage`；
-  方案细节、嵌套环境注意事项与 deb→玲珑转换配方见 `linglong/README-BUILD.md`。
 - `docs/plan-cli-mcp.md`：**1.0 规划**（本分支跟进）——deepDesign Agent 能力抽象为专属
   CLI + MCP 出口，让 Codex/Claude Code 直接驱动 deepDesign；前置是 deepdesign-core 拆分
   （与鸿蒙方案共享同一前置）。

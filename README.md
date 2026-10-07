@@ -59,7 +59,7 @@ node scripts/sync-engine.mjs   # 1. 拉取标准 wasm 引擎产物（首次必�
 |------|------|
 | Windows CMD | `build.bat` |
 | 任意 | `npx @tauri-apps/cli build` |
-| 三格式一键 | `scripts/build-packages.sh --all`（deb 标准 FHS + AppImage + 玲珑 layer → dist/；玲珑段需本机 linyaps，CI 走 release-all.yml） |
+| 一键打包 | `scripts/build-packages.sh --all`（deb 标准 FHS + AppImage → dist/；WebKitGTK 运行库随包捆绑，CI 走 release-all.yml） |
 
 产物位置：Windows NSIS 安装包在 `src-tauri/target/release/bundle/nsis/`，裸二进制
 `src-tauri/target/release/deepdesign-studio.exe`；macOS 产出 `.app` / `.dmg`。

@@ -1,40 +1,34 @@
 #!/usr/bin/env bash
-# deepDesign Studio —— 多格式打包脚本
+# deepDesign Studio —— Linux 打包脚本
 # 产物：
 #   deb       标准 FHS 布局（/usr/bin + /usr/lib/deepdesign-studio，自带 WebKit 运行库，
 #             不依赖系统 webkit；任何 glibc >= 2.38 的 Debian 系可安装）
 #   AppImage  免安装单文件（自带全部运行库，通用 Linux）
-#   layer     玲珑(linyaps) 应用层（需 ll-builder；/opt/apps 布局为玲珑规范要求）
 # 用法：
-#   scripts/build-packages.sh [--rebuild] [--deb] [--appimage] [--linglong] [--all]
-#   默认 --all（玲珑缺 ll-builder 时自动跳过并提示）。
+#   scripts/build-packages.sh [--rebuild] [--deb] [--appimage] [--all]
+#   默认 --all。（玲珑/linyaps 支持已移除——用户决策 2026-10-07，历史见 git log）
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# 打包线版本取自 linglong.yaml，全仓库统一为 0.4.0-beta（用户决策，覆盖此前的纯数字分轨）。
-# 兼容链已逐环实证：Cargo manifest ✓ / tauri NSIS（剥 prerelease 成数字 VIProductVersion）✓ /
-# DMG（原样写 plist）✓ / dpkg ✓ / linyaps semver（prerelease 允许字母与 -，官方测试含
-# alpha-3.Beta 用例）✓。升级序代价已实证并接受：dpkg 语义 0.4.0-beta > 0.4.0，将来发
-# 正式版时避开裸 0.4.0——用 0.4.0.1 / 0.4.0+0 / 0.4.1+（实测均 > 0.4.0-beta）即可平滑升级。
-# 正则同时认带引号/不带引号两种 yaml 写法——此前只认带引号，而 yaml 实际无引号，
-# 提取一直静默落空靠 fallback 兜底（两值恰好相同才没暴露）
-VERSION="$(sed -n -e 's/^  version: "\(.*\)"$/\1/p' -e 's/^  version: \([0-9][^ "]*\)$/\1/p' "$ROOT/linglong/linglong.yaml" | head -1)"
-VERSION="${VERSION:-0.4.0-beta}"
+# 打包线版本取自 src-tauri/tauri.conf.json（版本单一事实源，当前 0.4.1）。
+# 注意 dpkg 语义：曾以 0.4.0-beta 存量的机器上，裸 0.4.1 > 0.4.0-beta ✓ 平滑升级。
+VERSION="$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$ROOT/src-tauri/tauri.conf.json" | head -1)"
+[ -n "$VERSION" ] || die "cannot read version from src-tauri/tauri.conf.json"
 ID="com.deepcode.deepdesign"
 PKGNAME="deepdesign-studio"
 APPNAME="deepDesign-Studio-${VERSION}-x86_64"
 DIST="$ROOT/dist"
 STAGE="$(mktemp -d)/stage"
+PKGDIR="$ROOT/scripts/packaging"
 
-WANT_DEB=0; WANT_APPIMAGE=0; WANT_LINGLONG=0; REBUILD=0
+WANT_DEB=0; WANT_APPIMAGE=0; REBUILD=0
 [ $# -eq 0 ] && set -- --all
 for arg in "$@"; do
   case "$arg" in
     --rebuild) REBUILD=1 ;;
     --deb) WANT_DEB=1 ;;
     --appimage) WANT_APPIMAGE=1 ;;
-    --linglong) WANT_LINGLONG=1 ;;
-    --all) WANT_DEB=1; WANT_APPIMAGE=1; WANT_LINGLONG=1 ;;
+    --all) WANT_DEB=1; WANT_APPIMAGE=1 ;;
     *) echo "unknown option: $arg"; exit 1 ;;
   esac
 done
@@ -52,17 +46,11 @@ if [ ! -x src-tauri/target/release/deepdesign-studio ] || [ "$REBUILD" = 1 ]; th
 fi
 [ -f frontend/vendor/moonviz.wasm ] || { log "syncing engine wasm ..."; node scripts/sync-engine.mjs; }
 
-# ---------- 1. 组装产物 staging（deb/AppImage/玲珑 共用同一份内容） ----------
-# 自带 WebKitGTK 运行库（无系统 webkit 依赖）。来源二选一：
-#   a) linglong/package/lib（上次收集的缓存）  b) 从 deepin 仓库现场收集
+# ---------- 1. 组装产物 staging（deb/AppImage 共用同一份内容） ----------
+# 自带 WebKitGTK 运行库（无系统 webkit 依赖）。来源：从 deepin 仓库现场收集
+# （一次性 ~120MB，deb/AppImage 两种产物共用；无本地缓存目录）。
 ensure_webkit_bundle() {
   local dest="$1"
-  if [ -d linglong/package/lib/deepdesign ] && [ -f linglong/package/redirect.so ]; then
-    cp -a linglong/package/lib/deepdesign/. "$dest/"
-    cp -a linglong/package/webkit-helpers "$dest/webkit-helpers"
-    install -m644 linglong/package/redirect.so "$dest/redirect.so"
-    return 0
-  fi
   log "collecting bundled WebKitGTK runtime from deepin repo (one-time, ~120MB) ..."
   local repo="https://ci.deepin.com/repo/deepin/deepin-community/stable"
   local work="$STAGE/collect"
@@ -105,17 +93,23 @@ STAGE_FILES="$STAGE/files"
 mkdir -p "$STAGE_FILES/bin" \
          "$STAGE_FILES/share/$PKGNAME/frontend/vendor" \
          "$STAGE_FILES/lib/deepdesign" \
-         "$STAGE_FILES/share/applications" \
          "$STAGE_FILES/share/icons/hicolor/512x512/apps" \
          "$STAGE_FILES/share/metainfo"
-install -m755 linglong/package/run.sh "$STAGE_FILES/bin/run.sh"
+
+# desktop 生成（按产物格式注入 Exec——991 时代教训：deb 复用玲珑模板的
+# /opt/apps Exec 导致装完图标点不开；Exec 必须与真实安装前缀一致）
+write_desktop() {
+  local dest="$1" exec_path="$2"
+  sed "s|@RUNTIME_EXEC@|$exec_path|" "$PKGDIR/com.deepcode.deepdesign.desktop" > \
+    "$dest/com.deepcode.deepdesign.desktop"
+}
+install -m755 "$PKGDIR/run.sh" "$STAGE_FILES/bin/run.sh"
 install -m755 src-tauri/target/release/deepdesign-studio "$STAGE_FILES/bin/deepdesign-studio"
 cp frontend/index.html "$STAGE_FILES/share/$PKGNAME/frontend/"
 cp frontend/vendor/* "$STAGE_FILES/share/$PKGNAME/frontend/vendor/"
 ensure_webkit_bundle "$STAGE_FILES/lib/deepdesign"
-install -m644 linglong/package/com.deepcode.deepdesign.desktop "$STAGE_FILES/share/applications/"
-install -m644 linglong/package/com.deepcode.deepdesign.png "$STAGE_FILES/share/icons/hicolor/512x512/apps/"
-install -m644 linglong/package/com.deepcode.deepdesign.metainfo.xml "$STAGE_FILES/share/metainfo/"
+install -m644 src-tauri/icons/icon.png "$STAGE_FILES/share/icons/hicolor/512x512/apps/com.deepcode.deepdesign.png"
+install -m644 "$PKGDIR/com.deepcode.deepdesign.metainfo.xml" "$STAGE_FILES/share/metainfo/"
 
 # ---------- 2. deb（标准 FHS 布局） ----------
 build_deb() {
@@ -126,8 +120,10 @@ build_deb() {
   cp -a "$STAGE_FILES/." "$debroot/usr/lib/$PKGNAME/"
   # 入口：wrapper（即 run.sh 的相对路径解析）+ desktop/icon 标准位
   ln -sf /usr/lib/$PKGNAME/bin/run.sh "$debroot/usr/bin/$PKGNAME"
-  cp -r "$debroot/usr/lib/$PKGNAME/share/applications" "$debroot/usr/share/"
   cp -r "$debroot/usr/lib/$PKGNAME/share/icons" "$debroot/usr/share/"
+  # desktop：Exec 必须指向 FHS 真实安装位（/usr/lib/...），勿复用玲珑 /opt/apps 模板
+  mkdir -p "$debroot/usr/share/applications"
+  write_desktop "$debroot/usr/share/applications" "/usr/lib/$PKGNAME/bin/run.sh"
   cat > "$debroot/DEBIAN/control" << CTRL
 Package: $PKGNAME
 Version: $VERSION
@@ -190,11 +186,11 @@ build_appimage() {
   ensure_appimagetool
   local appdir="$STAGE/appdir"
   rm -rf "$appdir"; mkdir -p "$appdir/usr"
-  # 内容放在 AppDir/opt/apps/<id>/files（与玲珑同构，便于与 layer 产物互查）
+  # 内容放在 AppDir/opt/apps/<id>/files（AppRun 相对解析）
   mkdir -p "$appdir/opt/apps/$ID"
   cp -a "$STAGE_FILES" "$appdir/opt/apps/$ID/files"
-  cp linglong/package/com.deepcode.deepdesign.desktop "$appdir/$ID.desktop"
-  cp linglong/package/com.deepcode.deepdesign.png "$appdir/${ID}.png"
+  write_desktop "$appdir" "deepdesign-studio"
+  install -m644 "$PKGDIR/com.deepcode.deepdesign.png" "$appdir/${ID}.png"
   cat > "$appdir/AppRun" << EOF
 #!/bin/bash
 SELF="\$(readlink -f "\$0")"
@@ -207,38 +203,8 @@ EOF
   log "AppImage   → dist/$APPNAME.AppImage ($(du -h "$DIST/$APPNAME.AppImage" | cut -f1))"
 }
 
-# ---------- 4. 玲珑 layer ----------
-build_linglong() {
-  if ! command -v ll-builder > /dev/null 2>&1; then
-    log "SKIP linglong (ll-builder not installed; see linglong/README-BUILD.md)"
-    return 0
-  fi
-  # 刷新 linglong/package 里的动态产物（二进制/前端/WebKit 运行库）
-  mkdir -p linglong/package/lib/deepdesign linglong/package/frontend/vendor
-  install -m755 src-tauri/target/release/deepdesign-studio linglong/package/deepdesign-studio
-  cp frontend/index.html linglong/package/frontend/index.html
-  cp frontend/vendor/* linglong/package/frontend/vendor/
-  # staging 已含收集好的 WebKit 运行库；摆成 linglong.yaml build 段期望的布局：
-  # lib/deepdesign/ + 顶层 webkit-helpers/ + 顶层 redirect.so
-  rm -rf linglong/package/lib/deepdesign linglong/package/webkit-helpers
-  cp -a "$STAGE_FILES/lib/deepdesign" linglong/package/lib/deepdesign
-  mv linglong/package/lib/deepdesign/webkit-helpers linglong/package/webkit-helpers
-  install -m644 "$STAGE_FILES/lib/deepdesign/redirect.so" linglong/package/redirect.so
-  (
-    cd linglong
-    ll-builder build ${LINGLONG_BUILD_OPTS:-}
-    ll-builder export -f linglong.yaml -z lz4 --layer
-  )
-  local f
-  for f in com.deepcode.deepdesign_*_x86_64_*.layer; do
-    [ -f "$f" ] || continue
-    mv "$f" "$DIST/"; log "linglong   → dist/$(basename "$f") ($(du -h "$DIST/$(basename "$f")" | cut -f1))"
-  done
-}
-
 # ---------- 执行 ----------
 mkdir -p "$DIST"
 [ "$WANT_DEB" = 1 ] && build_deb
 [ "$WANT_APPIMAGE" = 1 ] && build_appimage
-[ "$WANT_LINGLONG" = 1 ] && build_linglong
 log "done. artifacts in dist/"
