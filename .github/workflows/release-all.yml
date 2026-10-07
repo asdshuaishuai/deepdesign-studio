@@ -1,6 +1,6 @@
 name: Release All Platforms
 
-# 全平台打包：Windows(NSIS) / macOS(dmg) / Linux(deb+AppImage+玲珑layer)
+# 全平台打包：Windows(NSIS) / macOS(dmg) / Linux(deb+AppImage)
 # 触发：打 tag v* 或手动。产物自动附加到 GitHub Release，并上传固定名副本
 # 供官网「最新版下载」直链使用（releases/latest/download/<固定名>）。
 
@@ -84,19 +84,13 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
 
-      - name: Build Linux packages (deb + AppImage + linglong layer)
+      - name: Build Linux packages (deb + AppImage)
         if: matrix.platform == 'linux'
         shell: bash
         run: |
           chmod +x scripts/build-packages.sh
           # deb + AppImage：脚本会从 deepin 仓库收集 WebKitGTK 运行库捆绑进包
           ./scripts/build-packages.sh --deb --appimage
-          # 玲珑 layer：linyaps 装不上时不阻塞发布（deb/AppImage 照常出）
-          if ./scripts/ci-install-linyaps.sh; then
-            ./scripts/build-packages.sh --linglong
-          else
-            echo "::warning::linyaps install failed, layer skipped"
-          fi
 
       - name: Collect artifacts (stable names for latest/download links)
         shell: bash
@@ -119,13 +113,6 @@ jobs:
           done
           for f in dist/*.AppImage; do
             [ -f "$f" ] && cp "$f" "dist-release/deepDesign-Studio-${GITHUB_REF_NAME}-x86_64.AppImage"
-          done
-          for f in linglong/*.layer; do
-            [ -f "$f" ] || continue
-            case "$f" in
-              *binary*) cp "$f" "dist-release/com.deepcode.deepdesign-${GITHUB_REF_NAME}_x86_64.layer" ;;
-              *develop*) cp "$f" "dist-release/com.deepcode.deepdesign-${GITHUB_REF_NAME}_x86_64_develop.layer" ;;
-            esac
           done
           ls -la dist-release
         env:
