@@ -1,0 +1,10 @@
+cargo:rerun-if-env-changed=DEBUG_GENERATED_CODE
+cargo:rerun-if-env-changed=TYPE_DEF_TMP_PATH
+cargo:rerun-if-env-changed=CARGO_CFG_NAPI_RS_CLI_VERSION
+cargo::rerun-if-env-changed=NAPI_DEBUG_GENERATED_CODE
+cargo::rerun-if-env-changed=NAPI_TYPE_DEF_TMP_FOLDER
+cargo::rerun-if-env-changed=NAPI_BUILD_TARGET_NAME
+cargo::rerun-if-env-changed=NAPI_FORCE_BUILD_DEEPDESIGN_CORE_OHOS
+cargo:rustc-link-search=/home/superShuai/deveco-clt/sdk/default/openharmony/native/sysroot/usr/lib/aarch64-linux-ohos
+cargo:rustc-link-search=/home/superShuai/deveco-clt/sdk/default/openharmony/native/llvm/lib/aarch64-linux-ohos
+cargo:rustc-link-lib=dylib=ace_napi.z

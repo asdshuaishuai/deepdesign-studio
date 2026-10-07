@@ -1,0 +1,59 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    "requestPermissions": [
+      { "name": "ohos.permission.INTERNET" }
+    ],
+    "deviceTypes": [
+      "2in1",
+      "phone"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:app_logo",   // M3.6.1：纯 PNG（layered_image 的 JSON 描述符系统标题栏渲染为白块，2026-10-05 用户红框）——桌面窗口图标/任务栏均取此图；启动器图标视觉不变（app_logo 与 foreground 同为深底白兔圆角方）
+        "label": "$string:EntryAbility_label",
+        "supportWindowMode": ["floating", "fullscreen"],
+        "maxWindowWidth": 3840,
+        "maxWindowHeight": 2160,
+        "minWindowWidth": 980,
+        "minWindowHeight": 640,
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "ohos.want.action.home"
+            ]
+          }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "EntryBackupAbility",
+        "srcEntry": "./ets/entrybackupability/EntryBackupAbility.ets",
+        "type": "backup",
+        "exported": false,
+        "metadata": [
+          {
+            "name": "ohos.extension.backup",
+            "resource": "$profile:backup_config"
+          }
+        ],
+      }
+    ]
+  }
+}

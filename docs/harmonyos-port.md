@@ -122,3 +122,358 @@ window.__TAURI__ ??= {
 - developer.huawei.com ArkTS API（`@ohos.web.webview` 模块：javaScriptProxy /
   runJavaScript）
 - "Tauri 无 OHOS 目标、无成熟社区 port"为 2026-09-29 检索结论，立项前复核
+
+## 11. 模拟器实测记录（2026-10-01）
+
+- 环境：devecocli 1.3.4 + CLT 26.0.0.851(linux-x64) + DeepDesignPC(2in1) 模拟器
+  （HarmonyOS 7.0.0.107, x86_64, 3120×2080）
+- 已打通：ArkUI 原生壳（1360×900 桌面窗口/deepDesign 标题/最大化修复/全量布局）
+  构建→装机→启动→前端渲染全部成功；HAP 内 libs/{arm64-v8a,x86_64}/ 含
+  libc++_shared 与 libdeepdesign_core.so（externalNativeOptions+CMake 集成生效）
+- 未通：NAPI import 返回 undefined。`bm dump` 显示安装后 `nativeLibraryPath: ""`——
+  **模拟器安装器对完全未签名（unsigned）HAP 不做 native 库解压登记**。
+  修复路径：`devecocli auth login` 登录华为账号 → `devecocli signature generate`
+  生成调试签名材料 → build-profile.json5 填入 signingConfigs → 构建签名 HAP 安装。
+  该步骤需要华为账号登录，属于一次性人工操作，之后 CI 可复用签名材料。
+
+## 12. NAPI 链路打通实录（2026-10-01，M1 完成）
+
+**结论：Rust NAPI core 已在 2in1 模拟器上真实加载并返回数据**（顶栏
+`core: deepdesign-core-ohos 0.4.0-beta (engine: moonviz wasm, host: wasmtime)`）。
+
+### 根因（三层叠加，逐层剥开）
+
+1. **HAP 未签名 → native 库不解压**（§11 遗留）。修复：不用华为账号，改用
+   **SDK 自带的 OpenHarmony 调试密钥本地签发**——`toolchains/lib/` 下的
+   `OpenHarmony.p12`（密码 123456）+ `OpenHarmonyProfileDebug.pem` +
+   `UnsgnedDebugProfileTemplate.json`。流程：抽取模板内嵌证书 → 拼 3 级证书链
+   （leaf+cacert+rootcacert）→ `hap-sign-tool sign-profile` 签发定制 profile
+   （bundleName=com.deepcode.deepdesign、有效期至 2050）→ `sign-app` 签 HAP。
+   已封装进 `ohos/ohos-run.sh --install`，全程免账号。
+2. **so 陈旧**：rust-libs 里的 x86_64 so 是 crate 改名前的产物，NAPI 注册名是
+   `deepdesign_core_ohos` ≠ import 期待名。重编替换后消除。
+3. **导出名大小写（真正根因）**：napi-ohos 的 `#[napi]` 默认把 rust snake_case
+   转成 **camelCase** 导出——`core_version` 注册为 **`coreVersion`**。ArkTS 侧
+   一直按 snake_case 调用，永远 undefined。d.ts 声明与 ArkTS 调用改 camelCase
+   后一次打通。
+
+### 排障方法论（复用价值）
+
+- `hilog` 里应用 console 输出的 tag 是 **A03d00/JSAPP**（不是 JSAPP）
+- JCE 断链（玲珑容器内 JDK）：`$JAVA_HOME/conf/security/policy/unlimited/*.policy`
+  是指向 /etc 的死链，需写实体文件 `grant { permission javax.crypto.CryptoAllPermission; };`
+- 设备端 dlopen 探针：交叉编译 30 行 C（`--target=x86_64-linux-ohos`）push 到
+  /data/local/tmp 执行，可验证依赖/注册符号；注意 shell 命名空间看不到
+  /system/lib64/platformsdk，报 `libark_jsruntime.so` 缺失属预期，不代表 app 进程失败
+- 插桩 napi-ohos（`[patch.crates-io]` 指向本地 fork + hilog-binding）可确认
+  `napi_register_module_v1` 是否被 runtime 调用、回调表长度；插桩日志若含
+  `format!` 注意 napi_derive 生成的名字带**尾随 \0**，拼进 CString 会 panic
+- panic 穿越 `extern "C"` 会 SIGABRT 且 stderr 不可见：rust 侧 ctor 里
+  `std::panic::set_hook` 把 panic 详情打进 hilog 是必备基建
+- 对照实验：同 app 内放一个官方模板结构的 C++ NAPI 模块（entry.cpp），
+  C++ 通/Rust 不通即可把问题锁进 so 差异——本次即靠它定位到命名大小写
+- `JSON.stringify` 会跳过函数属性，`{}` 不代表对象为空；用 `typeof` 逐属性探测
+- 模拟器为 undebuggable 版（hdc smode 失败），shell 无 root，读
+  /data/log/faultlog 需用 `hdc file recv`（faultlogger 目录可拉）
+
+### 遗留
+
+- `opt-level=3, lto=false`（原 `z+fat-lto` 在 napi-ohos 生态有 panic 风险，保守起见未开）
+- C++ 对照模块 entry.cpp/libentry.so 保留在工程中作回归探针
+
+## 13. 原版前端 ArkWeb 承载（2026-10-02，M1.5 完成）
+
+**结论：frontend/index.html 以 ArkWeb 全屏承载，UI/交互与桌面版一字不差；
+moonviz wasm 引擎在模拟器上完整工作（建板/模板/图层树/画布渲染/命令流）。**
+
+### 架构
+
+原生壳（窗口/生命周期/签名分发）+ ArkWeb 全屏（原版前端）+ invoke 管线
+（`__TAURI__` shim → `harmonyBridge`(javaScriptProxy) → Dispatch/NAPI core）。
+前端以 `IS_TAURI=true` 原生模式启动，命令经 shim 进 ArkTS：系统能力走 OHOS
+原生实现，引擎/加密类走 Rust NAPI core（camelCase 导出，见 §12）。
+
+### 关键点（复用价值）
+
+- **离线包必须用自定义 https 域名 + onInterceptRequest 全量回供**：
+  `$rawfile` 加载的 `resource://` 页面，其 fetch/XHR/wasm 子请求**不触发
+  onInterceptRequest**（静态资源可以，动态请求不行）。改为
+  `https://appassets.deepdesign.local/` 域名 + 拦截器按路径回 rawfile 字节，
+  fetch(wasm) 即刻恢复。这是 ArkWeb 离线包标准解法。
+- `javaScriptOnDocumentStart` 注入 shim（ScriptItem.scriptRules=['*']）；
+  `javaScriptProxy` 暴露 harmonyBridge；`onConsole` 桥接前端 console。
+- 该镜像上 ArkTS 侧 `hilog.info` 不可见（疑似 release 域日志策略），
+  **console.error（A03d00/JSAPP）是可靠通道**；web_render 进程日志巨量会
+  触发 LOGS OVER PROC QUOTA 丢日志——UI overlay 直显探针最可靠。
+- **模拟器 Meta 键粘滞**：uitest 键盘事件后 Meta 置位不释放，后续点击被
+  当作窗口拖动手势拦截（web 收不到触摸）。`uitest uiInput keyEvent 1251`
+  注入 Meta up 清除。真人不走此通道，不受影响。
+
+### 实测证据（截图 + 探针）
+
+- `{"tauri":true,"bridge":true,"eng":"dot"}`（shim/proxy/引擎三通）
+- 引擎绿点 8-10ms；模板缩略图由 wasm 真实生成
+- quickStart('login')：图层树 9 元素、画布渲染、rev 12、
+  命令流 `HUMAN · template login <id> 390 844`
+
+### 下一步（P2）
+
+- Dispatch 补 `save_ddp/open_ddp/list_ddp_projects/rebase_agent_ops`
+  （依赖 rust-core 下沉 DDP/agent 能力）
+- 悬浮 Agent / 一键生成 走 invoke_fx_sdk（云端 LLM）或端侧小艺
+- 真人手测：画布拖拽/改文字/导出 DDP/设置对话框
+
+## 14. DDP 全链路 + 端到端冒烟（2026-10-02）
+
+**rust-core 下沉 DDP 编解码（与桌面版同一 vendored moonviz-ddp，.ddp 两端互通）**：
+- NAPI 导出 `ddpEncrypt/ddpDecrypt`（camelCase，b64 进出）；纯逻辑独立 `ddp`
+  模块 + `--no-default-features` host 测试（4/4：带密码往返/DDP2 无密码/
+  错密码拒绝/大文档）
+- OHOS 交叉编译要点：zstd-sys 需 `CC_<target>`/`CFLAGS_<target>`/`AR_<target>`
+  指向 OHOS clang；getrandom/argon2 直接编过
+- `hilog-binding` 限定 `cfg(target_env = "ohos")`（host 测试不链接 OHOS 系统库；
+  注意 ohos target 的 `target_os` 仍是 "linux"）
+
+**Dispatch 补齐桌面命令面**：save_ddp（NAPI 加密 + DocumentViewPicker 另存）、
+open_ddp（选文件 → 解密，口令错回 `needPassword` 重试语义）、list_ddp_projects
+（目录扫描，沙箱外目录报错由前端容错）、invoke_fx_sdk 补 models 列表分支、
+open_project_window（单窗口聚焦语义）。rebase_agent_ops 待 wasmtime 宿主下沉。
+
+**端到端冒烟（JS 注入驱动，绕开 uitest 触摸通道限制）**：建板 → 图层树 9 元素
+→ 画布渲染登录页 → rev 12 → 命令流 `HUMAN · template login <id> 390 844` →
+设置对话框开关，全部通过；DDP roundtrip 装机自测 `ddp:ok`。
+
+**装机**：`ohos-run.sh --install`（本地签名免账号）。
+
+## 15. 双层标题栏修复 + 点击问题处置（2026-10-02）
+
+**双层标题栏**：自由窗口默认带系统标题栏（与前端顶栏重复）——
+`mainWindow.setWindowDecorVisible(false)` 隐藏。窗口控制由前端顶栏
+（— □ ×）经 shim → harmonyBridge.win → Index.onWin 驱动原生 API
+（minimize/close 已通；maximize 切 setFullScreen——注意该 API 在
+PCEMU 镜像上表现不稳，全屏后布局破碎，已回退为 resize 行为）。
+
+**点击问题**：模拟器 PC 形态（web_render + ozone headless 架构）下，
+触摸/鼠标事件不派发给 ArkWeb 内部——键盘可进（WebSendKeyEvent），
+触摸经 WMS 记录（uitest touchItem）但不达 web；XTest/uinput 各通道
+均无法穿透。应用侧兜底：ArkUI `onTouch` 捕获 Down/Up 坐标 →
+`runJavaScript` 转 synthetic MouseEvent+PointerEvent+click
+（elementFromPoint），开关 `INPUT_FORWARD`（真机原生分发正常时可关）。
+另：模拟器存在 **Meta 键粘滞**（uitest 键盘注入后 Meta 不释放，
+点击被当窗口拖动手势），`uitest uiInput keyEvent 1251` 清除。
+
+## 16. deveco 工具链实测结论（2026-10-02）
+
+**`devecocli ui` 是 PC 模拟器交互验证的正确通道**（uitest/uinput/XTest 均不可靠）：
+- `ui layout`：dump 完整 UI 树，**ArkWeb 内部 DOM 节点可见**（heading/button/
+  staticText 带物理坐标）——找点击目标的唯一可靠手段
+- `ui click/drag/text`：click/drag 实测有效（建板成功、元素选中 +
+  属性面板激活 + 悬浮 Agent 行内编辑弹出——完整交互链验证通过）
+- **`ui text` 触发 IME 会让 web_render 渲染挂起 → 应用黑屏**
+  （进程存活，force-stop 重开恢复）——镜像级 bug，真人 IME 输入同样有此风险
+- `devecocli log --bundle-name`：按应用过滤日志（含 JS console/hilog）
+- `ui screenshot`、`window`、`device sqlite3`、`emulator scene/battery` 等
+  按需可用；`skills list/find` 内置 43 个鸿蒙技能（崩溃分析/NAPI 内存等）
+
+## 17. 系统级端侧 AI 作为 Agent 默认执行者（2026-10-02）
+
+**分层执行策略**（`invoke_fx_sdk` 分发）：
+1. **默认 = 系统级端侧 AI**（`localChatModel` / Data Augmentation Kit，
+   API 20+；免 API key、数据本地化）——`init()` 就绪后 `chat()` 生成
+   MoonViz op 命令流，白名单提取后按桌面契约
+   `{ok, ops[], text, stopReason, mbt_b64}` 返回，前端 wasm 引擎重放
+2. 用户显式配置云端 key → OpenAI 兼容端点（chat + models）
+3. 端侧不可用 → 结构化提示「端侧模型不可用，请在设置中配置云端 API Key」
+
+**工程要点**：
+- OpenHarmony SDK 不含 Data Augmentation Kit——自建 ambient d.ts
+  （`declare module '@kit.DataAugmentationKit'`）+ **动态 import 独立模块**
+  （LocalChatBridge）：系统无该模块时加载失败被 catch 优雅降级，
+  静态 import 会让整个页面模块加载失败
+- init/chat 全部带超时护栏（init 10s / chat 30s）——模拟器无模型管理
+  应用时 init 会挂起，无护栏则 Agent 永久无响应
+- PCEMU 镜像实测 `端侧AI:不可用`（无模型管理服务，符合预期）；
+  HarmonyOS NEXT 真机自动就绪
+- 状态徽章注入 web 页面内显示（ArkUI overlay 会被同层渲染的 Web 盖住）：
+  `core 版本 · ddp:ok · 端侧AI:状态`
+
+## 18. deveco 全量审查与 UX 修复（2026-10-02）
+
+**审查工具链**：`check arkts`（12 文件 17 警告）+ `check lint`（2 错误）+
+`ui layout`（ArkWeb DOM 树逐节点坐标审计）+ `ui screenshot` 视觉对比。
+（`check compat` 仅 macOS/Windows，linux 不支持）
+
+**修复清单**：
+1. 窗口启动即最大化（`maximize(EXIT_IMMERSIVE)`，保持自由窗口形态）——
+   此前 1360×900 在 960vp 虚拟屏上会裁掉右侧属性面板/Agent 追踪
+2. 前端 □ 按钮 → `maximize()/restore()` 系统语义（原 setFullScreen 在
+   PCEMU 上布局碎裂）；move → `startMoving()`（顶栏空白拖动窗口）
+3. 顶栏原生手感：shim 注入 mousedown 拖动 + 双击最大化热区
+   （`e.target === topbar` 才触发，避开子控件）
+4. 状态徽章：顶中遮顶栏文字 → 右上角、点击关闭、正常信息 8s 自动隐藏
+5. Web UX 属性：darkMode(Auto) 跟随系统深色、竖向滚动条开、
+   overScroll NEVER（防橡皮筋）、zoomAccess 关（防滚轮误触）
+6. `setWindowDecorVisible` 容错（个别形态不支持时保留系统栏）
+7. lint 两处 await-thenable 误报（dynamic import ESObject 用 Promise 包装）
+
+**验证**（devecocli ui 实测）：最大化形态下模板卡建板 ✓、
+元素拖拽（命令流 HUMAN · move + 悬浮 Agent 编辑条弹出）✓、
+右侧属性面板完整显示 ✓、无双层标题栏/残留系统按钮 ✓。
+
+## 19. 审查收尾：弃用清零 + IME 黑屏应用层规避（2026-10-02）
+
+**弃用警告清零**（`check arkts` deprecated 计数 = 0）：
+- `promptAction.showDialog` → `window.getLastWindow().getUIContext().showAlertDialog`
+  （primaryButton/secondaryButton，语义不变：放弃=resolve(true)）
+- `getContext(this)` → `this.getUIContext().getHostContext()`（缓存 abilityCtx
+  供拦截器复用）
+- 剩余「Function may throw」为 lint 提示（代码已在 try-catch 内）；
+  INTERNET 权限警告为误报（module.json5 已声明）
+
+**IME 黑屏应用层规避（原生输入浮层）**：
+- onTouch 合成转发前检测目标：INPUT/TEXTAREA/contentEditable → 不派发点击
+  （避免 web focus+IME），改调 `harmonyBridge.nativeInput(x,y,placeholder)`
+- Index 原生浮层：TextInput + 取消/填入/⏎执行；提交用 native setter +
+  input/change 事件写回，执行时派发 Enter keydown（触发 gp-input 的
+  runGlobalPrompt / ap-input 的 sendAgent——inline handler 对
+  dispatchEvent 同样生效）
+- **坐标换算**：touch 的 vp 坐标 × (clientWidth/vpW) → web CSS 坐标
+  （web CSS viewport 与组件 vp 宽解耦，窄窗仍渲染桌面布局，不换算必错位）
+
+**实测证据链**（还原态窗口，devecocli ui 驱动）：
+点 gp-input → 浮层弹出（placeholder 正确带入）→ `ui text` 输入
+「生成一个手机注册页」（**原生 IME 无黑屏**）→ ⏎执行 → 浮层关闭、
+指令条回填、**AGENT 命令流 `template register 390 844` 执行、画布渲染出
+注册页（Create Account 表单）**——输入到生成全链路通。
+
+**已知限制**：模拟器自动化触摸在最大化形态下不达 ArkUI onTouch
+（镜像输入派发随窗口形态不稳定）；真人鼠标/触摸不受影响。
+
+## 20. 输入模式修正：PC 原生直达（2026-10-02）
+
+**纠偏**：此前把模拟器自动化注入的 Meta 粘滞误判为"输入派发缺陷"，
+按 phone 触屏思路建了整套兜底（touch 合成转发 + 原生输入浮层）。
+PC（2in1，本工程目标形态）的正确逻辑是**鼠标与硬件键盘原生直达 web**：
+
+- `INPUT_FORWARD = false`（默认）：onTouch 不再拦截合成，点击/拖拽原生派发
+- 输入浮层保留但不再触发（触发口在转发路径内；phone 形态或特殊镜像
+  需要时置 true 即启用整套兜底）
+- 模拟器自动化注入前仍须清 Meta 粘滞（keyEvent 1251）——那是注入工具
+  的副作用，非应用缺陷
+
+**PC 原生路径实测**（devecocli ui click + uitest uiInput）：
+1. 点击模板卡 → 原生建板（Welcome Back 画布渲染）✓
+2. 点击指令条聚焦 → `uitest uiInput text`（焦点注入）→ 文字入框、
+   **无黑屏**（黑屏仅发生在坐标点击弹软键盘路径 `ui text x y`；
+   PC 真人硬件键盘不触发软键盘）✓
+3. Enter（keyEvent 2076 = 2048+28）→ `AGENT · text <板> welcome_title
+   "把标题改成蓝色"` 命令流真实执行 ✓
+
+## 21. 屏幕自适应与图标可读性（2026-10-02）
+
+**问题**："打开之后压缩在一起看不清楚"——原版是桌面页面无 viewport meta，
+ArkWeb 按 mobile 视口（~980px 布局视口）渲染再整体缩放进窗口；
+还原态窄窗时缩到 ~0.23 倍，文字图标全部糊作一团。
+
+**根因链**：ArkWeb 的 devicePixelRatio（2.25）与系统 density（3.25）
+不一致——`width=device-width` 会被二次缩放（1387 CSS 塞进 960vp 再缩 0.69），
+meta 不能用 device-width。
+
+**修复（三层）**：
+1. 桌面 UA（`.userAgent(Chrome/desktop)`）——避免 mobile 渲染路径
+2. shim documentStart 注入 viewport meta，width = 宿主注入的窗口 vp 宽
+   （占位符 `__DD_VIEWPORT_W__`，ArkTS 读取 shim 后按屏 vp 替换）：
+   **1 CSS px = 1 vp，无缩放**，字体/图标原生大小；窄窗横向滚动
+   （桌面浏览器自然行为），绝不压缩
+3. `onAreaChange`（最大化/还原/手动 resize）动态改 meta——
+   Chromium 重新应用布局视口，随时 1:1
+
+**实测**：文字图标原生大小清晰 ✓ 三栏+右侧属性/Agent 追踪完整 ✓
+深色主题跟随（darkMode Auto）✓ 点击建板/图层树/属性面板无回归 ✓
+
+## 22. 竖屏手机形态纠偏——resize 横屏（2026-10-02）
+
+**问题**：打开是竖屏手机比例窗口（画面竖条居中）。
+
+**排查**：`maximize()` 对本 app 给的是**竖屏手机比例最大化**
+（窗口 rect 1260×2720 + 0.589 兼容缩放）——模拟器把 app 归类为手机应用。
+试验矩阵：deviceTypes 加 2in1/tablet → 更糟（竖屏 letterbox）；
+orientation landscape/auto_rotation → 无效。全回滚 + 弃 maximize、
+改 `resize(1620,1080)`（restore 后）→ **横屏正常**（rect 3185×2080）。
+
+**镜像限制**：Mode=102（手机兼容容器）下 resize 值被钳制，
+窗口固定占屏约 60%（0.589 缩放），应用侧无法再放大——这是 PCEMU 对
+手机 app 的强制兼容行为。**真机 HarmonyOS PC 分发时 deviceTypes 加
+"2in1" 即可原生铺满**（真机无兼容容器；模拟器上加 2in1 反触发
+letterbox，故模拟器阶段保持 phone）。
+
+**验证**：横屏窗口、三栏完整、文字图标清晰、点模板卡建板 +
+画布渲染 + 命令流记录全部正常。
+
+## 23. 三键重叠/最大化/图标三项修复（2026-10-02）
+
+1. **右上角重叠**：系统容器三键（EnhanceMaximize/Minimize）与前端顶栏
+   — □ × 重叠——`setWindowDecorVisible(false)` 只藏装饰条，
+   `setWindowTitleButtonVisible(false, false, false)` 才是三键开关。
+   隐藏后前端按钮为唯一窗口控制（UI 与桌面版一致）。
+2. **最大化**：兼容容器（Mode=102）钳制一切窗口尺寸 API（resize/
+   maximize/setFullScreen/layoutFullScreen 全无效）。改 **web 层
+   Fullscreen API**：□ 触发 requestFullscreen → 容器重排
+   （0.589 缩放 → 1.0 原大清晰）；退出时 exitFullscreen + resize 尝试。
+   真机 PC 无容器钳制，deviceTypes 加 2in1 即原生最大化。
+3. **图标**：模板 1×1 占位图全套替换——前端 favicon（64×64 logo）
+   → entry + AppScope 的 startIcon/foreground（6076B），background
+   生成 #1c1e22 深色 1×1。注意 AppScope/resources/base/media 才是
+   桌面图标来源；hvigor 有资源缓存，改图标须 rm -rf entry/build。
+
+**验证**：容器三键 0 残留 ✓ 前端 — □ × 唯一显示 ✓ HAP 内图标 6076B ✓
+
+## 24. 方案反转：系统标题栏 + 隐藏前端三键（2026-10-02，用户决策）
+
+弃「隐藏系统栏保前端按钮」方案，改为：**系统标题栏负责窗口控制**
+（原生三键/拖动/双击最大化，兼容容器下行为最可靠），**前端顶栏
+— □ × 在鸿蒙隐藏**（原版文件不动）：
+- EntryAbility 不再调 setWindowDecorVisible(false)/
+  setWindowTitleButtonVisible(false...)——系统标题栏恢复默认
+- UA 用 Mac 桌面标识：前端 IS_WIN/IS_LINUX 均 false → 不加
+  html.win/linux class → .winctl 走默认 display:none（零 CSS 依赖）
+- shim 注入 `html.harmony .winctl{display:none!important}` 兜底
+  （DOMContentLoaded 后插 head——documentStart 时 head 未建会丢）
+
+图标（§23）：AppScope（桌面图标源）+ entry 双份换 deepDesign logo，
+hvigor 资源缓存须清 entry/build。
+
+## 25. ArkTS 完整复刻通用版交互层 + 端侧小艺集成（2026-10-02）
+
+**方向纠偏（用户决策）**：不用 ArkWeb 套壳，**纯 ArkTS 复刻**通用版
+（frontend/index.html）的布局与交互，并集成端侧小艺为 Agent 默认执行者。
+
+**数据层（AppStore.ets）**：
+- 14 模板全量（TPLS/TPL_SIZE/TPL_FEATURED/TPL_GROUPS 1:1 提取），每个模板
+  种子文档对齐 wasm template op 产出（登录 7 层/注册 7 层/Web 9 层/通用骨架）
+- 元素属性模型对齐原版 inspector 字段（x/y/w/h/text/fill/color/fontSize/
+  radius/opacity/visible/align/bold）
+- 时间线条目（src/op/rev/ms/ok）对齐 tl-run；撤销栈（快照 40 步）
+- moveLayer/setStyle（显式分支，ArkTS 禁 as Record）/deleteLayer 命令留痕
+
+**交互层（Index.ets，~600 行）**：
+- 顶栏：logo/项目名▾/版本/三模式切换/新建/打开DDP/保存/⚙/小艺状态/导出DDP
+- 左栏：图层/AI组件/流程三 tab + 画板列表（选中/删除/rev）+ 图层树（点选/
+  删除）+ 底部引擎状态（绿点 8ms）
+- 画布：多画板 stage 横排 + 元素按 style 渲染 + 点选高亮 + **PanGesture
+  拖拽改位** + 缩放工具栏（25%~200%）
+- 欢迎页：精选 3 卡 + **浏览全部模板（分组展开 14 个）**
+- 右栏：属性 inspector 全字段可编辑（改→画布实时变）+ 对齐/可见性切换 +
+  Agent 追踪时间线
+- 底部：READY/⌘K/chips（点击建板）/指令条（原生 TextInput 无 IME 问题）/
+  ↩撤销/一键生成
+- 设置（bindSheet）：小艺状态/端侧说明/云端回退/引擎/DDP/core 版本
+
+**端侧小艺（AgentService.ets）**：
+- chatOnce（localChatModel）为默认执行者 → 结构化意图（模板/改文字/改色）
+  → AppStore 执行；不可用时本地解析兜底（与桌面版无 LLM 行为一致）
+- 顶栏实时显示「小艺 · 就绪/不可用（本地兜底）」
+
+**实测**：模板建板（图层 7 元素+rev 12+画布渲染）✓；指令「生成一个手机
+注册页」→ 小艺超时 → 本地兜底 → **注册页画板生成 + AGENT 时间线留痕** ✓。
+真机上小艺就绪后同一条链自动走端侧推理（无需任何配置）。

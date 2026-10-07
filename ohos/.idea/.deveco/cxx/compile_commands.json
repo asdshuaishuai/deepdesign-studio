@@ -1,0 +1,14 @@
+[
+  {
+    "directory": "/home/superShuai/code/deepdesign-studio/ohos/entry/.cxx/default/default/debug/arm64-v8a",
+    "command": "/persistent/huawei-emu/deveco-clt/sdk/default/openharmony/native/llvm/bin/clang++ --target=aarch64-linux-ohos --gcc-toolchain=/persistent/huawei-emu/deveco-clt/sdk/default/openharmony/native/llvm --sysroot=/persistent/huawei-emu/deveco-clt/sdk/default/openharmony/native/sysroot -Dentry_EXPORTS -I/persistent/huawei-emu/deveco-clt/sdk/default/hms/native/sysroot/usr/include -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -fno-addrsig -Wa,--noexecstack -Wformat -Werror=format-security   -D__MUSL__ -O0 -g -fno-limit-debug-info  -fPIC -o CMakeFiles/entry.dir/entry.cpp.o -c /home/superShuai/code/deepdesign-studio/ohos/entry/src/main/cpp/entry.cpp",
+    "file": "/home/superShuai/code/deepdesign-studio/ohos/entry/src/main/cpp/entry.cpp",
+    "output": "CMakeFiles/entry.dir/entry.cpp.o"
+  },
+  {
+    "directory": "/home/superShuai/code/deepdesign-studio/ohos/entry/.cxx/default/default/debug/x86_64",
+    "command": "/persistent/huawei-emu/deveco-clt/sdk/default/openharmony/native/llvm/bin/clang++ --target=x86_64-linux-ohos --gcc-toolchain=/persistent/huawei-emu/deveco-clt/sdk/default/openharmony/native/llvm --sysroot=/persistent/huawei-emu/deveco-clt/sdk/default/openharmony/native/sysroot -Dentry_EXPORTS -I/persistent/huawei-emu/deveco-clt/sdk/default/hms/native/sysroot/usr/include -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -fno-addrsig -Wa,--noexecstack -Wformat -Werror=format-security   -D__MUSL__ -O0 -g -fno-limit-debug-info  -fPIC -o CMakeFiles/entry.dir/entry.cpp.o -c /home/superShuai/code/deepdesign-studio/ohos/entry/src/main/cpp/entry.cpp",
+    "file": "/home/superShuai/code/deepdesign-studio/ohos/entry/src/main/cpp/entry.cpp",
+    "output": "CMakeFiles/entry.dir/entry.cpp.o"
+  }
+]

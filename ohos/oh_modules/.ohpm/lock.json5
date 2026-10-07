@@ -1,0 +1,93 @@
+{
+  "lockVersion": "1.0",
+  "settings": {
+    "resolveConflict": true,
+    "resolveConflictStrict": false,
+    "installAll": true
+  },
+  "overrides": {},
+  "overrideDependencyMap": {},
+  "modules": {
+    ".": {
+      "name": "",
+      "dependencies": {
+        "libdeepdesign_core": {
+          "specifier": "file:../rust-core/libdeepdesign_core.tgz",
+          "version": "file:../rust-core/libdeepdesign_core.tgz"
+        }
+      },
+      "devDependencies": {
+        "@ohos/hypium": {
+          "specifier": "1.0.25",
+          "version": "1.0.25"
+        },
+        "@ohos/hamock": {
+          "specifier": "1.0.0",
+          "version": "1.0.0"
+        }
+      },
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "entry": {
+      "name": "entry",
+      "dependencies": {
+        "libdeepdesign_core.so": {
+          "specifier": "file:entry/src/main/cpp/types/libdeepdesign_core",
+          "version": "file:entry/src/main/cpp/types/libdeepdesign_core"
+        },
+        "libentry.so": {
+          "specifier": "file:entry/src/main/cpp/types/libentry",
+          "version": "file:entry/src/main/cpp/types/libentry"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    }
+  },
+  "packages": {
+    "@ohos/hypium@1.0.25": {
+      "integrity": "sha512-l6uO2pjl8HyEKdekLqQt7tUpWbDqX/42zoAzkagtUVZAW9jT6lMvbe54MVjoLxq/RwQGygRvi6j4GpypSMFSHw==",
+      "storePath": "oh_modules/.ohpm/@ohos+hypium@1.0.25",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": true,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "@ohos/hamock@1.0.0": {
+      "integrity": "sha512-K6lDPYc6VkKe6ZBNQa9aoG+ZZMiwqfcR/7yAVFSUGIuOAhPvCJAo9+t1fZnpe0dBRBPxj2bxPPbKh69VuyAtDg==",
+      "storePath": "oh_modules/.ohpm/@ohos+hamock@1.0.0",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": true,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "libdeepdesign_core@file:../rust-core/libdeepdesign_core.tgz": {
+      "storePath": "oh_modules/.ohpm/libdeepdesign_core@fbufyva+9ajlo6srkfcwadwoavfsrfj4dx8cdkdux2w=",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "libdeepdesign_core.so@file:entry/src/main/cpp/types/libdeepdesign_core": {
+      "storePath": "entry/src/main/cpp/types/libdeepdesign_core",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "libentry.so@file:entry/src/main/cpp/types/libentry": {
+      "storePath": "entry/src/main/cpp/types/libentry",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    }
+  }
+}
