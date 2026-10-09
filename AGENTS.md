@@ -4,6 +4,21 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后回写同一份文档，
 `.ddp` 只是它的认证加密容器。
 
+**当前版本：0.4.1**（2026-10-09 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
+详见 [docs/versioning.md](docs/versioning.md)。
+
+## 分支纪律（用户决策）
+
+- **`dev` 是开发分支**：所有日常开发提交都落在这里。拉取代码、改动、测试都在 `dev` 上做。
+- **`main` 是发布分支**：只接受从 `dev` 合并进来的发布内容，用于打 tag 与构建正式产物。
+  不在 `main` 上直接开发。
+- **发布流程**：`dev` 改完并验证 → 合并 `dev` 进 `main` → `main` 上打 tag `v*` →
+  `release-all.yml` 自动构建三平台产物并附到 GitHub Release（鸿蒙 `.app.zip` 另走本机
+  `ohos/ohos-release.sh` 手动补传，见「发布完整性」）。
+- **不要把功能提交直接推到 `main`**——那会让发布线偏离 `dev`，两边分叉后
+  「已发布版本里到底有没有某个修复」就再也说不清（2026-10-09 的 v0.4.1 实测踩过：
+  行内编辑修复只存在本地 main、没进 dev/main 远端，发布产物因此带 bug）。
+
 ## 三层架构与边界（改代码前先读）
 
 ```
@@ -457,6 +472,22 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   linglong/ 目录、docs/linglong-package.md、ci-install-linyaps.sh 已删除；当时的构建
   纪律与离线手术法完整快照在 git 历史（tag `archive/harmonyos-port` 前后区间均可考）。
 
+## 版本号（单一事实源，用户决策 2026-10-09）
+
+- **仓库根 `VERSION` 文件是版本号唯一权威**，只写一个语义化版本号。完整清单与派生链见
+  [docs/versioning.md](docs/versioning.md)。
+- **改版本 = 改 `VERSION` 一个文件，然后跑 `node scripts/sync-version.mjs`**，
+  它把版本写进 16 个下游面（tauri.conf / Cargo.toml×2 / Cargo.lock×2 / APP_VER /
+  鸿蒙 app.json5 + ArkTS chip + ohpm 包×3 + rawfile 镜像 / README / menus.md / AppStream）。
+  `--check` 只校验漂移，`test_studio.cjs` 检查 M 已把它纳入测试门。
+- **每次发布后在 AGENTS.md 顶部「当前版本」处写明版本号与发布日期**（本次：0.4.1 / 2026-10-09），
+  并同步更新构建内版本号——即跑一次 `sync-version.mjs`，两边都是同一次改动的一部分。
+- **不要手改下游面的版本号**：手改会在下一次 `--check` 变红，也可能让某个产物悄悄停在旧版本
+  （2026-10 的 v0.4.1 实测：鸿蒙包与 AppStream 停在 0.4.0，桌面显示 0.4.1，用户看到哪个
+  取决于装的是哪个包）。改下游面一律经 VERSION + 脚本。
+- 鸿蒙 `versionCode` 是 AGC 强制递增的整数面，按 `minor*100+patch` 由脚本派生
+  （0.4.1 → 401）；跳大版本时脚本会警告，需人工复核约定。
+
 ## 提交与文档
 
 - 提交信息用 Conventional Commits + 英文 subject：`feat(agent): ...` / `fix(studio): ...` /
@@ -469,4 +500,6 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   （与鸿蒙方案共享同一前置）。
 - `docs/plan-lan-share.md`：内网分享规划（建议 0.4.x）——export_html + 内嵌 HTTP 服务，
   浏览器只读查看，免装 ddpView；serve-fresh-per-GET 设计，安全清单逐条锚定。
+- `docs/versioning.md`：**版本号单一事实源**——`VERSION` 文件 + `sync-version.mjs` 同步的
+  16 个下游面清单、鸿蒙 versionCode 约定、发布流程。改版本号前必读。
 - `README.md`：架构速览与打包产物说明。

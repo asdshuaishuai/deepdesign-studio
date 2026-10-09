@@ -5323,7 +5323,7 @@ struct Index {
     Row({ space: 4 }) {
       Text(this.dirty ?
         `● ${appStore.filePath !== '' ? this.baseName(appStore.filePath) : this.projName}` :
-        'v0.4.0-beta')
+        'v0.4.1')
         .fontSize(this.fp(F_FILECHIP)).fontFamily('monospace').fontColor(this.T().tx2).maxLines(1)   // r10 sz-topbar-2：路径 chip 断点字号（10.5↔9.5）
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }.height(this.sp(H_FILECHIP)).padding({ left: 9, right: 9, top: 0, bottom: 0 }).borderRadius(99)   // r10 h-topbar-2：chip 断点高（22↔20）
