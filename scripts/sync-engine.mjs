@@ -365,6 +365,9 @@ async function contractProbe(exports, wasmBytes) {
         id: c.id, kind: c.kind, category: c.category,
         variants: c.variants, default_size: c.default_size,
         description: COMPONENT_DESCRIPTIONS[c.id] || '',
+        // 引擎 1.0 起随条目下发组件规范（尺寸/圆角），透传入快照——
+        // agent list_components 工具输出因此携带规范，弱模型选组件即见
+        ...(c.norm ? { norm: c.norm } : {}),
       });
     } else {
       console.warn(`[sync-engine] 组件 ${c.id} place 探针失败（跳过）：${r.error}`);
@@ -380,10 +383,12 @@ async function main() {
   const manifestPath = join(dst, 'engine-manifest.json');
 
   // 跳过判断：现存 wasm 的哈希必须与**当前锚点**一致（换工件类型如 gc→classic 时
-  // 锚点变了，旧文件自然不匹配 → 重新下载；只比对 manifest 记录值会被旧产物骗过）
+  // 锚点变了，旧文件自然不匹配 → 重新下载；只比对 manifest 记录值会被旧产物骗过）。
+  // MOONVIZ_WASM_PATH 显式指定本地构建时绕过跳过——调用方点名要这个文件，
+  // 发布产物的 sha 锚点对本地 dev 构建没有意义。
   let manifest = { version: ENGINE_VERSION, source: WASM_URL, releaseTag: RELEASE_TAG };
   let skipDownload = false;
-  if (existsSync(wasmPath)) {
+  if (!process.env.MOONVIZ_WASM_PATH && existsSync(wasmPath)) {
     try {
       if (sha512Base64(readFileSync(wasmPath)) === WASM_SHA512) {
         skipDownload = true;
@@ -398,10 +403,18 @@ async function main() {
   } else {
     const raw = await download();
     const got = sha512Base64(raw);
-    if (got !== WASM_SHA512) fail(`wasm sha512 不匹配\n  期望 ${WASM_SHA512}\n  实际 ${got}`);
+    // 本地 dev 构建（MOONVIZ_WASM_PATH）sha 必然异于发布锚点：只提示不阻断，
+    // 契约探针（导出面/模板/组件/会话计数）才是真正的守门员
+    if (got !== WASM_SHA512 && !process.env.MOONVIZ_WASM_PATH) {
+      fail(`wasm sha512 不匹配\n  期望 ${WASM_SHA512}\n  实际 ${got}`);
+    }
     bytes = raw;
     writeFileSync(wasmPath, bytes);
-    console.log(`[sync-engine] moonviz.wasm ← ${WASM_ASSET}（release ${RELEASE_TAG}，sha512 校验通过）`);
+    console.log(
+      process.env.MOONVIZ_WASM_PATH
+        ? `[sync-engine] moonviz.wasm ← 本地构建（sha512 ${got.slice(0, 24)}…，非发布锚点，探针把关）`
+        : `[sync-engine] moonviz.wasm ← ${WASM_ASSET}（release ${RELEASE_TAG}，sha512 校验通过）`,
+    );
   }
   manifest.wasm_sha512 = sha512Base64(bytes);
 

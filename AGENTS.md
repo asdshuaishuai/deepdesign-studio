@@ -132,13 +132,31 @@ auto/off），`fetchFxModels` 端点拉取失败时回退到快照清单（MiniM
 **`SKILL.md`（仓库根）是本仓库的引擎能力字典**——vendored 自引擎仓库 `SKILL.md`。
 分层事实源：**变更 op 层由 `list-ops`（wasm 直调导出）提供注册表**（sync-engine 探针校验 ≥25）；
 readonly 路由由 agent.rs 的 `READONLY_OPS` 表锚定（`readonly_routing` 单测；SKILL.md 文末
-清单块是文档镜像，不再有契约测试锚定——skill_dictionary 测试已随 wasm 重构删除）。**引擎仓库只读，不改引擎，
-以产物行为为准。**对账的权威来源不是引擎的 `help` 文案，而是实际行为：
+清单块是文档镜像，不再有契约测试锚定——skill_dictionary 测试已随 wasm 重构删除）。
+~~引擎仓库只读~~（已修订，见下节「引擎 dev 修改」）：**能力对账仍以产物行为为准。**
+对账的权威来源不是引擎的 `help` 文案，而是实际行为：
 
 ```bash
 node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时校验导出面/模板/组件/会话计数
 node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不依赖——wasmtime 宿主是唯一运行时）
 ```
+
+### 引擎 dev 修改（1.0 规范线，2026-10-09 起，用户决策）
+
+引擎源码仓库在 `../moonviz`（发布分支 `release/1.0`）。**改引擎不进主工作区**：
+`git -C ../moonviz worktree add ../moonviz-dev -b dev-1.0 release/1.0` 切 dev worktree，
+`cd moonviz-dev/core && moon test -p core` 全绿后
+`cd .. && moon build --release --target wasm wasm` 构建，然后
+`MOONVIZ_WASM_PATH=../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm node scripts/sync-engine.mjs`
+接回本仓——本地构建 sha 必然异于发布锚点，脚本会提示「非发布锚点，探针把关」，
+**契约探针是本地构建的唯一守门员**（导出面/模板/组件逐个 place/27 session 实跑）。
+不带该环境变量跑 sync 仍锚定 GitHub Releases 发布产物，两者互不干扰。
+
+规范线现状（`dev-1.0` 分支）：`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、
+高 ≥ 字号+20；圆角档：按钮族 8、胶囊 高/2、avatar 999；全宽条/全宽行直角）
++ `critique` 第 9 维 `norms`（给 Agent 建议尺寸）+ `auto_fix` 规范预修 +
+`list_components` 携带 `norm` 字段（components.json 快照已透传）。
+**引擎发版（tag `engine-v0.1.9` + 更新本仓 sync-engine 锚点）是用户决策。**
 
 ## 硬性环境约束
 

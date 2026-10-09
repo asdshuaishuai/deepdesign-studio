@@ -12,7 +12,8 @@
       120,
       44
     ],
-    "description": "操作按钮。支持 primary/secondary/danger。"
+    "description": "操作按钮。支持 primary/secondary/danger。",
+    "norm": "宽 ≥ 文案宽+24（左右各留 12），高 36~48，圆角 8；别让框刚好卡住文字"
   },
   {
     "id": "text_input",
@@ -53,7 +54,8 @@
       390,
       56
     ],
-    "description": "顶部导航栏。"
+    "description": "顶部导航栏。",
+    "norm": "全宽顶边条：高 44~56，圆角 0"
   },
   {
     "id": "divider",
@@ -66,7 +68,8 @@
       320,
       1
     ],
-    "description": "分隔线。"
+    "description": "分隔线。",
+    "norm": "全宽 1px，圆角 0"
   },
   {
     "id": "heading",
@@ -180,7 +183,8 @@
       40,
       40
     ],
-    "description": "头像占位。"
+    "description": "头像占位。",
+    "norm": "正圆：radius 999，常用 40/48/56"
   },
   {
     "id": "search_bar",
@@ -194,7 +198,8 @@
       240,
       38
     ],
-    "description": "搜索框（占位文字 text 设置）。"
+    "description": "搜索框（占位文字 text 设置）。",
+    "norm": "高 36~44，圆角取 高/2（胶囊）或 10"
   },
   {
     "id": "progress",
@@ -222,7 +227,8 @@
       72,
       30
     ],
-    "description": "筛选/标签 chip。"
+    "description": "筛选/标签 chip。",
+    "norm": "高 28~32，左右留白 ≥10，圆角取 高/2（胶囊）或 8"
   },
   {
     "id": "fab",
@@ -236,7 +242,8 @@
       56,
       56
     ],
-    "description": "悬浮操作按钮。"
+    "description": "悬浮操作按钮。",
+    "norm": "56×56，圆角 16；单屏只放一个主操作"
   },
   {
     "id": "list_item",
@@ -250,7 +257,8 @@
       320,
       56
     ],
-    "description": "列表行（text 为标题）。"
+    "description": "列表行（text 为标题）。",
+    "norm": "高 56~76；全宽直角（radius 0），内缩卡片式才用圆角 10~12"
   },
   {
     "id": "tab_bar",
@@ -264,7 +272,8 @@
       390,
       56
     ],
-    "description": "标签栏容器。"
+    "description": "标签栏容器。",
+    "norm": "全宽底边条：高 56~64，圆角 0"
   },
   {
     "id": "image",
@@ -716,7 +725,8 @@
       200,
       40
     ],
-    "description": "下拉选择框。"
+    "description": "下拉选择框。",
+    "norm": "高 40~44，圆角 8，右侧留 24 放箭头"
   },
   {
     "id": "combobox",
@@ -784,7 +794,8 @@
       56,
       24
     ],
-    "description": "标签。"
+    "description": "标签。",
+    "norm": "高 22~26，左右留白 ≥8，圆角 4~6"
   },
   {
     "id": "stat",
