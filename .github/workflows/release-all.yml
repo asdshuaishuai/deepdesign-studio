@@ -42,9 +42,32 @@ jobs:
         with:
           node-version: 24
 
+      # 分支纪律：tag 只允许打在发布分支 main 上（dev 是开发分支）。
+      # 直接给 dev 打 tag 会产出「比 main 还新」的正式包，两边从此说不清谁是谁。
+      # 用 compare API 判定（base=main, head=tag 提交）：tag 在 main 上 → behind/identical。
+      # 不用本地 git 祖先判定——checkout 是浅克隆，历史不全时 merge-base 会给出错误结论。
+      - name: Assert the tag is on the release branch
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(gh api "repos/${{ github.repository }}/compare/main...${GITHUB_SHA}" --jq '.status')
+          echo "compare main...${GITHUB_SHA} → $status"
+          case "$status" in
+            behind|identical) echo "✓ tag $GITHUB_REF_NAME 在 main 上" ;;
+            *) echo "::error::tag $GITHUB_REF_NAME 不在 main 上（status=$status）——发布必须走 dev → main → tag（见 AGENTS.md 分支纪律）"; exit 1 ;;
+          esac
+
       - name: Fetch prebuilt engine (sync-engine.mjs)
         shell: bash
         run: node scripts/sync-engine.mjs
+
+      # 版本号一致性（VERSION 单源）：任一产物面漂移即失败，
+      # 防止「桌面显示 0.4.1、鸿蒙包停在 0.4.0」这类对不上账的发布
+      - name: Version surfaces match VERSION
+        shell: bash
+        run: node scripts/sync-version.mjs --check
 
       - name: Frontend smoke + wasm contract (test_studio.cjs)
         shell: bash
@@ -125,9 +148,28 @@ jobs:
           path: dist-release/*
           if-no-files-found: warn
 
+      # 是否由本次构建生成发布说明：只在「Release 尚无正文」时生成，且只由矩阵里的
+      # 一个平台负责（三个平台同时写正文会互相覆盖——v0.4.1 的发布日志就是这么变成
+      # 三段重复的 PR 列表的）。已有正文（人工写的正式说明）一律不覆盖。
+      - name: Decide who writes the release body
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh api "repos/${{ github.repository }}/releases/tags/${GITHUB_REF_NAME}" \
+            --jq '.body // ""' 2>/dev/null || echo "")
+          if [ -n "$(printf '%s' "$existing" | tr -d '[:space:]')" ]; then
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+            echo "Release 已有正文，保留不改写"
+          else
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Attach to GitHub Release (tag builds)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist-release/*
-          generate_release_notes: true
+          generate_release_notes: ${{ steps.notes.outputs.generate == 'true' }}
