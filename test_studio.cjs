@@ -151,6 +151,38 @@ assert(mapCalls.length>0,'未能提取 nativeMenuAction 映射体调用目标（
 const missingMap=mapCalls.filter(n=>!defined.has(n)&&!bound.has(n)&&!GLOBALS.has(n)&&!KEYWORDS.has(n));
 assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函数：${missingMap}`);
 
+/* 检查 L：会话写路径的响应变量必须是 let——`const out=…` 被下方 artboard 富集分支
+ * 重赋值时抛 TypeError，且**只在响应不带 artboards 时触发**（引擎对部分 op 不回该索引），
+ * 于是表现为「双击改文字提交必然失败」这类条件性故障，静态扫描与状态机桩都撞不到
+ * （桩恒返回 artboards，永远走不到富集分支）。2026-10-09 已发布包实测踩过。
+ * 这条锁死结构：engApplySession 内出现 const 绑定的引擎响应即失败。 */
+{
+  const sessStart=script.indexOf('async function engApplySession(');
+  assert(sessStart>=0,'engApplySession 未定义——会话写路径是承重函数，请同步检查 L');
+  const sessEnd=script.indexOf('\nasync function ',sessStart+1);
+  const sess=script.slice(sessStart,sessEnd>0?sessEnd:sessStart+2000);
+  assert(/let out=JSON\.parse\(/.test(sess),
+    'engApplySession 的响应变量必须是 let（artboard 富集分支会整体替换它）；const 会在响应无 artboards 时抛 TypeError，请同步检查 L');
+  assert(/out=\{\.\.\.out,entry:/.test(sess),
+    'engApplySession 的 artboard 富集分支结构变了——若已移除该分支，请重新评估检查 L 的必要性');
+}
+
+/* 检查 M：版本号单一事实源——仓库根 VERSION 是权威，其余 16 个下游面必须与它一致。
+ * 2026-10 的 v0.4.1 实测：鸿蒙包与 AppStream 元数据停在 0.4.0 而桌面显示 0.4.1，
+ * 同一版本号在产物间对不上账。node scripts/sync-version.mjs --check 是权威判定。 */
+{
+  const versionFile=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
+  assert(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(versionFile),
+    `VERSION 不是合法语义化版本：${JSON.stringify(versionFile)}`);
+  const { execFileSync } = require('node:child_process');
+  try{
+    execFileSync(process.execPath,[path.join(__dirname,'scripts','sync-version.mjs'),'--check'],{stdio:'pipe'});
+  }catch(e){
+    assert.fail('版本号下游面漂移（跑 node scripts/sync-version.mjs 修正）：\n'+
+      String((e.stderr||e.stdout||e.message)).trim());
+  }
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');
