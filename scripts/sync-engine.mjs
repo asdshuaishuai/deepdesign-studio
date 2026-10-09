@@ -182,7 +182,13 @@ function sha512Base64(buf) {
 
 async function download() {
   const local = process.env.MOONVIZ_WASM_PATH;
-  if (local && existsSync(local)) {
+  if (local) {
+    // 点名本地构建却不存在的文件必须 fast-fail，不得回落网络下载——
+    // 回落会装上发布产物再被 sha 豁免放行，还打着「本地构建」标签
+    // （契约探针只校验导出面/模板计数，挡不住内容差异）
+    if (!existsSync(local)) {
+      fail(`MOONVIZ_WASM_PATH 已设置但文件不存在：${local}`);
+    }
     console.log(`[sync-engine] 使用本地 wasm：${local}`);
     return readFileSync(local);
   }
