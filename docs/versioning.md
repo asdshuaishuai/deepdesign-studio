@@ -71,9 +71,16 @@ node scripts/sync-version.mjs --check
 见 `AGENTS.md`「分支纪律」与「发布完整性」两节。简版：
 
 1. 在 `dev` 上开发，测试全绿（`node test_studio.cjs` 内含版本漂移检查）。
-2. 编辑 `VERSION` → `node scripts/sync-version.mjs` → 提交。
+2. 编辑 `VERSION` → `node scripts/sync-version.mjs` → **在 `frontend/index.html` 的
+   `RELEASE_NOTES` 顶端补本版条目**（「关于」页更新日志；顶端版本 ≠ APP_VER 会让
+   test_studio 检查 N 变红）→ 新增文案过一遍
+   `node scripts/i18n-catalog.cjs && python scripts/gen-i18n.py --write` → 提交。
 3. `dev` 合并进 `main`（发布分支）。
 4. 在 `main` 上打 tag `v<版本>`，推送——`release-all.yml` 自动构建
    Windows NSIS / macOS DMG / Linux deb+AppImage 并附到 GitHub Release。
 5. 鸿蒙 `.app.zip` 走本机 `ohos/ohos-release.sh` 签名打包后 `gh release upload` 补传。
 6. 在 `AGENTS.md`「当前版本」处写明本次发布的版本号与日期。
+
+「关于」页（设置最后一页，全平台可见）的版本徽标与更新日志顶端条目都读
+`APP_VER`/`RELEASE_NOTES`，与 macOS 系统级 About 面板（读包版本）同源——
+任何一侧都不会再出现第二个版本号（2026-10-09 事故：原生菜单元数据曾硬编码 0.3.0）。

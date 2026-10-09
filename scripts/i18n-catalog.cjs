@@ -33,8 +33,9 @@ const NEW_ENTRIES={
   'Web 页面':['Web ページ','웹 페이지','Web Pages','Pages Web'],
   '桌面 / 自适应':['デスクトップ / アダプティブ','데스크톱 / 적응형','Desktop / Adaptive','Bureau / Adaptatif'],
 
-  /* ── 设置「关于」页（Linux/Windows；macOS 走系统级 About）── */
+  /* ── 设置「关于」页（全平台可见；macOS 另有系统级 About，版本同源 APP_VER）── */
   '关于':['について','정보','About','À propos'],
+  '更新日志':['更新履歴','업데이트 로그','Changelog','Journal des modifications'],
   '开源感谢':['オープンソース謝辞','오픈소스 감사','Open Source Acknowledgements','Remerciements open source'],
   'AI 原生原型设计工具':['AI ネイティブプロトタイピングツール','AI 네이티브 프로토타이핑 도구','AI-native prototyping tool','Outil de prototypage IA natif'],
   '人类画布操作与 Agent 修改都经 MoonViz 引擎双门校验，回写同一份 .mbt.md 视觉文档；.ddp 是它的认证加密容器。':['キャンバス操作も Agent の変更も MoonViz エンジンの二重ゲートで検証され、同一の .mbt.md ビジュアル文書に書き戻されます。.ddp はその認証暗号化コンテナです。','캔버스 조작과 Agent 변경 모두 MoonViz 엔진의 이중 게이트로 검증되어 동일한 .mbt.md 비주얼 문서에 기록됩니다. .ddp는 해당 인증 암호화 컨테이너입니다.','Canvas edits and Agent changes are both validated by the MoonViz engine dual gates and written back to the same .mbt.md visual document; .ddp is its authenticated encrypted container.',"Les modifications du canevas comme celles de l'agent sont validées par les doubles gardes du moteur MoonViz puis réécrites dans le même document visuel .mbt.md ; .ddp en est le conteneur chiffré authentifié."],
@@ -46,6 +47,15 @@ const NEW_ENTRIES={
   'Rust 网络与序列化基座':['Rust のネットワーク・シリアライズ基盤','Rust 네트워크 · 직렬화 기반','Rust networking & serialization core','Socle réseau et sérialisation Rust'],
   '模型元数据快照（多预设对账）':['モデルメタデータスナップショット（複数プリセット照合）','모델 메타데이터 스냅샷(다수 프리셋 대조)','Model metadata snapshot (preset reconciled)','Instantané de métadonnées de modèles (préréglages réconciliés)'],
   'Linux 系统深浅色跟随':['Linux のシステム明暗テーマ追従','Linux 시스템 밝기 테마 따르기','Follows Linux system light/dark theme',"Suit le thème clair/sombre du système sous Linux"],
+
+  /* ── 「关于」页更新日志条目（RELEASE_NOTES；顶端版本须等于 APP_VER，test_studio 检查 N）── */
+  '修复双击编辑文字提交失败（影响所有用户）':['ダブルクリック編集のコミット失敗を修正（全ユーザーに影響）','더블클릭 텍스트 편집 커밋 실패 수정(모든 사용자 영향)','Fixed double-click text editing failing to commit (affected all users)',"Correction de l'échec de validation de l'édition par double-clic (affectait tous les utilisateurs)"],
+  '版本号统一：仓库根 VERSION 文件为唯一事实源':['バージョン番号を統一：リポジトリ直下の VERSION ファイルが唯一の情報源','버전 번호 통일: 저장소 루트 VERSION 파일이 유일한 기준','Unified versioning: the repository-root VERSION file is the single source of truth',"Version unifiée : le fichier VERSION à la racine du dépôt est la source unique de vérité"],
+  '引擎升级 0.1.8：多画板撤销修复':['エンジン 0.1.8 に更新：複数アートボードの取り消しを修正','엔진 0.1.8 업그레이드: 다중 아트보드 실행 취소 수정','Engine upgraded to 0.1.8: multi-artboard undo fix',"Moteur mis à jour en 0.1.8 : correction de l'annulation multi-planches"],
+  '鸿蒙版首发；Linux 提供 deb 与 AppImage（玲珑下线）':['HarmonyOS 版を初公開。Linux は deb と AppImage を提供（linyaps 廃止）','HarmonyOS 버전 첫 공개; Linux는 deb 및 AppImage 제공(링롱폐지)','HarmonyOS debut; Linux ships deb and AppImage (linglong retired)','Première version HarmonyOS ; Linux fournit deb et AppImage (linglong abandonné)'],
+  '闲置画板清扫：Agent run 前后自动清理空占位':['アイドルアートボードの清掃：Agent run の前後で空きプレースホルダーを自動削除','유휴 아트보드 정리: Agent 실행 전후로 빈 자리표시자 자동 정리','Idle artboard sweep: empty placeholders cleaned around Agent runs',"Nettoyage des planches inactives : les espaces réservés vides sont purgés autour des exécutions de l'agent"],
+  '步数上限可调（200/500/1000/2000）':['ステップ上限を調整可能（200/500/1000/2000）','단계 상한 조정 가능(200/500/1000/2000)','Adjustable step limit (200/500/1000/2000)','Limite de pas ajustable (200/500/1000/2000)'],
+  '演示模式与 Neu 主题修复':['デモモードと Neu テーマの修正','데모 모드 및 Neu 테마 수정','Demo mode and Neu theme fixes','Corrections du mode démo et du thème Neu'],
 
   /* ── Agent op → 人类行为字典（轨迹时间线；键 = Lfmt 简中模板，与 AGENT_OP_HUMAN 对账）── */
   '读取文档源码':['文書ソースを読み取り','문서 소스 읽기','Reading document source','Lecture de la source du document'],

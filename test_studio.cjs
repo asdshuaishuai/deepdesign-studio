@@ -193,6 +193,20 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
   }
 }
 
+/* 检查 N：「关于」页更新日志的顶端条目必须等于 APP_VER。
+ * 发新版的完整动作是 VERSION 改号 → sync-version → RELEASE_NOTES 顶端加一条；
+ * 忘了 latter 时关于页会给用户展示旧版本的日志——和 v0.4.1「两个版本号」事故
+ * 同构（展示面与事实源脱节），所以在测试门锁死。 */
+{
+  const appVer=(script.match(/const APP_VER='([^']*)'/)||[])[1];
+  assert(appVer,'未能提取 APP_VER（结构变了请同步检查 N）');
+  const relSrc=script.slice(script.indexOf('const RELEASE_NOTES'),script.indexOf('function renderAboutLog('));
+  assert(relSrc.includes('const RELEASE_NOTES'),'RELEASE_NOTES 未定义——「关于」页更新日志是承重数据，请同步检查 N');
+  const topVer=(relSrc.match(/\{v:'([^']*)'/)||[])[1];
+  assert.equal(topVer,appVer,
+    `更新日志顶端条目 (v${topVer}) 与 APP_VER (v${appVer}) 不一致——发新版须在 RELEASE_NOTES 顶端补条目，请同步检查 N`);
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');
