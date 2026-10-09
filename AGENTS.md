@@ -141,10 +141,11 @@ node scripts/sync-engine.mjs    # 产物缺失时先同步；契约探针同时�
 node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不依赖——wasmtime 宿主是唯一运行时）
 ```
 
-### 引擎 dev 修改（1.0 规范线，2026-10-09 起，用户决策）
+### 引擎 dev 修改（引擎规范线，2026-10-09 起，用户决策）
 
-引擎源码仓库在 `../moonviz`（发布分支 `release/1.0`）。**改引擎不进主工作区**：
-`git -C ../moonviz worktree add ../moonviz-dev -b dev-1.0 release/1.0` 切 dev worktree，
+引擎源码仓库在 `../moonviz`，**主线开发分支是 `dev`**（已发布的 0.1.8 即从 dev
+出线；`release/1.0` 是 RENDER/SMART-UX 的 1.0 功能线，未发版）。**改引擎不进主
+工作区**：`git -C ../moonviz worktree add ../moonviz-dev dev` 切 dev worktree，
 `cd moonviz-dev/core && moon test -p core` 全绿后
 `cd .. && moon build --release --target wasm wasm` 构建，然后
 `MOONVIZ_WASM_PATH=../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm node scripts/sync-engine.mjs`
@@ -152,7 +153,7 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 **契约探针是本地构建的唯一守门员**（导出面/模板/组件逐个 place/27 session 实跑）。
 不带该环境变量跑 sync 仍锚定 GitHub Releases 发布产物，两者互不干扰。
 
-规范线现状（`dev-1.0` 分支）：`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、
+规范线现状（已在 `dev`，`e1fe594`）：`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、
 高 ≥ 字号+20；圆角档：按钮族 8、胶囊 高/2、avatar 999；全宽条/全宽行直角）
 + `critique` 第 9 维 `norms`（给 Agent 建议尺寸）+ `auto_fix` 规范预修 +
 `list_components` 携带 `norm` 字段（components.json 快照已透传）。
