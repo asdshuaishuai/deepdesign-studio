@@ -1,0 +1,39 @@
+# 本仓库有多个写死行内容的精确替换工具（scripts/sync-version.mjs 的 Cargo.lock 包条目、
+# scripts/gen-i18n.py 的字典块、test_studio.cjs 的切片锚点）。Windows 上默认的
+# core.autocrlf=true 会把检出变成 CRLF，让这些模式静默不命中——2026-10-09 实测：
+# windows-latest 的发布任务因 sync-version --check 不命中模式而失败。
+#
+# 这里只为「被工具按行处理的文件」钉住 LF，不用 `* text=auto eol=lf`——
+# 后者会让 100+ 个无关文件一次性重新规范化，diff 噪音远大于收益。
+# 新增被脚本按行处理的目标文件时，把它加进下面的清单。
+/scripts/sync-version.mjs text eol=lf
+/scripts/gen-i18n.py      text eol=lf
+/scripts/i18n-*.json      text eol=lf
+/test_studio.cjs          text eol=lf
+/VERSION                  text eol=lf
+/src-tauri/Cargo.toml     text eol=lf
+/src-tauri/Cargo.lock     text eol=lf
+/src-tauri/tauri.conf.json text eol=lf
+/rust-core/Cargo.toml     text eol=lf
+/rust-core/Cargo.lock     text eol=lf
+/ohos/AppScope/app.json5  text eol=lf
+/.github/workflows/*.yml  text eol=lf
+
+# 二进制产物不做行尾转换
+*.wasm binary
+*.so binary
+*.exe binary
+*.dll binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.dmg binary
+*.AppImage binary
+*.deb binary
+*.hap binary
+*.p12 binary
+*.cer binary
+*.p7b binary
