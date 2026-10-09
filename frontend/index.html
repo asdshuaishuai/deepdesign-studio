@@ -1550,7 +1550,10 @@ async function engApplySession(gate,op){
   const h=await histEnsure();
   if(h==null)return{ok:false,error:'engine_wasm_unavailable: '+engineFailed};
   engSlotLoad('arg_reset','arg_push',op);
-  const out=JSON.parse(engReadStr(engineExports[gate==='agent'?'session_apply_agent_in':'session_apply_human_in'](h)));
+  // let（非 const）：无 artboards 的响应要在下方富集后整体替换（2026-09-30 修复
+  // const 重赋值 TypeError——该错误曾让所有"响应不带 artboards"的人工 op
+  // （如双击改文字的 update text=）在提交阶段必然失败）
+  let out=JSON.parse(engReadStr(engineExports[gate==='agent'?'session_apply_agent_in':'session_apply_human_in'](h)));
   if(out&&out.ok){
     histSynced=true;
     if(out.mbt)histDoc=out.mbt;
