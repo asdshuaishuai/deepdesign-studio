@@ -157,14 +157,24 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
  * （桩恒返回 artboards，永远走不到富集分支）。2026-10-09 已发布包实测踩过。
  * 这条锁死结构：engApplySession 内出现 const 绑定的引擎响应即失败。 */
 {
-  const sessStart=script.indexOf('async function engApplySession(');
-  assert(sessStart>=0,'engApplySession 未定义——会话写路径是承重函数，请同步检查 L');
-  const sessEnd=script.indexOf('\nasync function ',sessStart+1);
-  const sess=script.slice(sessStart,sessEnd>0?sessEnd:sessStart+2000);
-  assert(/let out=JSON\.parse\(/.test(sess),
-    'engApplySession 的响应变量必须是 let（artboard 富集分支会整体替换它）；const 会在响应无 artboards 时抛 TypeError，请同步检查 L');
-  assert(/out=\{\.\.\.out,entry:/.test(sess),
-    'engApplySession 的 artboard 富集分支结构变了——若已移除该分支，请重新评估检查 L 的必要性');
+  // 两份 engApplySession：桌面 frontend/index.html 与鸿蒙 rawfile 镜像（同源代码 fork）。
+  // 两处都查——鸿蒙镜像曾在桌面修好后继续带着同一个 bug 发货。
+  const copies=[['frontend/index.html',script]];
+  const rawfilePath=path.join(__dirname,'ohos','entry','src','main','resources','rawfile','index.html');
+  if(fs.existsSync(rawfilePath)){
+    const rawHtml=fs.readFileSync(rawfilePath,'utf8');
+    copies.push(['ohos/.../rawfile/index.html',(rawHtml.match(/<script>([\s\S]*?)<\/script>/)||['',''])[1]]);
+  }
+  for(const [label,src] of copies){
+    const sessStart=src.indexOf('async function engApplySession(');
+    assert(sessStart>=0,`${label}: engApplySession 未定义——会话写路径是承重函数，请同步检查 L`);
+    const sessEnd=src.indexOf('\nasync function ',sessStart+1);
+    const sess=src.slice(sessStart,sessEnd>0?sessEnd:sessStart+2000);
+    assert(/let out=JSON\.parse\(/.test(sess),
+      `${label}: engApplySession 的响应变量必须是 let（artboard 富集分支会整体替换它）；const 会在响应无 artboards 时抛 TypeError，请同步检查 L`);
+    assert(/out=\{\.\.\.out,entry:/.test(sess),
+      `${label}: engApplySession 的 artboard 富集分支结构变了——若已移除该分支，请重新评估检查 L 的必要性`);
+  }
 }
 
 /* 检查 M：版本号单一事实源——仓库根 VERSION 是权威，其余 16 个下游面必须与它一致。
