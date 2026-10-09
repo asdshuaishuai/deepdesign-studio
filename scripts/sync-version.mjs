@@ -40,11 +40,13 @@ const TARGETS = [
   { file: 'src-tauri/tauri.conf.json', pattern: /^(\s*"version":\s*")([^"]*)(")/m },
   // 桌面 Rust 包版本（系统级关于面板读取面）
   { file: 'src-tauri/Cargo.toml', pattern: /^(version\s*=\s*")([^"]*)(")/m },
-  // cargo 会按 Cargo.toml 重写自己的包条目；显式同步避免「改了没跑 cargo」的滞后
-  { file: 'src-tauri/Cargo.lock', pattern: /(name = "deepdesign-studio"\nversion = ")([^"]*)(")/ },
+  // cargo 会按 Cargo.toml 重写自己的包条目；显式同步避免「改了没跑 cargo」的滞后。
+  // 换行必须是 \r?\n：Windows 检出（CI 上 core.autocrlf=true）是 CRLF，
+  // 写死 \n 会让模式在 windows-latest 上不命中（2026-10-09 首次实测即红）。
+  { file: 'src-tauri/Cargo.lock', pattern: /(name = "deepdesign-studio"\r?\nversion = ")([^"]*)(")/ },
   // 鸿蒙 Rust core 包版本
   { file: 'rust-core/Cargo.toml', pattern: /^(version\s*=\s*")([^"]*)(")/m },
-  { file: 'rust-core/Cargo.lock', pattern: /(name = "deepdesign_core"\nversion = ")([^"]*)(")/ },
+  { file: 'rust-core/Cargo.lock', pattern: /(name = "deepdesign_core"\r?\nversion = ")([^"]*)(")/ },
   // 前端顶部常量：file-label 与「关于」tab 的版本展示
   { file: 'frontend/index.html', pattern: /(const APP_VER=')([^']*)(')/ },
   // 鸿蒙 rawfile 前端镜像（与 frontend/index.html 同源，动手改前先看它的 README）
