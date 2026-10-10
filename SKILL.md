@@ -44,49 +44,20 @@ sessions by canonical text MUST persist the returned `mbt` and use it for
 the next `session_open` — otherwise the mutation is silently lost on reopen.
 Read-only surfaces keep the `{ok:true,data:...}` envelope.
 
-Smart UX event-out (wasm `collect_actions(handle, artboard)`, classic + wasm-gc):
-returns the board's typed action list — outbound flow edges + node ⚡interactions
-as `from/to/trigger/action/node`; unknown or action-less boards return `[]`
-(empty-collection envelope). Hosts/Agents consume UI events from it.
-
 Structural:
 `create <name> [w] [h]` · `template <id> <name> [w] [h]` ·
-`place <ab> <component> <id> [variant|-] [x] [y] [w] [h] [k=v ...]` (final-size place — gate evaluates final bbox; omit w/h and adaptive presets apply: button/text_input/body_text/heading/divider/image = width-fill, fab = anchor bottom-right) ·
+`place <ab> <component> <id> [variant|-] [x] [y] [w] [h] [k=v ...]` (final-size place — gate evaluates final bbox) ·
 `duplicate <ab> <new_name>` · `delete-artboard <ab>` ·
 `move <ab> <node> <x> <y>` · `copy <ab> <node> <new_id> [dx] [dy]` ·
 `delete <ab> <node>` · `reorder <ab> <node> front|back|up|down` ·
 `flip <ab> <node> h|v|both|none` ·
 `group <ab> <group_id> <n1> <n2> ...` · `ungroup <ab> <group_id>` ·
 `align <ab> <mode> <n1> <n2> ...` · `resize-canvas <ab> <w> <h>` ·
-`data {json}` (inject runtime data for {{bindings}}; compact JSON, root=object) ·
-`schema <field>=<type> [field=type ...]` (declare the DataSchema contract this UI expects — type ∈ `string|number|boolean`; hosts read it back via wasm `data_schema(handle)`; runtime state, not canonical) · `responsive <ab>` · `restyle <ab> <component_id> k=v ...`
+`responsive <ab>` · `restyle <ab> <component_id> k=v ...`
 
 Images: `place <ab> image <id>` then `update <ab> <id> text=<https://...|data:image/...> radius=<n>` —
 a non-empty URL renders a real `<image>` (rounded clip, cover-fit); empty text falls back to the
 placeholder glyph. The URL lives in the node's `text` field and round-trips through canonical MBT.
-
-Icons: `update <ab> <node> icon=<name>` renders a builtin mono-stroke icon
-(24x24 grid, stroke 2, round cap/join, tinted by the node's text color) centered
-in the node box; `icon=""` clears it. The name must be one of the registry names
-below — a misspelled name is a gate violation (fail-fast, not silent no-icon):
-agent ops are rejected (`mbt_gate_block:<ab>:icon_valid:<node>`), the human path
-counts it as visual debt, and SVG render skips it without crashing until fixed.
-Registry (`icon_names()`, 60 names):
-arrow-down arrow-left arrow-right arrow-up battery bell bluetooth calendar
-camera check chevron-down chevron-left chevron-right chevron-up clock close
-code copy download edit external-link eye file filter folder globe grid heart
-home image info link list lock mail maximize menu mic minimize minus moon
-more-horizontal pin play plus refresh save search search-x send settings share
-star sun tag trash upload user volume wifi
-
-Form loop (Smart UX, wasm host API): bind an input component to data with
-`update <ab> <node> text={{path}}` (text_input/textarea/search_bar), then
-`dispatch_event(handle, ab, node, commit|input, value)` writes the submitted
-value back — `{{path}}`-bound inputs update the session data tree (missing
-intermediate objects are created; scalar/array conflicts are rejected
-whole), plain-text inputs update the node literal. `collect_data(handle)`
-returns the current data tree (`{"ok":true,"data":{…}}`, `{}` when never
-seeded) so hosts read form values back; the next render reflects them.
 
 Multi-agent / versioning / animation / testing:
 `collab-merge <base_rev> <agent>=<op>[+op...]`（OT 三方合并；op: insert/delete/
@@ -98,7 +69,6 @@ checkout|diff`（设计版本控制）· `anim-css <node> <preset>` / `anim-list
 Navigation / theme / tokens / debt:
 `flow <from_ab> <to_ab> <node>` (tap navigation edge) ·
 `unflow <from_ab> <to_ab> <node>` (remove one navigation edge) ·
-`adaptive <ab> <node> <preset>` (width-fill | anchor:rb | anchor:lt | keep — resize adaptation) ·
 `theme <name>` (`light dark high_contrast sepia nord sunset`) ·
 `token <name> <value>` (COLOR tokens ONLY — `primary`, `on_primary`,
 `secondary`, `surface`, `background`, `error`, `text_primary`, ...; full set
@@ -109,14 +79,10 @@ An override recolors immediately, persists in the document's frontmatter
 
 Node properties (`update <ab> <node> k=v ...`):
 `w h text fill text_color stroke stroke_width radius opacity font_size weight
-shadow rotate blur blend line tracking constraint align italic dash visible overlay
-fit layout gap justify padding width_mode height_mode x_mode y_mode name`
+shadow rotate blur blend line tracking constraint align italic dash visible
+layout gap justify padding width_mode height_mode x_mode y_mode name`
 
 - `align` `left|center|right`; `italic true|false`; `dash solid|dashed|dotted`
-- `fit auto|shrink` enables font auto-fit: text shrinks to stay inside its box
-  (floor 8px) and — with `auto` — a single-line text grows into spare vertical
-  space (capped at 2x `font_size`); wrapping is width-aware (Latin breaks on
-  words, CJK breaks per character) and re-measures on every render
 - `visible false` hides the subtree without deleting it — it also stops
   rendering *and* hit-testing, so hidden nodes cannot be tapped
 - `layout vertical|horizontal|none` enables/clears a container stack layout;
@@ -235,6 +201,11 @@ them in one call.
   avatars 999 (circle); full-width bars and rows (`app_bar`/`tab_bar`/`list_item`/
   `divider` spanning the artboard) radius 0 — rounded corners on full-bleed edges
   read as sloppiness.
+- **Lists are never naked stacks.** Three or more flush-stacked `list_item` rows
+  (menu pages, settings pages) need hairline separation: a 1 px `divider` at each
+  row's bottom edge (inset ~16 px), or functional grouping into card `Frame`s.
+  `critique` flags naked runs as the norms principle and `auto_fix` inserts the
+  row-bottom dividers for you.
 - **Buttons carry short labels** (2–4 CJK chars). Sentence-length labels belong in a
   different component; the norms dimension will call them out.
 
