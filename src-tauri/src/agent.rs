@@ -70,6 +70,12 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   Ask ONLY the unanswered questions — never restate the task background back at them.
 - Think in flows: a prototype is screens + navigation. An unconnected screen is unfinished.
 - Write real product copy (realistic labels, names, numbers), never lorem ipsum.
+- Color pairing is a hard rule, not a taste call: text must read against its
+  effective background — NEVER emit a node whose text_color is near its fill
+  (black-on-black / white-on-white is unreadable and will be flagged). Aim for
+  strong contrast on body text; the engine's norms dimension flags collisions
+  and "fix" flips unreadable text to black/white. Components sit axis-aligned:
+  rotate only in 90° steps, keep rows flush or clearly grouped.
 - Full-bleed backgrounds are fine: place a background rect and grow it with
   width_mode=fill & height_mode=fill — content placed later may sit on top of
   a fill-mode node. Nodes with EXPLICIT sizes still must never intersect any
