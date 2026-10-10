@@ -153,11 +153,14 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 **契约探针是本地构建的唯一守门员**（导出面/模板/组件逐个 place/27 session 实跑）。
 不带该环境变量跑 sync 仍锚定 GitHub Releases 发布产物，两者互不干扰。
 
-规范线现状（已在 `dev`，`e1fe594`）：`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、
-高 ≥ 字号+20；圆角档：按钮族 8、胶囊 高/2、avatar 999；全宽条/全宽行直角）
+规范线现状（已在 `dev`，`8d64d09`）：`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、
+高 ≥ 字号+20；圆角档：按钮族 8、胶囊 高/2、avatar 999；全宽条/全宽行直角；
+**齐缝列表行必须有行间分割线**——≥3 行 list_item 齐缝连排且整段无 divider/分组即偏差，
+critique 结构性偏差置顶，auto_fix 在行底插 1px divider 子节点，零门风险）
 + `critique` 第 9 维 `norms`（给 Agent 建议尺寸）+ `auto_fix` 规范预修 +
 `list_components` 携带 `norm` 字段（components.json 快照已透传）。
-**引擎发版（tag `engine-v0.1.9` + 更新本仓 sync-engine 锚点）是用户决策。**
+**引擎发版（tag `engine-v0.1.10` + 更新本仓 sync-engine 锚点）是用户决策**——
+当前 vendor wasm 为 dev 本地构建（含分割线规范），Release 上的 0.1.9 尚不含它。
 
 ## 硬性环境约束
 
