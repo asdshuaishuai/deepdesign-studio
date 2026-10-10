@@ -229,6 +229,12 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '演示导航交互图工具缺失（demoTapGraph/demoInbound/demoStartBoard）——请同步检查 O');
   assert(/const startAb=demoStartBoard\(\)/.test(script),
     '演示起点未按交互图判定（demoStartBoard）——请同步检查 O');
+  // 返回判定单源于引擎（session_interactions 导出 builtin back）——客户端
+  // isBackish 启发式已退役，重新出现即双源漂移（2026-10-11 用户决策）
+  assert(!/function isBackish/.test(script),
+    '客户端 isBackish 启发式已退役——返回判定单源于引擎 interactions 导出，请同步检查 O');
+  assert(/hit\.builtin==='back'/.test(script)&&/act==='back'/.test(script),
+    'playTap 未消费引擎 builtin back 导出——返回点击链路断裂，请同步检查 O');
 }
 
 /* 检查 P：引擎信息与 dev 渠道标识——本地集成模式（ENGINE_LOCAL 标记 → manifest
