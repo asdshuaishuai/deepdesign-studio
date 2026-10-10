@@ -3518,15 +3518,12 @@ function attachPlayHotZones(){
   const wrap=document.querySelector(frameSel(active));
   if(!wrap)return;
   const body=wrap.querySelector('.frame-body');
-  const sess=sessions[active];
   const graph=flows;
+  // 热区清单来源：出边 flow + 引擎 interactions 导出（含 builtin back——返回类
+  // 节点由引擎 is_back_like_node 判定并导出，客户端启发式 isBackish 已退役，
+  // 2026-10-11 用户决策：热区是热区，UI 是 UI；返回判定单源于引擎）
   const linked=new Set(graph.filter(f=>f.from===active).map(f=>(f.trigger||'').replace('tap:','')));
   (playIx[active]||[]).forEach(n=>linked.add(n));
-  // 强制返回（2026-09 用户反馈）：形似返回的元素即使未接 flow/interact 也挂热区——
-  // 点击走 playTap 的 playBack 兜底，演示绝不因漏接而只能靠操作栏返回
-  (sess&&Array.isArray(sess.nodes)?sess.nodes:[]).forEach(n=>{
-    if(isBackish(n.id,n.text))linked.add(n.id);
-  });
   const s=parseFloat(wrap.dataset.displayScale)||1;
   (sess&&Array.isArray(sess.nodes)?sess.nodes:[]).forEach(n=>{
     if(!linked.has(n.id)||!n.rect||!n.rect.w)return;
@@ -3644,11 +3641,13 @@ async function playTap(fromAb,nodeId){
   const graph=flows;
   const f=graph.find(x=>x.from===fromAb&&x.trigger==='tap:'+nodeId);
   if(f){playNavAnim('fwd');playStack.push(f.to);active=f.to;playApplySession(f.to);await renderStage();setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');return;}
-  // flows 未命中 → 回退 interact 标记（引擎 tap 解析顺序 flow → marker）
+  // flows 未命中 → 回退引擎交互清单（引擎 tap 解析顺序 flow → marker → 内置返回；
+  // 清单由 session_interactions 导出，含 ⚡ 标记与 builtin back）
   const hit=(playIxHits[fromAb]||[]).find(x=>x.node===nodeId&&x.trigger==='tap');
   if(hit){
     const act=hit.action||'';
-    if(act==='back'){playBack();return;}
+    // 内置返回（引擎导出 builtin:'back'）与显式 back 标记：弹演示栈回上一页
+    if(act==='back'||hit.builtin==='back'){playBack();return;}
     if(act.startsWith('navigate_to:')){
       const to=act.slice('navigate_to:'.length);
       if(sessions[to]){playNavAnim('fwd');playStack.push(to);active=to;playApplySession(to);await renderStage();setStatus('human',`▶ ${nodeId} → ${to}`,true,'播放导航（interact）');}
@@ -3672,23 +3671,15 @@ async function playTap(fromAb,nodeId){
     toast(`动作 ${act} 暂不支持演示播放`);
     return;
   }
-  // 强制返回能力（2026-09 用户反馈）：形似返回的元素（id/文案含 back/prev/返回/← 等）
-  // 即使模型漏接 flow/interact，热区已在挂载层补齐；此处兜底执行 playBack。
-  // 词边界匹配防误判：'background' 含 'back' 但不是返回钮。
-  const tnode=(sessions[fromAb]&&Array.isArray(sessions[fromAb].nodes)?sessions[fromAb].nodes:[]).find(x=>x.id===nodeId);
-  if(isBackish(nodeId,tnode&&tnode.text)){setStatus('human',`▶ ${nodeId} → 返回（强制）`,true,'播放导航');playNavAnim('back');playBack();return;}
+  // 引擎清单未命中（playIx 为空/缺失）：无 flow 可去的节点点击无交互——
+  // 客户端 isBackish 启发式已退役（2026-10-11）：返回判定单源于引擎
+  // session_interactions 导出（builtin back），不在客户端复制词表
   toast(`「${nodeId}」未链接交互流`);
 }
 /* back 形元素判定：id 词边界 back/prev/return，或文案 = 返回/后退/上一步/back/箭头。
  * 'background' 这类 id 不会误判（要求 back 两侧是词边界）。 */
-function isBackish(id,text){
-  const idl=String(id||'').toLowerCase();
-  const t=String(text||'').trim().toLowerCase();
-  return /(^|[_-])(back|prev|return)([_-]|$)/.test(idl)
-    ||['返回','后退','上一步','back','←','‹','«'].includes(t)
-    ||t.startsWith('返回')
-    ||(t.length<=3&&/[←‹«]/.test(t));
-}
+/* back 判定已下沉引擎（is_back_like_node + interactions 导出 builtin back，
+ * 2026-10-11 客户端 isBackish 启发式退役）：演示热区与点击都消费引擎清单。 */
 function playBack(){
   /* 演示模式铁律（2026-09 用户反馈）：热区返回永远追随 link/栈行为，绝不退出演示。
    * 栈底返回（2026-10-10 升级）：先看交互图——当前画板若有入边（其他页面链接到它），
