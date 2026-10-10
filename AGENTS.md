@@ -148,10 +148,12 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 工作区**：`git -C ../moonviz worktree add ../moonviz-dev dev` 切 dev worktree，
 `cd moonviz-dev/core && moon test -p core` 全绿后
 `cd .. && moon build --release --target wasm wasm` 构建，然后
-`MOONVIZ_WASM_PATH=../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm node scripts/sync-engine.mjs`
-接回本仓——本地构建 sha 必然异于发布锚点，脚本会提示「非发布锚点，探针把关」，
-**契约探针是本地构建的唯一守门员**（导出面/模板/组件逐个 place/27 session 实跑）。
-不带该环境变量跑 sync 仍锚定 GitHub Releases 发布产物，两者互不干扰。
+`node scripts/sync-engine.mjs --local ../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm`
+接回本仓。**本地集成模式（用户决策 2026-10-10，测试期默认）**：`--local` 写
+`frontend/vendor/ENGINE_LOCAL` 标记（gitignored），此后一切 sync——包括
+beforeBuildCommand / dev.sh 的无环境变量调用——持续使用该本地构建，rebuild
+不再被 Release 产物静默覆盖；本地 sha 必然异于发布锚点，脚本提示「非发布锚点，
+探针把关」，**契约探针是本地构建的唯一守门员**。删除标记文件即恢复 Release 锚定。
 
 规范线现状（已在 `dev`，`8d64d09`）：`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、
 高 ≥ 字号+20；圆角档：按钮族 8、胶囊 高/2、avatar 999；全宽条/全宽行直角；
@@ -159,8 +161,10 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 critique 结构性偏差置顶，auto_fix 在行底插 1px divider 子节点，零门风险）
 + `critique` 第 9 维 `norms`（给 Agent 建议尺寸）+ `auto_fix` 规范预修 +
 `list_components` 携带 `norm` 字段（components.json 快照已透传）。
-**引擎发版（tag `engine-v0.1.10` + 更新本仓 sync-engine 锚点）是用户决策**——
-当前 vendor wasm 为 dev 本地构建（含分割线规范），Release 上的 0.1.9 尚不含它。
+**版本与发版（用户决策 2026-10-10）**：引擎版本维持 **0.1.9** 不动——当前修复
+（列表分割线规范等）**只在 dev 与本地集成，不发布**；等用户本测试轮结束再决策
+发版（届时 Release 资产须重出，sync-engine 锚点随之更新）。deepDesign 侧 vendor
+wasm 现为 dev 本地构建（含全部规范），Release 上的 0.1.9 产物不含分割线规范。
 
 ## 硬性环境约束
 
