@@ -131,6 +131,12 @@
   "Creating board {name} from template",
   "Création de la planche {name} depuis un modèle"
  ],
+ "修复双击编辑文字提交失败（影响所有用户）": [
+  "ダブルクリック編集のコミット失敗を修正（全ユーザーに影響）",
+  "더블클릭 텍스트 편집 커밋 실패 수정(모든 사용자 영향)",
+  "Fixed double-click text editing failing to commit (affected all users)",
+  "Correction de l'échec de validation de l'édition par double-clic (affectait tous les utilisateurs)"
+ ],
  "关于": [
   "について",
   "정보",
@@ -323,6 +329,12 @@
   "Onboarding",
   "Onboarding"
  ],
+ "引擎升级 0.1.8：多画板撤销修复": [
+  "エンジン 0.1.8 に更新：複数アートボードの取り消しを修正",
+  "엔진 0.1.8 업그레이드: 다중 아트보드 실행 취소 수정",
+  "Engine upgraded to 0.1.8: multi-artboard undo fix",
+  "Moteur mis à jour en 0.1.8 : correction de l'annulation multi-planches"
+ ],
  "当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。": [
   "未保存の変更（ソース草案を含む）があります。新しいファイルを開くと破棄されます。",
   "저장되지 않은 변경(소스 초안 포함)이 있습니다. 새 파일을 열면 버려집니다.",
@@ -364,6 +376,12 @@
   "변경 사항 버리기",
   "Discard Changes",
   "Abandonner les modifications"
+ ],
+ "更新日志": [
+  "更新履歴",
+  "업데이트 로그",
+  "Changelog",
+  "Journal des modifications"
  ],
  "未保存的更改": [
   "変更未保存",
@@ -455,6 +473,12 @@
   "Template ",
   "Modèle "
  ],
+ "步数上限可调（200/500/1000/2000）": [
+  "ステップ上限を調整可能（200/500/1000/2000）",
+  "단계 상한 조정 가능(200/500/1000/2000)",
+  "Adjustable step limit (200/500/1000/2000)",
+  "Limite de pas ajustable (200/500/1000/2000)"
+ ],
  "注册页": [
   "サインアップページ",
   "회원가입 페이지",
@@ -484,6 +508,18 @@
   "보드 목록 조회",
   "Listing boards",
   "Liste des planches"
+ ],
+ "演示模式与 Neu 主题修复": [
+  "デモモードと Neu テーマの修正",
+  "데모 모드 및 Neu 테마 수정",
+  "Demo mode and Neu theme fixes",
+  "Corrections du mode démo et du thème Neu"
+ ],
+ "版本号统一：仓库根 VERSION 文件为唯一事实源": [
+  "バージョン番号を統一：リポジトリ直下の VERSION ファイルが唯一の情報源",
+  "버전 번호 통일: 저장소 루트 VERSION 파일이 유일한 기준",
+  "Unified versioning: the repository-root VERSION file is the single source of truth",
+  "Version unifiée : le fichier VERSION à la racine du dépôt est la source unique de vérité"
  ],
  "画板 {id} 已删除": [
   "ボード {id} を削除しました",
@@ -587,6 +623,18 @@
   "In-process WASM engine host",
   "Hôte moteur WASM intra-processus"
  ],
+ "闲置画板清扫：Agent run 前后自动清理空占位": [
+  "アイドルアートボードの清掃：Agent run の前後で空きプレースホルダーを自動削除",
+  "유휴 아트보드 정리: Agent 실행 전후로 빈 자리표시자 자동 정리",
+  "Idle artboard sweep: empty placeholders cleaned around Agent runs",
+  "Nettoyage des planches inactives : les espaces réservés vides sont purgés autour des exécutions de l'agent"
+ ],
+ "鸿蒙版首发；Linux 提供 deb 与 AppImage（玲珑下线）": [
+  "HarmonyOS 版を初公開。Linux は deb と AppImage を提供（linyaps 廃止）",
+  "HarmonyOS 버전 첫 공개; Linux는 deb 및 AppImage 제공(링롱폐지)",
+  "HarmonyOS debut; Linux ships deb and AppImage (linglong retired)",
+  "Première version HarmonyOS ; Linux fournit deb et AppImage (linglong abandonné)"
+ ],
  "（使用之前保存的配置）": [
   "（保存済みの設定を使用）",
   " (저장된 설정 사용)",
@@ -599,52 +647,28 @@
   "Keep at least one board",
   "Gardez au moins une planche"
  ],
- "更新日志": [
-  "更新履歴",
-  "업데이트 로그",
-  "Changelog",
-  "Journal des modifications"
+ "引擎": [
+  "エンジン",
+  "엔진",
+  "Engine",
+  "Moteur"
  ],
- "修复双击编辑文字提交失败（影响所有用户）": [
-  "ダブルクリック編集のコミット失敗を修正（全ユーザーに影響）",
-  "더블클릭 텍스트 편집 커밋 실패 수정(모든 사용자 영향)",
-  "Fixed double-click text editing failing to commit (affected all users)",
-  "Correction de l'échec de validation de l'édition par double-clic (affectait tous les utilisateurs)"
+ "引擎版本": [
+  "エンジンバージョン",
+  "엔진 버전",
+  "Engine version",
+  "Version du moteur"
  ],
- "版本号统一：仓库根 VERSION 文件为唯一事实源": [
-  "バージョン番号を統一：リポジトリ直下の VERSION ファイルが唯一の情報源",
-  "버전 번호 통일: 저장소 루트 VERSION 파일이 유일한 기준",
-  "Unified versioning: the repository-root VERSION file is the single source of truth",
-  "Version unifiée : le fichier VERSION à la racine du dépôt est la source unique de vérité"
+ "集成模式": [
+  "統合モード",
+  "통합 모드",
+  "Integration mode",
+  "Mode d'intégration"
  ],
- "引擎升级 0.1.8：多画板撤销修复": [
-  "エンジン 0.1.8 に更新：複数アートボードの取り消しを修正",
-  "엔진 0.1.8 업그레이드: 다중 아트보드 실행 취소 수정",
-  "Engine upgraded to 0.1.8: multi-artboard undo fix",
-  "Moteur mis à jour en 0.1.8 : correction de l'annulation multi-planches"
- ],
- "鸿蒙版首发；Linux 提供 deb 与 AppImage（玲珑下线）": [
-  "HarmonyOS 版を初公開。Linux は deb と AppImage を提供（linyaps 廃止）",
-  "HarmonyOS 버전 첫 공개; Linux는 deb 및 AppImage 제공(링롱폐지)",
-  "HarmonyOS debut; Linux ships deb and AppImage (linglong retired)",
-  "Première version HarmonyOS ; Linux fournit deb et AppImage (linglong abandonné)"
- ],
- "闲置画板清扫：Agent run 前后自动清理空占位": [
-  "アイドルアートボードの清掃：Agent run の前後で空きプレースホルダーを自動削除",
-  "유휴 아트보드 정리: Agent 실행 전후로 빈 자리표시자 자동 정리",
-  "Idle artboard sweep: empty placeholders cleaned around Agent runs",
-  "Nettoyage des planches inactives : les espaces réservés vides sont purgés autour des exécutions de l'agent"
- ],
- "步数上限可调（200/500/1000/2000）": [
-  "ステップ上限を調整可能（200/500/1000/2000）",
-  "단계 상한 조정 가능(200/500/1000/2000)",
-  "Adjustable step limit (200/500/1000/2000)",
-  "Limite de pas ajustable (200/500/1000/2000)"
- ],
- "演示模式与 Neu 主题修复": [
-  "デモモードと Neu テーマの修正",
-  "데모 모드 및 Neu 테마 수정",
-  "Demo mode and Neu theme fixes",
-  "Corrections du mode démo et du thème Neu"
+ "引擎来源": [
+  "エンジンソース",
+  "엔진 소스",
+  "Engine source",
+  "Source du moteur"
  ]
 }
