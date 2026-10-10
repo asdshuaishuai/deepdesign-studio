@@ -3021,9 +3021,11 @@ function setMode(m){
   ['wireframe','hifi','decl'].forEach(x=>{const b=$('mode-'+x);if(b)b.classList.toggle('on',x===m);});
   $('decl-stage').style.display=m==='decl'?'flex':'none';
   if(m==='play'){
-    // 演示永远从起点页开始（2026-09 用户定则）：与当前选中/编辑画板无关。
-    // entry 缺失回退第一块画板；重入 play（已在演示中）不打断当前位置。
-    const startAb=(projectEntry&&sessions[projectEntry])?projectEntry:(Object.keys(sessions)[0]||active);
+    // 演示起点按实际交互逻辑判定（2026-10-10 升级「起点页」定则）：
+    // 声明 entry 且确为交互根（无入边）→ 从它开始；否则取交互根；
+    // tab 互链成环（无根）→ 取出边扇出最大的枢纽页。弱模型常把 entry
+    // 写成细节页——照抄会把用户困死在栈底（返回无效）。重入 play 不打断。
+    const startAb=demoStartBoard();
     if(mode!=='play'){playStack=[startAb];if(active!==startAb){active=startAb;playApplySession(startAb);}}
     renderStage();
     // interact 绑定异步预热：就绪后热区补挂（flows 热区已在 renderStage 同步挂好）；
@@ -3689,15 +3691,57 @@ function isBackish(id,text){
 }
 function playBack(){
   /* 演示模式铁律（2026-09 用户反馈）：热区返回永远追随 link/栈行为，绝不退出演示。
-   * 栈底（起始画板）再点返回 → 仅提示；退出唯一入口是「退出演示」按钮/Esc。 */
+   * 栈底返回（2026-10-10 升级）：先看交互图——当前画板若有入边（其他页面链接到它），
+   * 返回 = 回到来源页（根据实际的交互逻辑判断，而非「演示从哪页开始就哪页是栈底」，
+   * 2026-10-10 用户反馈：选中第二页进演示返回无效）。真正的交互根才提示不可用；
+   * 退出唯一入口是「退出演示」按钮/Esc。 */
   const stage=$('stage');
   if(playStack.length>1){
     if(stage)playNavAnim('back');
     playStack.pop();active=playStack[playStack.length-1];playApplySession(active);renderStage();
   }else{
-    toast('已是起始页 · 返回不可用（退出演示请点右上角按钮）');
-    setStatus('human','▶ 栈底返回被拦截（演示不退出）',true,'播放导航');
+    const srcs=demoInbound(active);
+    if(srcs.length){
+      const s=srcs[srcs.length-1];
+      if(stage)playNavAnim('back');
+      playStack=[s];active=s;playApplySession(s);renderStage();
+      setStatus('human','▶ 返回 '+s+'（按交互流回退）',true,'播放导航');
+    }else{
+      toast('已是起始页 · 返回不可用（退出演示请点右上角按钮）');
+      setStatus('human','▶ 栈底返回被拦截（演示不退出）',true,'播放导航');
+    }
   }
+}
+/* 演示导航的交互图工具：从 flows 建入边表与扇出统计（自环不计入入边，
+ * 无出边的画板不算来源）。「演示起点」与「栈底返回」都按此图判定。 */
+function demoTapGraph(){
+  const keys=Object.keys(sessions);
+  const ks=new Set(keys);
+  const out={},inn={};
+  flows.forEach(f=>{
+    const t=f.trigger||'';
+    if(!t.startsWith('tap:'))return;
+    if(!ks.has(f.from)||!ks.has(f.to))return;
+    (out[f.from]=out[f.from]||new Set()).add(f.to);
+    if(f.from!==f.to)(inn[f.to]=inn[f.to]||new Set()).add(f.from);
+  });
+  return {keys,out,inn};
+}
+function demoInbound(ab){
+  const {inn}=demoTapGraph();
+  return inn[ab]?[...inn[ab]]:[];
+}
+function demoStartBoard(){
+  const {keys,out,inn}=demoTapGraph();
+  if(!flows.length)return (projectEntry&&sessions[projectEntry])?projectEntry:(keys[0]||active);
+  // 交互根：无入边（tab 互链成环时无根）
+  const roots=keys.filter(k=>!inn[k]);
+  if(projectEntry&&sessions[projectEntry]&&!inn[projectEntry])return projectEntry;
+  if(roots.length)return roots.includes(projectEntry)?projectEntry:roots[0];
+  // 无根（tab 全互链）：取出边扇出最大的枢纽页
+  let best=keys[0],bestN=-1;
+  keys.forEach(k=>{const n=out[k]?out[k].size:0;if(n>bestN){bestN=n;best=k;}});
+  return best;
 }
 /* 演示切页方向动画：renderStage 重建 DOM 前 给 stage 挂方向类，
  * CSS 只在 body.mode-play 下对 active 画板播放（编辑视图不受影响） */

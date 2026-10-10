@@ -223,6 +223,12 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'play-hide-hot 未隐藏热区覆盖层——请同步检查 O');
   assert(/flow-hot-outline/.test(script),
     'renderStage 未注入热区覆盖 rect（flow-hot-outline）——请同步检查 O');
+  // 演示起点与栈底返回按交互图判定（demoStartBoard/demoInbound）——否则
+  // 「选中第二页进演示」会把入口/细节页当栈底，返回无效（2026-10-10 实测）
+  assert(/function demoTapGraph\(/.test(script)&&/function demoInbound\(/.test(script)&&/function demoStartBoard\(/.test(script),
+    '演示导航交互图工具缺失（demoTapGraph/demoInbound/demoStartBoard）——请同步检查 O');
+  assert(/const startAb=demoStartBoard\(\)/.test(script),
+    '演示起点未按交互图判定（demoStartBoard）——请同步检查 O');
 }
 
 /* 检查 P：引擎信息与 dev 渠道标识——本地集成模式（ENGINE_LOCAL 标记 → manifest
