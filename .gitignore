@@ -4,3 +4,4 @@ frontend/vendor/engine-manifest.json
 src-tauri/gen/
 dist/
 rust-core/.cargo/
+frontend/vendor/ENGINE_LOCAL
