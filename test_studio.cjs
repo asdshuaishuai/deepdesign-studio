@@ -207,6 +207,24 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     `更新日志顶端条目 (v${topVer}) 与 APP_VER (v${appVer}) 不一致——发新版须在 RELEASE_NOTES 顶端补条目，请同步检查 N`);
 }
 
+/* 检查 O：热区标注与 UI 解耦——热区是热区，UI 是 UI。
+ * 旧实现把交互标注直接刷在 UI 节点本体上（g[data-flow-trigger]>rect 改描边、
+ * >text 改字色），「隐藏热区」更是把 UI 的 rect/text 刷透明——一隐藏整个
+ * 原型白板（2026-10-10 实测）。锁死两条：交互标注只允许画在独立覆盖层
+ * （.flow-hot-outline）；play-hide-hot 只允许隐藏热区层，不得触碰 UI 本体。 */
+{
+  assert(!/g\[data-flow-trigger\]\s*>\s*(rect|text)\s*\{/.test(html),
+    '热区标注不得改写 UI 节点本体（g[data-flow-trigger]>rect/text 选择器已废）——交互标注必须走 .flow-hot-outline 独立覆盖层，请同步检查 O');
+  assert(!/play-hide-hot[^{]*>\s*(rect|text)\s*\{/.test(html),
+    'play-hide-hot 只允许隐藏热区标注层（.pm-hot / .flow-hot-outline），不得把 UI 本体刷透明，请同步检查 O');
+  assert(/\.frame-wrap svg g\[data-flow-trigger\] \.flow-hot-outline\{[^}]*stroke:#22C55E/.test(html),
+    '热区覆盖层样式缺失（.flow-hot-outline 虚线描边）——请同步检查 O');
+  assert(/body\.play-hide-hot \.frame-wrap svg \.flow-hot-outline\{display:none\}/.test(html),
+    'play-hide-hot 未隐藏热区覆盖层——请同步检查 O');
+  assert(/flow-hot-outline/.test(script),
+    'renderStage 未注入热区覆盖 rect（flow-hot-outline）——请同步检查 O');
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');
