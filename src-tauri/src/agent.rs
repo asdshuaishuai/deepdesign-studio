@@ -104,6 +104,12 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
    Use "interact" for anything richer than navigation (show_toast, set_state, haptic, play_sound) —
    and define the target with "state" first if you want a pressed/selected visual.
+   Interaction and visuals are separate layers: bind flows to the container the user
+   actually taps (the row, the button, the card) — never to an inner text fragment —
+   and NEVER model interaction state through fill/stroke/text changes. The editor
+   draws tap-target hot zones from these bindings as its own overlay; a node whose
+   whole visual is one rect+label (list rows, tab bars) must still be a complete,
+   self-contained visual, because hot-zone markers come and go independently of it.
 5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired; no dangling refs.
    Run "fix <artboard>" if violations accumulated. Agent ops are gate-checked:
    violations are rejected outright with mbt_gate_block (debt tolerance is human-canvas only).

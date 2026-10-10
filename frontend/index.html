@@ -516,15 +516,16 @@ body.play-ink-mode .ink-layer{pointer-events:auto}
 body.play-ink-mode .pm-hot{pointer-events:none}
 .play-bar .pb-toggle.on{color:var(--acc-tx);border-color:color-mix(in srgb,var(--acc) 55%,transparent);background:color-mix(in srgb,var(--acc) 10%,transparent)}
 .pm-hot{position:absolute;z-index:6;cursor:pointer;border-radius:10px;outline:2px dashed rgba(40,167,69,.85);outline-offset:2px}
-/* 演示「隐藏热区」开关：热区层保持可点，仅隐藏绿虚线视觉（真实成品观感） */
+/* 演示「隐藏热区」开关：只隐藏热区标注层（pm-hot 外框 + flow-hot-outline 覆盖
+   rect），UI 节点的描边与文字永不随交互态变化——热区是热区，UI 是 UI
+   （2026-10-10 用户决策；旧实现直接把 UI rect/text 刷透明，「隐藏热区」即白板，已废） */
 body.play-hide-hot .pm-hot{outline-color:transparent}
 body.play-hide-hot .pm-hot:hover{background:transparent!important}
-body.play-hide-hot .frame-wrap svg g[data-flow-trigger]>rect{stroke:transparent}
-body.play-hide-hot .frame-wrap svg g[data-flow-trigger]>text{fill:transparent}
-/* 交互逻辑标注：带 flow 触发的按钮在编辑视图常显绿色虚线描边 */
+body.play-hide-hot .frame-wrap svg .flow-hot-outline{display:none}
+/* 交互逻辑标注：flow 触发节点的热区覆盖层——独立 rect 叠在 UI 之上，
+   不触碰 UI 本体的描边与字色 */
 .frame-wrap svg g[data-flow-trigger]{cursor:pointer}
-.frame-wrap svg g[data-flow-trigger]>rect{stroke:#22C55E;stroke-width:3;stroke-dasharray:6 3}
-.frame-wrap svg g[data-flow-trigger]>text{fill:#1F7A38}
+.frame-wrap svg g[data-flow-trigger] .flow-hot-outline{fill:none;stroke:#22C55E;stroke-width:3;stroke-dasharray:6 3;pointer-events:none}
 .pm-hot:hover{background:rgba(40,167,69,.12)}
 /* 演示切页过渡：前进左滑入 / 返回右滑入（仅 play 模式，编辑渲染不受影响） */
 body.mode-play .stage.nav-fwd .frame-wrap.active{animation:playInFwd .22s cubic-bezier(.22,.61,.36,1)}
@@ -1847,11 +1848,30 @@ function renderStage(){
       body.innerHTML=sanitizeSvg(sourceSvg).replace('<svg ','<svg preserveAspectRatio="xMidYMid meet" ');
       const svg=body.querySelector('svg');
       if(svg){svg.style.width='100%';svg.style.height='100%';}
-      // 交互逻辑标注：给带 flow 触发的按钮组挂 data-flow-trigger（绿虚线常显）
+      // 交互逻辑标注：给带 flow 触发的节点挂 data-flow-trigger + 独立热区覆盖
+      // rect（编辑态常显）。热区是热区，UI 是 UI：绿虚线画在覆盖层上，UI 本体
+      // 的描边与字色永不被改写——旧实现直接刷 UI 的 rect/text，「隐藏热区」
+      // 等于把 UI 刷透明（白板）。演示模式的可点热区另有 pm-hot 层，不重复画。
       const fgraph=flows;
       const flinked=new Set(fgraph.filter(x=>x.from===id).map(x=>(x.trigger||'').replace('tap:','')));
-      if(flinked.size&&svg)svg.querySelectorAll('g[id^="n_"]').forEach(g=>{
-        if(flinked.has(g.id.slice(2)))g.setAttribute('data-flow-trigger','');
+      if(flinked.size&&svg&&mode!=='play')svg.querySelectorAll('g[id^="n_"]').forEach(g=>{
+        if(!flinked.has(g.id.slice(2)))return;
+        g.setAttribute('data-flow-trigger','');
+        let m=g.querySelector('rect.flow-hot-outline');
+        if(!m){
+          m=document.createElementNS('http://www.w3.org/2000/svg','rect');
+          m.setAttribute('class','flow-hot-outline');
+          m.setAttribute('pointer-events','none');
+          g.appendChild(m);
+        }
+        try{
+          const base=g.querySelector('rect:not(.flow-hot-outline)')||g.querySelector('text');
+          if(base){
+            const b=base.getBBox();
+            m.setAttribute('x',b.x);m.setAttribute('y',b.y);
+            m.setAttribute('width',b.width);m.setAttribute('height',b.height);
+          }
+        }catch(_){ }
       });
       if(isActive)bindStageSvg(svg);
     }else body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#a1a1aa;font-size:11px">MBT 渲染结果缺失</div>';
