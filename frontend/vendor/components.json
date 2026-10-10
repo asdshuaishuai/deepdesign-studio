@@ -258,7 +258,7 @@
       56
     ],
     "description": "列表行（text 为标题）。",
-    "norm": "高 56~76；全宽直角（radius 0），内缩卡片式才用圆角 10~12"
+    "norm": "高 56~76；全宽直角（radius 0）；成排堆叠时行间要有 1px divider 或按功能分组"
   },
   {
     "id": "tab_bar",
