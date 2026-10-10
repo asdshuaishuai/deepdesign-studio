@@ -36,6 +36,10 @@ const NEW_ENTRIES={
   /* ── 设置「关于」页（全平台可见；macOS 另有系统级 About，版本同源 APP_VER）── */
   '关于':['について','정보','About','À propos'],
   '更新日志':['更新履歴','업데이트 로그','Changelog','Journal des modifications'],
+  '引擎':['エンジン','엔진','Engine','Moteur'],
+  '引擎版本':['エンジンバージョン','엔진 버전','Engine version','Version du moteur'],
+  '集成模式':['統合モード','통합 모드','Integration mode',"Mode d'intégration"],
+  '引擎来源':['エンジンソース','엔진 소스','Engine source','Source du moteur'],
   '开源感谢':['オープンソース謝辞','오픈소스 감사','Open Source Acknowledgements','Remerciements open source'],
   'AI 原生原型设计工具':['AI ネイティブプロトタイピングツール','AI 네이티브 프로토타이핑 도구','AI-native prototyping tool','Outil de prototypage IA natif'],
   '人类画布操作与 Agent 修改都经 MoonViz 引擎双门校验，回写同一份 .mbt.md 视觉文档；.ddp 是它的认证加密容器。':['キャンバス操作も Agent の変更も MoonViz エンジンの二重ゲートで検証され、同一の .mbt.md ビジュアル文書に書き戻されます。.ddp はその認証暗号化コンテナです。','캔버스 조작과 Agent 변경 모두 MoonViz 엔진의 이중 게이트로 검증되어 동일한 .mbt.md 비주얼 문서에 기록됩니다. .ddp는 해당 인증 암호화 컨테이너입니다.','Canvas edits and Agent changes are both validated by the MoonViz engine dual gates and written back to the same .mbt.md visual document; .ddp is its authenticated encrypted container.',"Les modifications du canevas comme celles de l'agent sont validées par les doubles gardes du moteur MoonViz puis réécrites dans le même document visuel .mbt.md ; .ddp en est le conteneur chiffré authentifié."],

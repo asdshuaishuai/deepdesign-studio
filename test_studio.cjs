@@ -225,6 +225,21 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'renderStage 未注入热区覆盖 rect（flow-hot-outline）——请同步检查 O');
 }
 
+/* 检查 P：引擎信息与 dev 渠道标识——本地集成模式（ENGINE_LOCAL 标记 → manifest
+ * releaseTag='local-dev'）下顶栏常显 DEV 徽标，关于页展示引擎版本/集成模式/来源
+ * （用户决策 2026-10-10：dev 渠道明确化）。信息源 vendor/engine-manifest.json 与
+ * wasm 同批写入、不会漂移；徽标缺失=测试期分不清本地构建与正式发布。 */
+{
+  assert(/function initEngineInfo\(/.test(script)&&/function renderEngineInfo\(/.test(script),
+    '引擎信息函数缺失（initEngineInfo/renderEngineInfo）——请同步检查 P');
+  assert(/initEngineInfo\(\);/.test(script),
+    'initEngineInfo 未在启动路径调用——dev 渠道标识失效，请同步检查 P');
+  assert(/id="dev-chip"/.test(html)&&/id="eng-ver"/.test(html)&&/id="eng-mode"/.test(html)&&/id="eng-src"/.test(html),
+    'dev 徽标/引擎信息 UI（dev-chip/eng-ver/eng-mode/eng-src）缺失——请同步检查 P');
+  assert(/releaseTag==='local-dev'/.test(script),
+    'dev 渠道判定缺失（releaseTag local-dev）——请同步检查 P');
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');
