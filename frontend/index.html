@@ -358,6 +358,12 @@ body[data-mode="dark"] .empty-insp kbd{background:rgba(255,255,255,.07);border-c
 @keyframes tlFinalPop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
 .tl-final-ic{width:24px;height:24px;border-radius:50%;background:#10B981;color:#fff;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 2px 10px rgba(16,185,129,.5)}
 body[data-mode="dark"] .tl-final{color:#D1FAE5;background:linear-gradient(120deg,rgba(16,185,129,.26),rgba(52,211,153,.1))}
+/* 异常终止变体：红胶囊（步数耗尽 / 中途失败）——与绿色完成卡构成二元终态语义，
+   轨迹必须显式回答「运行结束了没有、正常与否」 */
+.tl-final.abnormal{color:#7F1D1D;background:linear-gradient(120deg,rgba(239,68,68,.24),rgba(252,165,165,.12));
+  border-color:rgba(220,38,38,.55);box-shadow:0 8px 28px rgba(220,38,38,.2)}
+.tl-final.abnormal .tl-final-ic{background:#DC2626;box-shadow:0 2px 10px rgba(220,38,38,.5)}
+body[data-mode="dark"] .tl-final.abnormal{color:#FECACA;background:linear-gradient(120deg,rgba(220,38,38,.26),rgba(239,68,68,.1))}
 /* 中间产物视图 */
 .declview{font-family:ui-monospace;font-size:11px;line-height:1.6;color:#2d3748;white-space:pre-wrap;word-break:break-all;background:#fff;border:1px solid rgba(0,0,0,.09);border-radius:var(--r-lg);padding:11px;max-height:calc(100vh - 240px);overflow:auto}
 .decl-actions{display:flex;gap:6px;margin-top:8px}
@@ -2777,21 +2783,38 @@ function ensureTraceListener(){
     }
     if(p.type==='done'){
       if(p.stopReason==='clarify'){appendTraceLine(box,'■ 需要澄清——在下方回答后再次生成','tl-done');return;}
-      const fin=document.createElement('div');
-      fin.className='tl-final';
       const boardsTxt=p.boards?` · 画板 ${p.boards}`:'';
       const cleanTxt=(Array.isArray(p.cleanup)&&p.cleanup.length)?` · 清理闲置画板 ${p.cleanup.length}`:'';
-      fin.innerHTML=`<span class="tl-final-ic">✔</span><span class="tl-final-tx">运行完成 · ${p.ops} ops${boardsTxt}${cleanTxt}</span>`;
-      box.appendChild(fin);
-      const sc=box.closest('.rpanel')||box.parentElement;
-      if(sc)sc.scrollTop=sc.scrollHeight;
+      if(p.stopReason==='max_turns'){
+        // 异常终止（步数耗尽）：红卡显式呈现——此前该路径时间线静默，用户无法
+        // 分辨运行是否结束、正常还是异常（Rust 侧现已为此路径补发 done 终态事件）
+        traceFinalCard(box,false,`异常终止 · 已达步数上限 — 已提交 ${p.ops||0} ops${boardsTxt}，结果可能不完整`);
+      }else{
+        traceFinalCard(box,true,`运行完成 · ${p.ops} ops${boardsTxt}${cleanTxt}`);
+      }
       return;
     }
-    if(p.type==='failed'){appendTraceLine(box,'■ 中断：'+p.error,'tl-err');return;}
+    if(p.type==='failed'){
+      // 中途失败（LLM 断连/无响应等）同为异常终态：升级为红卡终态——
+      // 原单行弱标志分不清「还在跑」与「已中断」
+      traceFinalCard(box,false,`异常终止 · ${escHtml(String(p.error||'未知错误').slice(0,120))} — 已完成部分已保留`);
+      return;
+    }
     if(p.type==='review'){appendTraceLine(box,'🔎 收尾审查：需求完整度 · 连线完整度 · 综合修复','tl-assist');return;}
   }).then(u=>{TRACE.un=u;}).catch(e=>console.warn('[trace] agent-event 监听注册失败（本窗口轨迹将空白）:',e));
 }
 let traceFlushRaf=0,tracePending=[];
+/* 终态卡（轨迹二元收尾语义）：绿=正常完成，红=异常终止（步数耗尽/中途失败）。
+ * 三种终态路径（done/max_turns/failed）都必须落一张卡——轨迹要显式回答
+ * 「运行结束了没有、正常与否」（2026-10-11 用户要求，此前 max_turns 路径静默） */
+function traceFinalCard(box,ok,tx){
+  const fin=document.createElement('div');
+  fin.className='tl-final'+(ok?'':' abnormal');
+  fin.innerHTML=`<span class="tl-final-ic">${ok?'✔':'✗'}</span><span class="tl-final-tx">${tx}</span>`;
+  box.appendChild(fin);
+  const sc=box.closest('.rpanel')||box.parentElement;
+  if(sc)sc.scrollTop=sc.scrollHeight;
+}
 function appendTraceLine(box,text,cls,id,title){
   tracePending.push({box,text,cls,id,title:title||''});
   if(traceFlushRaf)return;

@@ -1552,8 +1552,12 @@ pub async fn run_with_steps(
         }
     }
 
-    // 跑满步数：尽力返回当前状态
+    // 跑满步数：尽力返回当前状态。
+    // 轨迹终态事件必须显式发出——此前该路径零事件，前端时间线既不知道运行已结束、
+    // 更无法分辨正常/异常（stopReason 只存在于返回契约，实时轨迹看不到）
     state.ensure_render().await;
+    let boards_n = artboard_ids(state.mbt.as_deref().unwrap_or("")).len();
+    emit("done", json!({"stopReason": "max_turns", "ops": state.ops.len(), "boards": boards_n}));
     eprintln!("[agent] run end: stop=max_turns ops={}", state.ops.len());
     json!({
         "ok": state.mbt.is_some(),
@@ -1561,6 +1565,7 @@ pub async fn run_with_steps(
         "render": state.last_render.clone(),
         "ops": state.ops,
         "stopReason": "max_turns",
+        "boards": boards_n,
         "text": "",
     })
 }
@@ -2359,6 +2364,81 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let mbt = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
         assert!(mbt.contains("lg"), "canonical mbt 应含画板 lg");
         assert!(out["render"]["artboards"].is_array(), "render 应含 artboards");
+    }
+
+    /// 步数耗尽路径必须显式发出轨迹终态事件（done + stopReason=max_turns）——
+    /// 此前该路径零事件，前端时间线无法分辨运行是否结束、正常还是异常
+    /// （2026-10-11 用户反馈；mock 永远返回 tool_calls，小步数预算驱动耗尽）。
+    #[tokio::test]
+    async fn agent_max_turns_emits_terminal_trace_event() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mock = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            loop {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut raw = Vec::new();
+                let mut chunk = [0u8; 16384];
+                loop {
+                    let n = match sock.read(&mut chunk).await { Ok(0) | Err(_) => break, Ok(n) => n };
+                    raw.extend_from_slice(&chunk[..n]);
+                    let s = String::from_utf8_lossy(&raw).into_owned();
+                    if let Some(pos) = s.find("\r\n\r\n") {
+                        let body_start = pos + 4;
+                        if let Some(len) = s
+                            .lines()
+                            .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().to_string()))
+                            .and_then(|v| v.parse::<usize>().ok())
+                        {
+                            if raw.len() >= body_start + len { break; }
+                        }
+                    }
+                }
+                let body = serde_json::json!({
+                    "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                        {"id": "call_1", "type": "function", "function": {"name": "moonviz_op",
+                         "arguments": "{\"op\": \"template login lg\"}"}}
+                    ]}}]
+                });
+                let body = serde_json::to_string(&body).unwrap();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                sock.write_all(resp.as_bytes()).await.unwrap();
+            }
+        });
+        let events: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+        let progress = |v: Value| {
+            if let Ok(mut ev) = events.lock() {
+                ev.push(v);
+            }
+        };
+        let out = run_with_steps(
+            &ENGINE,
+            "建一个登录页",
+            None,
+            "sk-test",
+            "mock-model",
+            &format!("http://127.0.0.1:{port}"),
+            "auto",
+            Some(&progress),
+            3,
+        )
+        .await;
+        mock.abort();
+        let _ = mock.await;
+        assert_eq!(out["stopReason"], json!("max_turns"));
+        let ev = events.lock().unwrap();
+        let term = ev
+            .iter()
+            .find(|e| e["type"] == json!("done"))
+            .expect("轨迹缺 done 终态事件——步数耗尽路径在时间线上静默");
+        assert_eq!(term["stopReason"], json!("max_turns"));
+        assert_eq!(term["ops"], out["ops"].as_array().map(|a| json!(a.len())).unwrap_or(json!(0)));
     }
 
     /// 可复用 mock LLM：按顺序回放脚本化响应体，读完整请求后返回。

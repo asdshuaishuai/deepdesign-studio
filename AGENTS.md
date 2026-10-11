@@ -261,7 +261,9 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
 - **实时轨迹（agent-event 事件流）**：run() 循环每步经 progress 回调 → `app.emit("agent-event")`
   → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`tool_start`/`tool_end`
   （op、✓/✗、耗时、门拒绝详情）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。run id 由 lib.rs 注入每个事件（前端按它过滤归属），
-  **丢 run id = 时间线 100% 失效**（历史事故）。长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
+  **丢 run id = 时间线 100% 失效**（历史事故）。**终态二元卡（检查 Q 锚定）**：每条轨迹必须以终态卡收尾显式回答
+  「结束没有、正常与否」——`done`(stopReason=done) 绿卡完成；`done`(stopReason=max_turns，**步数耗尽路径必须发事件**，此前静默)
+  与 `failed`（LLM 中断/无响应）红卡异常终止（`traceFinalCard` 助手）。长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
   展开全文），与 gp-thread 面板、trackAgent 卡三处呈现同一事实，改呈现须同步折叠语义。
 - **Agent 运行中预览（preview）四重新鲜度校验**：Rust 每次成功 moonviz_op ≥1.5s 推一帧全量 canonical，
   前端 `schedulePreview`/`paintPreview` 同时校验 **run 归属 + preview_seq 序号 + generation + viewEpoch**——

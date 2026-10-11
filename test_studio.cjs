@@ -265,6 +265,23 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'dev 渠道判定缺失（releaseTag local-dev）——请同步检查 P');
 }
 
+/* 检查 Q：Agent 轨迹终态二元语义——绿=正常完成、红=异常终止（步数耗尽/中途失败）。
+ * 步数耗尽路径曾零事件（时间线静默，分不清运行是否结束）、failed 仅单行弱标志；
+ * Rust 侧必须为 max_turns 路径补发 done 终态事件，前端三种终态都必须落终态卡。 */
+{
+  const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
+  assert(agentRs.includes('"stopReason": "max_turns", "ops"'),
+    'agent.rs 步数耗尽路径未发 done 终态事件——轨迹静默回归，请同步检查 Q');
+  assert(/function traceFinalCard\(box,ok,tx\)/.test(script),
+    '轨迹终态卡助手 traceFinalCard 缺失——请同步检查 Q');
+  assert(/p\.stopReason==='max_turns'\)\{[\s\S]{0,260}traceFinalCard\(box,false,/.test(script),
+    'max_turns 未落异常终止红卡——请同步检查 Q');
+  assert(/p\.type==='failed'\)\{[\s\S]{0,300}traceFinalCard\(box,false,/.test(script.replace(/\n/g,'')),
+    'failed 未升级为异常终止终态卡（单行弱标志回归）——请同步检查 Q');
+  assert(/\.tl-final\.abnormal\{/.test(html),
+    '异常终止红卡样式（tl-final.abnormal）缺失——请同步检查 Q');
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');
