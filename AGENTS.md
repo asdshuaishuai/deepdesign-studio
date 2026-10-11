@@ -263,7 +263,9 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
   （op、✓/✗、耗时、门拒绝详情）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。run id 由 lib.rs 注入每个事件（前端按它过滤归属），
   **丢 run id = 时间线 100% 失效**（历史事故）。**终态二元卡（检查 Q 锚定）**：每条轨迹必须以终态卡收尾显式回答
   「结束没有、正常与否」——`done`(stopReason=done) 绿卡完成；`done`(stopReason=max_turns，**步数耗尽路径必须发事件**，此前静默)
-  与 `failed`（LLM 中断/无响应）红卡异常终止（`traceFinalCard` 助手）。长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
+  与 `failed`（LLM 中断/无响应）红卡异常终止（`traceFinalCard` 助手，内部统一 escHtml）；`failed` 事件携带 ops，
+  前端据此区分「已保留部分」与「零提交」；run 前置校验失败（api_key/base_url 等 Rust 零事件早退）由前端 `traceFailCard` 补落红卡。
+  长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
   展开全文），与 gp-thread 面板、trackAgent 卡三处呈现同一事实，改呈现须同步折叠语义。
 - **Agent 运行中预览（preview）四重新鲜度校验**：Rust 每次成功 moonviz_op ≥1.5s 推一帧全量 canonical，
   前端 `schedulePreview`/`paintPreview` 同时校验 **run 归属 + preview_seq 序号 + generation + viewEpoch**——
@@ -362,11 +364,14 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
   `export-svg` 的 `<g id="n_…">`，突破属性引号。所以：中文名会碰撞（画板侧），
   而节点 id 是**不可信字符串**，拼进 `innerHTML` 前必须转义（见 `escHtml`）。
 - **演示模式（play）进入态与导航栈（检查 R 锚定）**：`setMode` 的进入判定 `enteringPlay` 必须在
-  `mode=m` 赋值**前**捕获——曾写成 `mode!=='play'` 而当时 mode 已是新值，恒假死代码：演示栈从未
-  播种、`demoStartBoard`（交互根/枢纽页）从不生效，演示落在最后编辑的画板上（无出边交互即零热区
-  =2026-10-11「热区消失/失效」事故根因，2026-10-10「第二页进演示返回无效」同根因）。演示中点邻板
-  走 `playJump` 进栈（直接 switchSession 会造出栈外孤儿板，Esc/返回救不回）。热区清单=出边 flow ∪
-  引擎 `session_interactions` 导出（含 builtin back），返回判定单源于引擎。
+  `mode=m` 赋值**前**捕获（检查 R 用 indexOf 位置断言——仅存在性断言抓不住「挪到赋值后」的变异）
+  ——曾写成 `mode!=='play'` 而当时 mode 已是新值，恒假死代码：演示栈从未播种、`demoStartBoard`
+  （交互根/枢纽页）从不生效，演示落在最后编辑的画板上（无出边交互即零热区=2026-10-11「热区消失/
+  失效」事故根因，2026-10-10「第二页进演示返回无效」同根因）。前进导航（playTap 两分支）统一走
+  `playGo` 单点收口——进栈+切板+重渲染的栈不变量只写一处。演示模式 CSS 只显示活动画板
+  （`.frame-wrap:not(.active)` 为 display:none），不存在「点邻板」路径（曾为此加过 playJump，
+  审查证实不可达后已删，2026-10-11）。热区清单=出边 flow ∪ 引擎 `session_interactions` 导出
+  （含 builtin back），返回判定单源于引擎。
 - 拖拽、内联编辑、连接模式等交互最终都要落成一条引擎 op，不要在前端本地改 `nodes` 数组了事。
 
 ## 测试的脆弱点

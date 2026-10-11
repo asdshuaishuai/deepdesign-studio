@@ -272,30 +272,40 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
   const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
   assert(agentRs.includes('"stopReason": "max_turns", "ops"'),
     'agent.rs 步数耗尽路径未发 done 终态事件——轨迹静默回归，请同步检查 Q');
-  assert(/function traceFinalCard\(box,ok,tx\)/.test(script),
-    '轨迹终态卡助手 traceFinalCard 缺失——请同步检查 Q');
+  assert(agentRs.includes('"error": e, "ops": state.ops.len()'),
+    'failed 事件未携带 ops——前端无法区分「已保留部分」与「零提交」，请同步检查 Q');
+  assert(/function traceFinalCard\(box,ok,tx\)/.test(script)&&/escHtml\(String\(tx\)\)/.test(script),
+    '轨迹终态卡助手 traceFinalCard 缺失或未在内部统一转义（innerHTML 注入点）——请同步检查 Q');
   assert(/p\.stopReason==='max_turns'\)\{[\s\S]{0,260}traceFinalCard\(box,false,/.test(script),
     'max_turns 未落异常终止红卡——请同步检查 Q');
-  assert(/p\.type==='failed'\)\{[\s\S]{0,300}traceFinalCard\(box,false,/.test(script.replace(/\n/g,'')),
+  assert(/p\.type==='failed'\)\{[\s\S]{0,400}traceFinalCard\(box,false,/.test(script),
     'failed 未升级为异常终止终态卡（单行弱标志回归）——请同步检查 Q');
+  assert(/function traceFailCard\(runId,msg\)/.test(script)&&(script.match(/traceFailCard\(runId,msg\);/g)||[]).length>=2,
+    'run 前置校验失败路径未补落终态卡（traceFailCard）——Rust 零事件早退会让 tl-run 容器空着，请同步检查 Q');
   assert(/\.tl-final\.abnormal\{/.test(html),
     '异常终止红卡样式（tl-final.abnormal）缺失——请同步检查 Q');
 }
 
-/* 检查 R：演示模式进入态初始化——enteringPlay 必须在 `mode=m` 赋值**之前**捕获，
+/* 检查 R：演示模式进入态初始化——enteringPlay 必须在 `mode=m` 赋值**之前**捕获
+ * （位置用 indexOf 断言：仅存在性断言抓不住「挪到赋值后」这一复刻事故形态的变异），
  * 且 playStack 播种以 enteringPlay 为门。历史上守卫写成 `mode!=='play'` 而当时
  * mode 已被赋成新值——恒假死代码：演示栈从未初始化、起点页从不生效，演示落在
- * 最后编辑的画板上（无出边交互即零热区=「热区消失/失效」事故根因）。 */
+ * 最后编辑的画板上（无出边交互即零热区=「热区消失/失效」事故根因）。
+ * 前进导航的进栈序列由 playGo 单点收口——多一处拷贝就会复演栈语义漂移。 */
 {
-  const setModeBody=(script.match(/function setMode\(m\)\{[\s\S]*?\n\}/)||[])[0]||'';
-  assert(/const enteringPlay=m==='play'&&mode!=='play';/.test(setModeBody),
-    'enteringPlay 未在 mode 赋值前捕获（演示初始化守卫回归死代码）——请同步检查 R');
+  const i=script.indexOf('function setMode(m){');
+  const j=script.indexOf('\nfunction ',i+10);
+  const setModeBody=i>=0?script.slice(i,j):'';
+  assert(/const enteringPlay=m==='play'&&mode!=='play';/.test(setModeBody)
+    &&setModeBody.indexOf('const enteringPlay')>=0
+    &&setModeBody.indexOf('const enteringPlay')<setModeBody.indexOf('mode=m;'),
+    'enteringPlay 未在 mode=m 赋值前捕获（演示初始化守卫回归死代码）——请同步检查 R');
   assert(!/if\(mode!=='play'\)\{playStack=\[startAb\]/.test(script),
-    '演示栈播种仍用 mode!=='+"'"+'play'+"'"+' 死守卫（恒假）——请同步检查 R');
+    "演示栈播种仍用 mode!=='play' 死守卫（恒假）——请同步检查 R");
   assert(/if\(enteringPlay\)\{playStack=\[startAb\];if\(active!==startAb\)\{active=startAb;playApplySession\(startAb\);\}\}/.test(script),
     '演示初始化未以 enteringPlay 播种栈/切起点页——请同步检查 R');
-  assert(/if\(mode==='play'\)\{playJump\(id\);return;\}/.test(script)&&/function playJump\(id\)\{/.test(script),
-    '演示中点邻板未走 playJump 进栈（悄悄 switchSession 成栈外孤儿，Esc/返回救不回）——请同步检查 R');
+  assert(/function playGo\(to\)\{/.test(script)&&(script.match(/playGo\(/g)||[]).length>=3,
+    '演示前进导航未收口到 playGo 单点（栈不变量多写一处就会漏）——请同步检查 R');
 }
 
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */

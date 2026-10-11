@@ -1395,7 +1395,8 @@ pub async fn run_with_steps(
             Err(e) => {
                 // 中途 LLM 失败：已提交的引擎操作不丢弃（对齐旧桥语义）——
                 // 零操作时才整体失败，否则带部分状态返回，前端可应用已完成的变更。
-                emit("failed", json!({"error": e}));
+                // ops 随事件下发：前端终态卡据此区分「已保留部分」与「零提交」
+                emit("failed", json!({"error": e, "ops": state.ops.len()}));
                 let partial = finish_partial(&mut state, &e).await;
                 eprintln!("[agent] run end: stop=error ops={} error={e}", partial.get("ops").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0));
                 return partial;
@@ -1405,7 +1406,7 @@ pub async fn run_with_steps(
             .pointer("/choices/0/message")
             .and_then(|v| v.as_object().cloned())
         else {
-            emit("failed", json!({"error": "llm_no_choice"}));
+            emit("failed", json!({"error": "llm_no_choice", "ops": state.ops.len()}));
             return finish_partial(&mut state, "llm_no_choice").await;
         };
         let tool_calls: Vec<Value> = msg
@@ -1557,7 +1558,9 @@ pub async fn run_with_steps(
     // 更无法分辨正常/异常（stopReason 只存在于返回契约，实时轨迹看不到）
     state.ensure_render().await;
     let boards_n = artboard_ids(state.mbt.as_deref().unwrap_or("")).len();
-    emit("done", json!({"stopReason": "max_turns", "ops": state.ops.len(), "boards": boards_n}));
+    // cleanup 恒空：本路径不跑收尾清扫（尽力返回，不做变更类操作）——boards 口径
+    // 含本轮产生却未填的闲置板，与 done 路径（清扫后计数）刻意不同源
+    emit("done", json!({"stopReason": "max_turns", "ops": state.ops.len(), "boards": boards_n, "cleanup": []}));
     eprintln!("[agent] run end: stop=max_turns ops={}", state.ops.len());
     json!({
         "ok": state.mbt.is_some(),
@@ -2368,49 +2371,21 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
 
     /// 步数耗尽路径必须显式发出轨迹终态事件（done + stopReason=max_turns）——
     /// 此前该路径零事件，前端时间线无法分辨运行是否结束、正常还是异常
-    /// （2026-10-11 用户反馈；mock 永远返回 tool_calls，小步数预算驱动耗尽）。
+    /// （2026-10-11 用户反馈）。mock 恒回 tool_calls，永不给文本总结：run_with_steps
+    /// 的 max_steps 会被 clamp 到最小 50（MAX_STEPS_MIN），循环恰好发 50 次请求后
+    /// break——轮数给 64 留余量，多余轮次无人消费（mock.abort() 收尾）。
     #[tokio::test]
     async fn agent_max_turns_emits_terminal_trace_event() {
         engine_ready().await;
         let _engine_gate = engine_test_gate();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let mock = tokio::spawn(async move {
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            loop {
-                let (mut sock, _) = listener.accept().await.unwrap();
-                let mut raw = Vec::new();
-                let mut chunk = [0u8; 16384];
-                loop {
-                    let n = match sock.read(&mut chunk).await { Ok(0) | Err(_) => break, Ok(n) => n };
-                    raw.extend_from_slice(&chunk[..n]);
-                    let s = String::from_utf8_lossy(&raw).into_owned();
-                    if let Some(pos) = s.find("\r\n\r\n") {
-                        let body_start = pos + 4;
-                        if let Some(len) = s
-                            .lines()
-                            .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().to_string()))
-                            .and_then(|v| v.parse::<usize>().ok())
-                        {
-                            if raw.len() >= body_start + len { break; }
-                        }
-                    }
-                }
-                let body = serde_json::json!({
-                    "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
-                        {"id": "call_1", "type": "function", "function": {"name": "moonviz_op",
-                         "arguments": "{\"op\": \"template login lg\"}"}}
-                    ]}}]
-                });
-                let body = serde_json::to_string(&body).unwrap();
-                let resp = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                sock.write_all(resp.as_bytes()).await.unwrap();
-            }
+        let tool_call_round = serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "moonviz_op",
+                 "arguments": "{\"op\": \"template login lg\"}"}}
+            ]}}]
         });
+        let (port, mock, _bodies) =
+            spawn_mock_llm(std::iter::repeat(tool_call_round).take(64).collect()).await;
         let events: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
         let progress = |v: Value| {
             if let Ok(mut ev) = events.lock() {

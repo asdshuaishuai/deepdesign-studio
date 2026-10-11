@@ -1889,13 +1889,7 @@ function renderStage(){
       if(isActive)bindStageSvg(svg);
     }else body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#a1a1aa;font-size:11px">MBT 渲染结果缺失</div>';
     if(!isActive){
-      wrap.onclick=()=>{
-        if(Date.now()<boardClickShieldUntil)return;
-        // 演示中点邻板=导航进栈（与热区同门）：直接 switchSession 会悄悄换板不入栈，
-        // 该板成栈外孤儿——Esc/返回按栈解析都到不了它，用户被困死板（热区消失事故伴生缺陷）
-        if(mode==='play'){playJump(id);return;}
-        switchSession(id);
-      };
+      wrap.onclick=()=>{if(Date.now()<boardClickShieldUntil)return;switchSession(id);};
     }
   }
   if(scroller){scroller.scrollLeft=keepSx;scroller.scrollTop=keepSy;}
@@ -2646,6 +2640,7 @@ async function sendAgent(){
       $('ap-send').disabled=false;agentBusy=false;return;
     }
     const msg=String(err);
+    traceFailCard(runId,msg);
     res.style.display='block';res.className='ap-result err';
     res.textContent=msg.includes('api_key_missing')?'未配置 AI 端点：请到 设置 ▸ AI 端点 填入 Base URL 与 Token':('Agent 不可用：'+msg.slice(0,120));
     $('ap-send').disabled=false;
@@ -2796,27 +2791,36 @@ function ensureTraceListener(){
         // 分辨运行是否结束、正常还是异常（Rust 侧现已为此路径补发 done 终态事件）
         traceFinalCard(box,false,`异常终止 · 已达步数上限 — 已提交 ${p.ops||0} ops${boardsTxt}，结果可能不完整`);
       }else{
-        traceFinalCard(box,true,`运行完成 · ${p.ops} ops${boardsTxt}${cleanTxt}`);
+        traceFinalCard(box,true,`运行完成 · ${p.ops||0} ops${boardsTxt}${cleanTxt}`);
       }
       return;
     }
     if(p.type==='failed'){
       // 中途失败（LLM 断连/无响应等）同为异常终态：升级为红卡终态——
-      // 原单行弱标志分不清「还在跑」与「已中断」
-      traceFinalCard(box,false,`异常终止 · ${escHtml(String(p.error||'未知错误').slice(0,120))} — 已完成部分已保留`);
+      // 原单行弱标志分不清「还在跑」与「已中断」；ops=0 如实说未提交任何操作
+      const opsN=p.ops||0;
+      traceFinalCard(box,false,`异常终止 · ${String(p.error||'未知错误').slice(0,120)} — ${opsN?`已提交 ${opsN} ops，已完成部分已保留`:'未提交任何操作'}`);
       return;
     }
     if(p.type==='review'){appendTraceLine(box,'🔎 收尾审查：需求完整度 · 连线完整度 · 综合修复','tl-assist');return;}
   }).then(u=>{TRACE.un=u;}).catch(e=>console.warn('[trace] agent-event 监听注册失败（本窗口轨迹将空白）:',e));
 }
 let traceFlushRaf=0,tracePending=[];
+/* run 前置校验/调用失败的轨迹收尾：Rust 侧这些路径在 emit 闭包建立前早退（零事件），
+ * 终态卡由前端按返回契约补落——否则 tl-run 容器永远空着，「轨迹必以终态卡收尾」
+ * 的不变式在这些入口上自违（审查 2026-10-11） */
+function traceFailCard(runId,msg){
+  const box=document.getElementById('tl-run-'+runId);
+  if(box)traceFinalCard(box,false,'异常终止 · '+String(msg).slice(0,120));
+}
 /* 终态卡（轨迹二元收尾语义）：绿=正常完成，红=异常终止（步数耗尽/中途失败）。
- * 三种终态路径（done/max_turns/failed）都必须落一张卡——轨迹要显式回答
- * 「运行结束了没有、正常与否」（2026-10-11 用户要求，此前 max_turns 路径静默） */
+ * 收尾路径（done 非 clarify / max_turns / failed）都必须落一张卡——轨迹要显式回答
+ * 「运行结束了没有、正常与否」（2026-10-11 用户要求，此前 max_turns 路径静默）。
+ * tx 的文本成分在此统一 escHtml——调用方传原始文本，勿自行转义（与 appendTraceLine 同约） */
 function traceFinalCard(box,ok,tx){
   const fin=document.createElement('div');
   fin.className='tl-final'+(ok?'':' abnormal');
-  fin.innerHTML=`<span class="tl-final-ic">${ok?'✔':'✗'}</span><span class="tl-final-tx">${tx}</span>`;
+  fin.innerHTML=`<span class="tl-final-ic">${ok?'✔':'✗'}</span><span class="tl-final-tx">${escHtml(String(tx))}</span>`;
   box.appendChild(fin);
   const sc=box.closest('.rpanel')||box.parentElement;
   if(sc)sc.scrollTop=sc.scrollHeight;
@@ -2973,6 +2977,7 @@ async function runGlobalPrompt(){
     toast(`AI 已提交 ${r.ops.length} 条操作${cut}`);
   }catch(err){
     const msg=String(err);
+    traceFailCard(runId,msg);
     toast(msg.includes('api_key_missing')?'请先在设置中配置 AI 端点与 Token（设置 ▸ AI 端点）':'AI 调用失败：'+msg.slice(0,90));
     trackAgent(t,[],false);
     await rollbackPreview(); // 失败收尾：画布若停在预览中间态，从 mbtText 复原
@@ -3675,7 +3680,7 @@ function playApplySession(id){
 async function playTap(fromAb,nodeId){
   const graph=flows;
   const f=graph.find(x=>x.from===fromAb&&x.trigger==='tap:'+nodeId);
-  if(f){playNavAnim('fwd');playStack.push(f.to);active=f.to;playApplySession(f.to);await renderStage();setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');return;}
+  if(f){playGo(f.to);setStatus('human',`▶ ${nodeId} → ${f.to}`,true,'播放导航');return;}
   // flows 未命中 → 回退引擎交互清单（引擎 tap 解析顺序 flow → marker → 内置返回；
   // 清单由 session_interactions 导出，含 ⚡ 标记与 builtin back）
   const hit=(playIxHits[fromAb]||[]).find(x=>x.node===nodeId&&x.trigger==='tap');
@@ -3685,7 +3690,7 @@ async function playTap(fromAb,nodeId){
     if(act==='back'||hit.builtin==='back'){playBack();return;}
     if(act.startsWith('navigate_to:')){
       const to=act.slice('navigate_to:'.length);
-      if(sessions[to]){playNavAnim('fwd');playStack.push(to);active=to;playApplySession(to);await renderStage();setStatus('human',`▶ ${nodeId} → ${to}`,true,'播放导航（interact）');}
+      if(playGo(to))setStatus('human',`▶ ${nodeId} → ${to}`,true,'播放导航（interact）');
       else toast(`目标画板「${to}」不存在`);
       return;
     }
@@ -3715,10 +3720,13 @@ async function playTap(fromAb,nodeId){
  * 'background' 这类 id 不会误判（要求 back 两侧是词边界）。 */
 /* back 判定已下沉引擎（is_back_like_node + interactions 导出 builtin back，
  * 2026-10-11 客户端 isBackish 启发式退役）：演示热区与点击都消费引擎清单。 */
-/* 演示中点击邻板画布的跳转：与热区导航同门——进栈再切板，返回语义完备 */
-function playJump(id){
-  if(!sessions[id])return;
-  playNavAnim('fwd');playStack.push(id);active=id;playApplySession(id);renderStage();
+/* 演示导航唯一入口：进栈+切板+应用会话+重渲染的栈不变量在此单点维护
+ * （审查 2026-10-11：该序列曾三处拷贝，本次事故的教训正是多写一处就会漏）。
+ * 返回 true=已导航；目标画板不存在时拒绝并返回 false，调用方自行提示 */
+function playGo(to){
+  if(!sessions[to])return false;
+  playNavAnim('fwd');playStack.push(to);active=to;playApplySession(to);renderStage();
+  return true;
 }
 function playBack(){
   /* 演示模式铁律（2026-09 用户反馈）：热区返回永远追随 link/栈行为，绝不退出演示。
