@@ -3518,6 +3518,7 @@ function attachPlayHotZones(){
   const wrap=document.querySelector(frameSel(active));
   if(!wrap)return;
   const body=wrap.querySelector('.frame-body');
+  const sess=sessions[active];
   const graph=flows;
   // 热区清单来源：出边 flow + 引擎 interactions 导出（含 builtin back——返回类
   // 节点由引擎 is_back_like_node 判定并导出，客户端启发式 isBackish 已退役，
