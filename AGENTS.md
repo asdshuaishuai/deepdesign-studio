@@ -4,7 +4,7 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后回写同一份文档，
 `.ddp` 只是它的认证加密容器。
 
-**当前版本：0.4.2**（2026-10-11 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
+**当前版本：0.4.2-fix**（2026-10-11 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
 详见 [docs/versioning.md](docs/versioning.md)。
 
 ## 分支纪律（用户决策）

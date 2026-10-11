@@ -1,6 +1,6 @@
 {
   "name": "libdeepdesign_core",
-  "version": "0.4.2",
+  "version": "0.4.2-fix",
   "description": "deepDesign core (Rust/NAPI) for HarmonyOS",
   "main": "",
   "types": "",
