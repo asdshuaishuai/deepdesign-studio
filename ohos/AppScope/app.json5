@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.deepcode.deepdesign",
     "vendor": "deepcode",
-    "versionCode": 401,
-    "versionName": "0.4.1",
+    "versionCode": 402,
+    "versionName": "0.4.2",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }

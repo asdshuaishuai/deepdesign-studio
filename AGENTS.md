@@ -4,7 +4,7 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事�
 人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后回写同一份文档，
 `.ddp` 只是它的认证加密容器。
 
-**当前版本：0.4.1**（2026-10-09 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
+**当前版本：0.4.2**（2026-10-11 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
 详见 [docs/versioning.md](docs/versioning.md)。
 
 ## 分支纪律（用户决策）
@@ -155,16 +155,19 @@ beforeBuildCommand / dev.sh 的无环境变量调用——持续使用该本地�
 不再被 Release 产物静默覆盖；本地 sha 必然异于发布锚点，脚本提示「非发布锚点，
 探针把关」，**契约探针是本地构建的唯一守门员**。删除标记文件即恢复 Release 锚定。
 
-规范线现状（已在 `dev`，`8d64d09`）：`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、
-高 ≥ 字号+20；圆角档：按钮族 8、胶囊 高/2、avatar 999；全宽条/全宽行直角；
-**齐缝列表行必须有行间分割线**——≥3 行 list_item 齐缝连排且整段无 divider/分组即偏差，
-critique 结构性偏差置顶，auto_fix 在行底插 1px divider 子节点，零门风险）
-+ `critique` 第 9 维 `norms`（给 Agent 建议尺寸）+ `auto_fix` 规范预修 +
-`list_components` 携带 `norm` 字段（components.json 快照已透传）。
-**版本与发版（用户决策 2026-10-10）**：引擎版本维持 **0.1.9** 不动——当前修复
-（列表分割线规范等）**只在 dev 与本地集成，不发布**；等用户本测试轮结束再决策
-发版（届时 Release 资产须重出，sync-engine 锚点随之更新）。deepDesign 侧 vendor
-wasm 现为 dev 本地构建（含全部规范），Release 上的 0.1.9 产物不含分割线规范。
+规范线现状（**已随 engine-v0.1.9 重出构建全量发布**，2026-10-11）：
+`core/norms.mbt`（按钮不卡文案：文案宽+24 留白、高 ≥ 字号+20；圆角档：按钮族 8、
+胶囊 高/2、avatar 999；全宽条/全宽行直角；**齐缝列表行必须有行间分割线**——
+≥3 行 list_item 齐缝连排且整段无 divider/分组即偏差，auto_fix 在行底插
+1px divider 子节点，零门风险；**撞色零容忍**——文字与有效背景 WCAG 对比度
+< 2.0 即同色系严禁，auto_fix 按背景亮度翻转文字色；**横平竖直**——rotate
+非 90° 倍数归零）+ `critique` 第 9 维 `norms`（给 Agent 建议尺寸）+
+`auto_fix` 规范预修 + `list_components` 携带 `norm` 字段 + **内置返回**：
+runtime tap 解析链 flow → marker → 返回类节点强制返回上一层，
+interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
+**版本与发版**：引擎 0.1.9（重出构建，资产 = main `bf0716b`，sha512
+`7NuGA2AV…`）；本地集成模式（ENGINE_LOCAL 标记）仅测试期使用，发布构建
+一律走 Release 锚定。
 
 ## 硬性环境约束
 
