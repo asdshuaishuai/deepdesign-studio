@@ -149,11 +149,12 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 `cd moonviz-dev/core && moon test -p core` 全绿后
 `cd .. && moon build --release --target wasm wasm` 构建，然后
 `node scripts/sync-engine.mjs --local ../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm`
-接回本仓。**本地集成模式（用户决策 2026-10-10，测试期默认）**：`--local` 写
-`frontend/vendor/ENGINE_LOCAL` 标记（gitignored），此后一切 sync——包括
-beforeBuildCommand / dev.sh 的无环境变量调用——持续使用该本地构建，rebuild
-不再被 Release 产物静默覆盖；本地 sha 必然异于发布锚点，脚本提示「非发布锚点，
-探针把关」，**契约探针是本地构建的唯一守门员**。删除标记文件即恢复 Release 锚定。
+接回本仓。**本地集成模式只在 dev 生效（用户决策 2026-10-11 收紧）**：
+`--local` 写 `frontend/vendor/ENGINE_LOCAL` 标记（gitignored），`--dev` 模式
+（beforeDevCommand / dev.sh / 手动 dev 跑法）经标记持续使用本地构建；rebuild
+不再被 Release 产物静默覆盖。**生产打包（beforeBuildCommand --release）硬性
+忽略本地源**——标记在场时醒目告警并使用 Release 锚定引擎（CI 全新检出无标记，
+不受影响）。删除标记文件即恢复纯 Release 锚定。
 
 规范线现状（**已随 engine-v0.1.9 重出构建全量发布**，2026-10-11）：
 `core/norms.mbt`（按钮不卡文案：文案宽+24 留白、高 ≥ 字号+20；圆角档：按钮族 8、
