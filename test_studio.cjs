@@ -240,6 +240,14 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
   // 忽略 ENGINE_LOCAL——生产构建绝不走本地引擎（2026-10-11 用户决策）
   assert(tauriConf.includes('node scripts/sync-engine.mjs --release')&&tauriConf.includes('node scripts/sync-engine.mjs --dev'),
     'tauri.conf 生产/开发命令未分离（--release/--dev）——本地引擎不得进入生产打包，请同步检查 O')
+  // attachPlayHotZones 必须持有当前画板节点表（sess）——删掉它会让热区挂载
+  // 循环抛 ReferenceError，演示交互全灭且 vm 切片不可见（2026-10-11 实测）
+  const az=script.indexOf('function attachPlayHotZones(');
+  assert(az>=0,'attachPlayHotZones 未定义——请同步检查 O');
+  let nz=script.indexOf('\nfunction ',az+10);
+  if(nz<0)nz=script.length;
+  assert(script.slice(az,nz).includes('const sess=sessions[active]'),
+    'attachPlayHotZones 丢失 sess 声明——热区挂载依赖当前画板节点表，请同步检查 O');
 }
 
 /* 检查 P：引擎信息与 dev 渠道标识——本地集成模式（ENGINE_LOCAL 标记 → manifest
