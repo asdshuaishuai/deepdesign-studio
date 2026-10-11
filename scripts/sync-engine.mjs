@@ -42,7 +42,7 @@ const WASM_URL =
   `https://github.com/asdshuaishuai/moonviz/releases/download/${RELEASE_TAG}/${WASM_ASSET}`;
 // 下载的 .wasm 文件整体 sha512（npm 无此产物；校验值取自 release 资产）
 const WASM_SHA512 =
-  'sha512-JlnVZIqvZ2AKLbq+EmEF5fpO71+y54Leo7ChQQEaEDtw+LTNUnGJAoZcOWZqM+osK4LkVnAXqXH3b0w08eHElQ==';
+  'sha512-7NuGA2AV2Rotj3QlZBeGeaax0N9uJSU2xBiH1OYflo6DVQIFqCZx77xQUBa3S10sSPc7bgoMHiMdq3wpl8tgRA==';
 
 const REQUIRED_EXPORTS = [
   'apply_human_op', 'apply_agent_op', 'render_mbt', 'validate_mbt',
