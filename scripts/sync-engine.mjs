@@ -180,13 +180,17 @@ function sha512Base64(buf) {
   return 'sha512-' + createHash('sha512').update(buf).digest('base64');
 }
 
-/** 解析本地集成源（优先级：MOONVIZ_WASM_PATH > ENGINE_LOCAL 标记 > Release 下载）。
- * 标记文件由 `--local <path>` 写入/更新——测试期 rebuild（beforeBuildCommand /
- * dev.sh 都会无环境变量地跑本脚本）经标记持续使用本地构建，不回落下载。
- * 删除标记文件即恢复 Release 锚定。 */
-function resolveLocalPath(markerPath) {
+/** 本地集成源解析（模式语义，2026-10-11 收紧）：
+ * - --dev（beforeDevCommand / dev.sh / 手动 dev）：ENGINE_LOCAL 标记或
+ *   MOONVIZ_WASM_PATH 生效——本地测试期 rebuild 持续使用本地构建
+ * - --release（beforeBuildCommand，生产打包）：本地源**硬性忽略**——
+ *   生产构建绝不走本地引擎；标记在场时醒目告警（CI 全新检出无标记，不受影响）
+ * - --local <path>：dev 动作，写/更新标记并立即使用
+ * 删除标记文件即恢复纯 Release 锚定。 */
+function resolveLocalPath(markerPath, mode) {
   const env = process.env.MOONVIZ_WASM_PATH;
   if (env) return env;
+  if (mode === 'release') return undefined;
   if (existsSync(markerPath)) {
     const p = readFileSync(markerPath, 'utf8').trim();
     if (p) return p;
@@ -194,7 +198,7 @@ function resolveLocalPath(markerPath) {
   return undefined;
 }
 
-async function download(local) {
+async function download(local, mode) {
   if (local) {
     // 点名本地构建却不存在的文件必须 fast-fail，不得回落网络下载——
     // 回落会装上发布产物再被 sha 豁免放行，还打着「本地构建」标签
@@ -413,7 +417,16 @@ async function main() {
     writeFileSync(markerPath, p + '\n');
     console.log(`[sync-engine] 本地集成模式已记录（删除 ${markerPath} 恢复 Release 锚定）`);
   }
-  const localPath = resolveLocalPath(markerPath);
+  // 模式：--release 显式声明生产打包（本地源硬性忽略）；--dev / 裸跑 = dev 语义
+  const mode = process.argv.includes('--release')
+    ? 'release'
+    : process.argv.includes('--dev') || localArg >= 0
+      ? 'dev'
+      : 'dev';
+  const localPath = resolveLocalPath(markerPath, mode);
+  if (mode === 'release' && (process.env.MOONVIZ_WASM_PATH || existsSync(markerPath))) {
+    console.warn('[sync-engine] ⚠ 生产构建：检测到本地集成标记/环境变量，已硬性忽略——本打包使用 Release 锚定引擎');
+  }
 
   // 跳过判断：现存 wasm 的哈希必须与**当前锚点**一致（换工件类型如 gc→classic 时
   // 锚点变了，旧文件自然不匹配 → 重新下载；只比对 manifest 记录值会被旧产物骗过）。
@@ -437,7 +450,7 @@ async function main() {
     bytes = readFileSync(wasmPath);
     console.log('[sync-engine] moonviz.wasm 已是目标版本，跳过下载');
   } else {
-    const raw = await download(localPath);
+    const raw = await download(localPath, mode);
     const got = sha512Base64(raw);
     // 本地 dev 构建 sha 必然异于发布锚点：只提示不阻断，
     // 契约探针（导出面/模板/组件/会话计数）才是真正的守门员

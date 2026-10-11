@@ -100,6 +100,7 @@ assert.deepEqual(stubMasking,[],
 /* 检查 D：跨文件契约——Rust 原生菜单 id 必须都被 nativeMenuAction 处理。
  * lib.rs 用 typeof 守卫兜底，所以漏映射时菜单静默失效，任何前端自测都发现不了。 */
 const libRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','lib.rs'),'utf8');
+const tauriConf=fs.readFileSync(path.join(__dirname,'src-tauri','tauri.conf.json'),'utf8');
 // id 允许大小写/数字/下划线：只收 [a-z-] 会让 "open_ddp2" 这类 id 静默逃过契约检查
 const menuIds=[...libRs.matchAll(/MenuItem::with_id\(\s*app,\s*"([A-Za-z0-9_-]+)"/g)].map(m=>m[1]);
 assert(menuIds.length>0,'未能从 lib.rs 解析出菜单 id（提取逻辑失效，请同步更新本测试）');
@@ -235,6 +236,10 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '客户端 isBackish 启发式已退役——返回判定单源于引擎 interactions 导出，请同步检查 O');
   assert(/hit\.builtin==='back'/.test(script)&&/act==='back'/.test(script),
     'playTap 未消费引擎 builtin back 导出——返回点击链路断裂，请同步检查 O');
+  // 本地集成模式只在 dev 生效：生产打包（beforeBuildCommand --release）硬性
+  // 忽略 ENGINE_LOCAL——生产构建绝不走本地引擎（2026-10-11 用户决策）
+  assert(tauriConf.includes('node scripts/sync-engine.mjs --release')&&tauriConf.includes('node scripts/sync-engine.mjs --dev'),
+    'tauri.conf 生产/开发命令未分离（--release/--dev）——本地引擎不得进入生产打包，请同步检查 O')
 }
 
 /* 检查 P：引擎信息与 dev 渠道标识——本地集成模式（ENGINE_LOCAL 标记 → manifest

@@ -24,7 +24,7 @@ fi
 # Windows 的 WKWebView 缓存在 %LOCALAPPDATA%，Git Bash 下清不掉、用 ?v= 时间戳重载兜底）
 if [ ! -f "$ROOT/frontend/vendor/moonviz.wasm" ]; then
   echo "→ 引擎 wasm 产物缺失，同步中（node scripts/sync-engine.mjs）…"
-  (cd "$ROOT" && node scripts/sync-engine.mjs)
+  (cd "$ROOT" && node scripts/sync-engine.mjs --dev)
 fi
 echo "→ 引擎产物：frontend/vendor/moonviz.wasm（WebView 内进程执行）"
 
