@@ -1243,7 +1243,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 
 <script>
 'use strict';
-const APP_VER='0.4.1';
+const APP_VER='0.4.2';
 let agentThread={pending:null}; // agent 澄清上下文（提问 → 用户回答 → 续跑）；置于测试切片起点
 const IS_TAURI=!!(window.__TAURI__&&window.__TAURI__.core);
 /* 平台检测：WebView2('Win32')/WKWebView('MacIntel')/WebKitGTK('Linux x86_64')
@@ -4352,6 +4352,11 @@ function renderAboutCredits(){
  * 本表顶端加一条，两边漂移会在测试门直接变红。items 走 L() 出生即译，本函数
  * 注册在 I18N_RERENDER；日期是数据不做本地化。 */
 const RELEASE_NOTES=[
+  {v:'0.4.2',d:'2026-10-11',items:[
+    '引擎升级 0.1.9（重出）：组件规范全量生效——列表分割线、撞色零容忍、横平竖直',
+    '返回交互下沉引擎：返回类节点点击内置返回上一层，卡死页校验',
+    '热区标注与 UI 解耦：隐藏热区不再白板；演示起点/返回按交互图判定',
+    'dev 渠道徽标 + 关于页引擎信息（版本/集成模式/来源）']},
   {v:'0.4.1',d:'2026-10-09',items:[
     '修复双击编辑文字提交失败（影响所有用户）',
     '版本号统一：仓库根 VERSION 文件为唯一事实源',

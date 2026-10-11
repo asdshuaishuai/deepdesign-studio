@@ -9,7 +9,7 @@
 ### deepDesign Studio（应用菜单）
 | 菜单项 | 说明 |
 |--------|------|
-| 关于 deepDesign Studio | 系统关于面板（版本动态读自 tauri.conf.json，当前 0.4.1） |
+| 关于 deepDesign Studio | 系统关于面板（版本动态读自 tauri.conf.json，当前 0.4.2） |
 | 服务 | macOS 系统服务 |
 | 隐藏 / 隐藏其它 / 显示全部 | 系统窗口管理 |
 | 退出 deepDesign | `quit-app`（⌘Q）→ `quitApp()`：有未保存更改先弹原生确认，放弃后 `app_exit` 退出（预置 quit 走 terminate: 不触发关窗拦截，故自定义） |
