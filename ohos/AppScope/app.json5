@@ -3,7 +3,7 @@
     "bundleName": "com.deepcode.deepdesign",
     "vendor": "deepcode",
     "versionCode": 402,
-    "versionName": "0.4.2",
+    "versionName": "0.4.2-fix",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }

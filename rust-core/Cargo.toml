@@ -1,6 +1,6 @@
 [package]
 name = "deepdesign_core"
-version = "0.4.2"
+version = "0.4.2-fix"
 edition = "2021"
 
 [lib]
