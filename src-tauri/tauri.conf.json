@@ -5,8 +5,8 @@
   "identifier": "com.deepcode.deepdesign",
   "build": {
     "frontendDist": "../frontend",
-    "beforeBuildCommand": "node scripts/sync-engine.mjs",
-    "beforeDevCommand": "node scripts/sync-engine.mjs"
+    "beforeBuildCommand": "node scripts/sync-engine.mjs --release",
+    "beforeDevCommand": "node scripts/sync-engine.mjs --dev"
   },
   "app": {
     "withGlobalTauri": true,
