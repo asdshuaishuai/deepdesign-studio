@@ -361,6 +361,12 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
   `place`/`copy` 传什么就是什么。实测 `place … 'x"><img src=y onerror=…>'` 会被原样写进
   `export-svg` 的 `<g id="n_…">`，突破属性引号。所以：中文名会碰撞（画板侧），
   而节点 id 是**不可信字符串**，拼进 `innerHTML` 前必须转义（见 `escHtml`）。
+- **演示模式（play）进入态与导航栈（检查 R 锚定）**：`setMode` 的进入判定 `enteringPlay` 必须在
+  `mode=m` 赋值**前**捕获——曾写成 `mode!=='play'` 而当时 mode 已是新值，恒假死代码：演示栈从未
+  播种、`demoStartBoard`（交互根/枢纽页）从不生效，演示落在最后编辑的画板上（无出边交互即零热区
+  =2026-10-11「热区消失/失效」事故根因，2026-10-10「第二页进演示返回无效」同根因）。演示中点邻板
+  走 `playJump` 进栈（直接 switchSession 会造出栈外孤儿板，Esc/返回救不回）。热区清单=出边 flow ∪
+  引擎 `session_interactions` 导出（含 builtin back），返回判定单源于引擎。
 - 拖拽、内联编辑、连接模式等交互最终都要落成一条引擎 op，不要在前端本地改 `nodes` 数组了事。
 
 ## 测试的脆弱点

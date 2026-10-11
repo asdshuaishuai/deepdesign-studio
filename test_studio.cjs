@@ -282,6 +282,22 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '异常终止红卡样式（tl-final.abnormal）缺失——请同步检查 Q');
 }
 
+/* 检查 R：演示模式进入态初始化——enteringPlay 必须在 `mode=m` 赋值**之前**捕获，
+ * 且 playStack 播种以 enteringPlay 为门。历史上守卫写成 `mode!=='play'` 而当时
+ * mode 已被赋成新值——恒假死代码：演示栈从未初始化、起点页从不生效，演示落在
+ * 最后编辑的画板上（无出边交互即零热区=「热区消失/失效」事故根因）。 */
+{
+  const setModeBody=(script.match(/function setMode\(m\)\{[\s\S]*?\n\}/)||[])[0]||'';
+  assert(/const enteringPlay=m==='play'&&mode!=='play';/.test(setModeBody),
+    'enteringPlay 未在 mode 赋值前捕获（演示初始化守卫回归死代码）——请同步检查 R');
+  assert(!/if\(mode!=='play'\)\{playStack=\[startAb\]/.test(script),
+    '演示栈播种仍用 mode!=='+"'"+'play'+"'"+' 死守卫（恒假）——请同步检查 R');
+  assert(/if\(enteringPlay\)\{playStack=\[startAb\];if\(active!==startAb\)\{active=startAb;playApplySession\(startAb\);\}\}/.test(script),
+    '演示初始化未以 enteringPlay 播种栈/切起点页——请同步检查 R');
+  assert(/if\(mode==='play'\)\{playJump\(id\);return;\}/.test(script)&&/function playJump\(id\)\{/.test(script),
+    '演示中点邻板未走 playJump 进栈（悄悄 switchSession 成栈外孤儿，Esc/返回救不回）——请同步检查 R');
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');

@@ -1889,7 +1889,13 @@ function renderStage(){
       if(isActive)bindStageSvg(svg);
     }else body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#a1a1aa;font-size:11px">MBT 渲染结果缺失</div>';
     if(!isActive){
-      wrap.onclick=()=>{if(Date.now()<boardClickShieldUntil)return;switchSession(id);};
+      wrap.onclick=()=>{
+        if(Date.now()<boardClickShieldUntil)return;
+        // 演示中点邻板=导航进栈（与热区同门）：直接 switchSession 会悄悄换板不入栈，
+        // 该板成栈外孤儿——Esc/返回按栈解析都到不了它，用户被困死板（热区消失事故伴生缺陷）
+        if(mode==='play'){playJump(id);return;}
+        switchSession(id);
+      };
     }
   }
   if(scroller){scroller.scrollLeft=keepSx;scroller.scrollTop=keepSy;}
@@ -3033,9 +3039,14 @@ function addBoard(prefix,w,h,src){return serializeProject(async()=>{
 
 /* ---------- 模式切换 ---------- */
 function setMode(m){
-  // 空项目进演示无意义（欢迎页无交互可演示）——菜单/⌘4 与工具栏按钮同守卫
-  if(m==='play'&&mode!=='play'&&!nodes.length&&!Object.keys(sessions).length){toast('先创建画板');return;}
-  if(m==='play'&&mode!=='play')playReturnMode=(mode==='decl')?'wireframe':mode;
+  // 空项目进演示无意义（欢迎页无交互可演示）——菜单/⌘4 与工具栏按钮同守卫。
+  // enteringPlay 必须在 mode=m 赋值前捕获：下方演示初始化曾用 `mode!=='play'`
+  // 做守卫，而 mode 已是新值——守卫恒假成死代码，栈从未播种、起点页从不生效
+  // （2026-10-11 热区消失/失效事故根因：演示落在最后编辑的画板上，该板无出边
+  // 交互即零热区；2026-10-10「第二页进演示返回无效」同根因）
+  const enteringPlay=m==='play'&&mode!=='play';
+  if(enteringPlay&&!nodes.length&&!Object.keys(sessions).length){toast('先创建画板');return;}
+  if(enteringPlay)playReturnMode=(mode==='decl')?'wireframe':mode;
   mode=m;
   document.body.classList.remove('mode-wireframe','mode-hifi','mode-decl','mode-play');
   document.body.classList.add('mode-'+m);
@@ -3049,7 +3060,7 @@ function setMode(m){
     // tab 互链成环（无根）→ 取出边扇出最大的枢纽页。弱模型常把 entry
     // 写成细节页——照抄会把用户困死在栈底（返回无效）。重入 play 不打断。
     const startAb=demoStartBoard();
-    if(mode!=='play'){playStack=[startAb];if(active!==startAb){active=startAb;playApplySession(startAb);}}
+    if(enteringPlay){playStack=[startAb];if(active!==startAb){active=startAb;playApplySession(startAb);}}
     renderStage();
     // interact 绑定异步预热：就绪后热区补挂（flows 热区已在 renderStage 同步挂好）；
     // 非 tap 触发器演示不支持——如实计数提示，不做静默隐身
@@ -3704,6 +3715,11 @@ async function playTap(fromAb,nodeId){
  * 'background' 这类 id 不会误判（要求 back 两侧是词边界）。 */
 /* back 判定已下沉引擎（is_back_like_node + interactions 导出 builtin back，
  * 2026-10-11 客户端 isBackish 启发式退役）：演示热区与点击都消费引擎清单。 */
+/* 演示中点击邻板画布的跳转：与热区导航同门——进栈再切板，返回语义完备 */
+function playJump(id){
+  if(!sessions[id])return;
+  playNavAnim('fwd');playStack.push(id);active=id;playApplySession(id);renderStage();
+}
 function playBack(){
   /* 演示模式铁律（2026-09 用户反馈）：热区返回永远追随 link/栈行为，绝不退出演示。
    * 栈底返回（2026-10-10 升级）：先看交互图——当前画板若有入边（其他页面链接到它），
