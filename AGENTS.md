@@ -538,11 +538,13 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - `docs/menus.md`：原生菜单 + 右键菜单的文案与动作映射，改菜单必读。
 - `docs/harmonyos-port.md`：鸿蒙适配方案（**仅方案未实施**；Rust 侧工具链已在
   Linux 就位：ohrs + aarch64-unknown-linux-ohos target）。
-- `docs/plan-cli-mcp.md`：**1.0 规划**（本分支跟进）——deepDesign Agent 能力抽象为专属
-  CLI + MCP 出口，让 Codex/Claude Code 直接驱动 deepDesign；前置是 deepdesign-core 拆分
-  （与鸿蒙方案共享同一前置）。
+- `docs/plan-cli-mcp.md`：**历史规划（已作废，2026-10-19 用户决策）**——deepDesign 不再
+  单独拆分 `deepdesign-core`、不再自建 CLI/MCP 出口：引擎已承担绝大多数核心能力并把
+  CLI（74 命令）/ MCP（55 工具）/ wasm / Node SDK 四类出口全部收归自身，客户端正式退役为
+  **壳**（只做桌面体验，不重复实现设计逻辑）。文件保留作历史背景，勿据此施工。
 - `docs/plan-lan-share.md`：内网分享规划（建议 0.4.x）——export_html + 内嵌 HTTP 服务，
   浏览器只读查看，免装 ddpView；serve-fresh-per-GET 设计，安全清单逐条锚定。
+  （其中对 deepdesign-core 拆分的引用随上条一并作废：这是纯壳层功能。）
 - `docs/versioning.md`：**版本号单一事实源**——`VERSION` 文件 + `sync-version.mjs` 同步的
   16 个下游面清单、鸿蒙 versionCode 约定、发布流程。改版本号前必读。
 - `CONTRIBUTING.md` / `SECURITY.md` / `.github/ISSUE_TEMPLATE/` / `.github/PULL_REQUEST_TEMPLATE.md`：
