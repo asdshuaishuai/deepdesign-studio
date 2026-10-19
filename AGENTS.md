@@ -545,4 +545,7 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   浏览器只读查看，免装 ddpView；serve-fresh-per-GET 设计，安全清单逐条锚定。
 - `docs/versioning.md`：**版本号单一事实源**——`VERSION` 文件 + `sync-version.mjs` 同步的
   16 个下游面清单、鸿蒙 versionCode 约定、发布流程。改版本号前必读。
+- `CONTRIBUTING.md` / `SECURITY.md` / `.github/ISSUE_TEMPLATE/` / `.github/PULL_REQUEST_TEMPLATE.md`：
+  开源治理面——**架构边界与测试纪律在 CONTRIBUTING 里复述**，
+  改 AGENTS.md 的边界条款时要回来对账这两处。
 - `README.md`：架构速览与打包产物说明。

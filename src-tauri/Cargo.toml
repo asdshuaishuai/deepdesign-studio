@@ -2,6 +2,9 @@
 name = "deepdesign-studio"
 version = "0.4.2-fix"
 edition = "2021"
+license = "MIT"
+description = "AI-native prototype design studio desktop client (Tauri 2), powered by the MoonViz engine"
+repository = "https://github.com/asdshuaishuai/deepdesign-studio"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }

@@ -69,11 +69,16 @@ node scripts/sync-engine.mjs   # 1. 拉取标准 wasm 引擎产物（首次必�
 ## 测试
 
 ```bash
-cd src-tauri && cargo test    # 42 个测试（含 mock-LLM × 真 wasm 端到端、审查层契约）
+cd src-tauri && cargo test    # 43 个测试（含 mock-LLM × 真 wasm 端到端、审查层契约）
 node test_studio.cjs          # 前端状态机冒烟 + wasm 产物契约
 ```
 
 引擎门测试：wasm 产物缺失时合法跳过；产物在场但宿主/编解码损坏时必须失败。
+
+## 参与贡献
+
+欢迎贡献——提交前请读 [CONTRIBUTING.md](CONTRIBUTING.md)（分支纪律 / 提交规范 / 测试要求
+/ 架构边界）。安全漏洞请按 [SECURITY.md](SECURITY.md) 私下报告。
 
 ## 开源感谢
 
