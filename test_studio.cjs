@@ -323,14 +323,24 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '事实源合成未同时注入批注与 DESIGN.md（applyMbtResult）——请同步检查 S');
   assert(/designRestore\(b64ToUtf8\(r\.mbt_b64\)\)/.test(script),
     '打开项目未恢复 DESIGN.md——请同步检查 S');
-  assert(/function runStudioPrompt\(\)/.test(script)&&/askFxSdkMode\(prdInstr,run1,'prd'\)/.test(script)
-    &&/askFxSdkMode\(uiInstr,run2,'ui'\)/.test(script),
-    '两阶段编排缺失或阶段 mode 未分别下发 prd/ui——请同步检查 S');
-  assert(/const run1=nextAgentRun\(\);[\s\S]{0,2000}?const run2=nextAgentRun\(\);/.test(script),
-    '两阶段未各用独立 runId（预览归属/轨迹卡片会串）——请同步检查 S');
-  assert(/id="doc-stage"/.test(html)&&/id="doc-pane-prd"/.test(html)&&/id="doc-pane-ui"/.test(html)
+  // PRD 是第一步 C 位：一句话只是「产出 PRD 的一种入口」，不是必经的两阶段流水线。
+  assert(/function runStudioPrompt\(\)/.test(script)&&/askFxSdkMode\(prdInstr,run1,'prd'\)/.test(script),
+    '一句话生成 PRD 的入口缺失（mode=prd 未下发）——请同步检查 S');
+  assert(/function buildFromDocs\(\)/.test(script)&&/askFxSdk\(parts\.join\('\\n\\n'\),runId\)/.test(script),
+    'PRD → 原型的生成入口缺失——请同步检查 S');
+  assert(/syncPrdFromEditor\(\);[\s\S]{0,400}?if\(!studioDocs\.prd\)/.test(script),
+    '生成原型前未收回 PRD 编辑器内容/未以 PRD 为门槛——请同步检查 S');
+  assert(/\u3010\u4ea7\u54c1\u9700\u6c42\u6587\u6863\uff08PRD\uff09\u2014\u2014\u8fd9\u662f\u552f\u4e00\u7684\u529f\u80fd\u4e0e\u8303\u56f4\u4f9d\u636e\u3011/.test(script),
+    '建画布提示词未把 PRD 声明为唯一功能依据——请同步检查 S');
+  assert(/const ui=\$\('doc-pane-ui'\);[\s\S]{0,300}?\u53ef\u9009/.test(script),
+    'UI 说明未标注为可选中间产物（它不该是必经步骤）——请同步检查 S');
+  assert(/id="doc-stage"/.test(html)&&/id="doc-pane-prd"/.test(html)&&/id="doc-prd-text"/.test(html)
     &&/id="doc-pane-design"/.test(html),
-    '设计文档面板三视图（PRD / UI 设计 / DESIGN.md）缺失——请同步检查 S');
+    'PRD 面板（可编辑 textarea）/ 设计规范面板缺失——请同步检查 S');
+  assert(/function importPrdFromFile\(\)/.test(script)&&/readAsText\(f\)/.test(script),
+    '外部产品文档导入入口缺失（PRD 必须支持粘贴/导入）——请同步检查 S');
+  assert(/function togglePrdEdit\(\)/.test(script)&&/id="doc-prd-preview"/.test(html),
+    'PRD 编辑/预览切换缺失——请同步检查 S');
   assert(/function mdToHtml\(md\)/.test(script)&&/const esc=s=>String\(s\|\|''\)\.replace\(\/&\/g,'&amp;'\)/.test(script),
     'Markdown 渲染未先转义再结构化（XSS 风险）——请同步检查 S');
 }

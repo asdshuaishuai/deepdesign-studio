@@ -236,18 +236,28 @@ rules[] / notes` 与 `docs:{prd,ui}`（两份文档正文）。
 4. 标记不能以 **moonviz** 开头（引擎当锚标记过滤）。
 5. 放**文末**最稳（位置不随删板/改名漂移；放正文前的锚点由其后最近的 `## <板名>` 决定）。
 
-**两阶段生成（`runStudioPrompt`）**：阶段1 `mode:"prd"` 产出 PRD → 阶段2 `mode:"ui"` 产出
-UI 设计文档 → 用户点「生成 UI」进建画布。硬约束：
+**PRD 是第一等公民（站 C 位）**——主线只有两步，UI 说明是**可选**中间产物：
+1. **产出 PRD**，两个等价入口：一句话让 Agent 生成（`runStudioPrompt` → `mode:"prd"`），
+   或**直接粘贴/导入外部产品文档**（`#doc-prd-text` 是默认编辑态，「预览」切只读渲染）。
+2. **PRD → 可交互原型**（`buildFromDocs`）——以 PRD 为唯一功能与范围依据，实测不需要
+   先写 UI 说明（引擎生成式 UI 按 DESIGN.md 的规范自行决定视觉细节）。
+
+硬约束：
 - **文档阶段工具面不含 `moonviz_op`**（`tools_typed_doc`）——结构上不可能改动画布，
   外加 `if doc_mode` 兜底拦截（提示词禁令挡不住幻觉，工具面缺失才行）。
-- 每阶段独立 `runId` / `startMbt` / `max_steps`；两阶段在同一 `agentBusy` 区间串行
-  （单 wasmtime 单例，禁止并发 run）。
+- 每次 run 独立 `runId` / `startMbt` / `max_steps`；文档阶段与建画布若连续执行，必须在
+  同一 `agentBusy` 区间串行（单 wasmtime 单例，禁止并发 run）。
 - 文档阶段不调 `applyAgentTerminal`（不碰画布），`r.docs` 直接落 `studioDocs` 再 `persistDesign()`。
 - 文档阶段模型只回文本不调 `write_doc` → 报 `doc_not_written` 失败，**不伪装成澄清**
   （澄清是建画布阶段的合法意图，文档阶段要的是交付物）。
+- `buildFromDocs` 前置必须 `syncPrdFromEditor()` 先把编辑器内容收回真源——用户改完 PRD
+  直接点「生成原型」时，不收回就会用旧的 `studioDocs.prd`。
 
-**文档面板**：`#doc-stage` 覆盖层（与 `#decl-stage` 同范式）三视图 PRD / UI 设计 / DESIGN.md；
-`mdToHtml` 是极简 Markdown 渲染（先 escHtml 再结构化，不引三方库）。
+**DESIGN.md 只是视觉规范，不是设计说明**——它约束配色/字号/间距/圆角/引擎规范，
+不描述页面长什么样（页面内容由 PRD 决定）。措辞上不要把它叫成"设计文档"。
+
+**文档面板**：`#doc-stage` 覆盖层三视图 —— PRD（可编辑/可预览/可导入，C 位）/
+UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先 escHtml 再结构化，不引三方库）。
 
 ## Agent 基座约定（`agent.rs`）
 

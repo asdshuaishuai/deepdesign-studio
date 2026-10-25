@@ -1,10 +1,11 @@
 # deepDesign Studio
 
-**一句话，产出产品需求文档 → UI 设计文档 → 完整可交互原型的一站式产品设计工作室**（Tauri 2）。
-基于 [MoonViz](https://github.com/asdshuaishuai/moonviz) 纯 MoonBit 引擎：唯一事实源是 `.mbt.md` 文档，
-人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后回写同一文档。
-项目内的 **DESIGN.md**（设计规范文档）约束全部页面的视觉一致性——配色、字号、间距、圆角、
-组件规范都从它派生，随 DDP 一起持久化。
+**一句话，产出产品需求文档 → 完整可交互原型的一站式产品设计工作室**（Tauri 2）。
+**产品需求文档（PRD）是设计流程的起点**：可以一句话让 Agent 生成，也可以直接粘贴/导入
+外部产品文档，然后一键转成可交互原型。基于 [MoonViz](https://github.com/asdshuaishuai/moonviz)
+纯 MoonBit 引擎：唯一事实源是 `.mbt.md` 文档，人类画布操作与 Agent 修改都必须经引擎校验
+（HumanGate / AgentGate）后回写同一文档。项目内的 **DESIGN.md** 是**视觉规范**（配色/字号/
+间距/圆角/规范清单），只约束一致性、不决定页面内容，随 DDP 一起持久化。
 
 **当前版本 v0.4.2-fix** — [官网](https://asdshuaishuai.github.io/deepdesign-studio/) · [下载（GitHub Releases）](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest) · [引擎官网](https://asdshuaishuai.github.io/moonviz/) · [生态官网](https://asdshuaishuai.github.io/deeporca-site/)
 
@@ -12,8 +13,8 @@
 
 ## 特性
 
-- **一站式文档产出**：一句话 → **PRD**（页面清单/核心流程/交互状态/范围边界）→ **UI 设计文档**（色彩/字体/间距/组件/逐页布局/一致性清单）→ **可交互原型**。文档阶段与建画布阶段结构隔离（文档阶段工具面不含任何变更 op），先审阅后生成。
-- **DESIGN.md 一致性约束**：项目级设计规范文档（配色令牌、字体层级、间距网格、圆角档、引擎规范清单）作为建画布的硬约束，随 DDP 持久化；可从引擎实时令牌/规范基线一键抽取。
+- **PRD 驱动的设计流程**：**产品需求文档是起点**——一句话让 Agent 生成，或直接粘贴/导入外部产品文档；改完点「生成原型」即可产出完整可交互原型（UI 说明是可选细化）。需求文档阶段与建画布阶段工具面结构隔离（文档阶段不含任何变更 op），先审阅后生成。
+- **DESIGN.md 视觉规范**：项目级设计规范（配色令牌、字体层级、间距网格、圆角档、引擎规范清单）只约束视觉一致性，不描述页面内容；随 DDP 持久化，可从引擎实时令牌一键抽取。
 - **进程内 Agent**：Rust Agent 循环 × wasmtime 宿主——无 JS 运行时、无子进程桥。OpenAI / Anthropic 双协议，thinking 等级按 8 家厂商方言下发，13 个服务商预设（models.dev 快照本地化，离线可用）。
 - **生成式 UI（genUI）**：引擎 `generate` 一句话意图 → 确定性模板实例化 → 规范自愈 → 质量评分，作为建画布的第一优先通道；工具模式为兜底。
 - **收尾审查层**：主实现完成后自动进入三段审查——需求完整度、操作逻辑连线、综合修复——审查发现问题直接补齐，产出即验收。
