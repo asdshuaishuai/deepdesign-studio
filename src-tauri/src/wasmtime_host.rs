@@ -74,7 +74,7 @@ fn arity(fn_name: &str) -> Option<usize> {
 /// 0.1.6-fix/#19 起全部"改文档面"信封都带 canonical——apply 双门之外，
 /// auto_fix/constrain（此前改而不报，只能弃缓存）/tap（交互可改文档状态）/
 /// generate_responsive/component_compile_b64 一并纳入。
-const SESSION_MUTATING: [&str; 7] = [
+const SESSION_MUTATING: [&str; 8] = [
     "session_apply_agent",
     "session_apply_human",
     "session_auto_fix",
@@ -82,6 +82,8 @@ const SESSION_MUTATING: [&str; 7] = [
     "session_tap",
     "session_generate_responsive",
     "session_component_compile_b64",
+    // 生成式 UI：意图 → 模板实例化 → 自愈，必然改文档
+    "session_generate",
 ];
 /// session_tap 需要的最小 op 参数（artboard + x + y）
 const SESSION_TAP_MIN_ARGS: usize = 3;
@@ -379,6 +381,27 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                     parts.iter().skip(1).copied().collect::<Vec<_>>().join(" "),
                 ),
             ),
+            // 生成式 UI：op 形如 `generate <intent> [as <name>]`
+            // （与 constrain 同构：辅槽=intent，三槽=name）。intent 本身可含空格，
+            // 所以按 " as " 切分而不是按 token 位置——"登录页 dark" 里没有 as。
+            // 生成式 UI：宿主收到的 op 已是**剥掉动词的前缀**（agent 路由层切掉
+            // "generate" 后才 call），形如 `<intent> [as <name>]`。
+            // 因此这里绝不能 skip(1)——那会把意图的第一个词当动词丢掉
+            // （"登录页 as gen_login" → "页 as gen_login"）。intent 本身可含空格，
+            // 所以按 " as " 切分而不是按 token 位置。
+            "session_generate" => {
+                let rest = op.trim();
+                match rest.rsplit_once(" as ") {
+                    Some((intent, name)) if !name.trim().is_empty() && !name.contains(' ') => (
+                        "session_generate_in".to_string(),
+                        SlotPlan::Arg2(intent.trim().to_string(), name.trim().to_string()),
+                    ),
+                    _ => (
+                        "session_generate_in".to_string(),
+                        SlotPlan::Arg(rest.to_string()),
+                    ),
+                }
+            }
             "session_lint" | "session_critique" | "session_spec" | "session_query_nodes"
             | "session_states" | "session_interactions" | "session_infer_page_type"
             | "session_infer_missing" | "session_extract_design_system"

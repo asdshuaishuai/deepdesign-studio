@@ -349,6 +349,35 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'doc_phase 判定缺失或口径漂移——请同步检查 S');
 }
 
+/* 检查 T：生成式 UI 必须是建画布的首选通道（genUI 第一公民）。
+ * 真实事故：种子引导只认 template/create，`generate` 作为空项目首个 op 时会话开不起来，
+ * 模型被迫退回逐个 place——420 步摆一屏、叠出兄弟重叠（截图实证）。
+ * 三处必须同时在场，缺一即失效：
+ *   1) 宿主槽位（wasmtime_host）：按 " as " 切分且**不能 skip 动词**（op 已剥前缀）
+ *   2) agent 首 op 引导：generate 与 template/create 同权
+ *   3) 提示词：Build loop 把 generate 写成默认路径并解释为何不能手工摆页 */
+{
+  const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
+  const hostRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','wasmtime_host.rs'),'utf8');
+  assert(/"session_generate" => \{[\s\S]{0,700}?rsplit_once\(" as "\)/.test(hostRs),
+    'host 未按 " as " 切分 generate 的 name（intent 含空格会被切碎）——请同步检查 T');
+  assert(/"session_generate" => \{[\s\S]{0,400}?let rest = op\.trim\(\);/.test(hostRs),
+    'host 对 generate 的 op 做了 skip 动词处理——op 已剥前缀，skip 会丢意图首词——请同步检查 T');
+  assert(/"session_generate" => \{\s*"session_generate_in"\.to_string\(\)/.test(hostRs.replace(/\s+/g,' '))
+    || /"session_generate_in"\.to_string\(\)/.test(hostRs),
+    'generate 未映射到 session_generate_in——请同步检查 T');
+  // 首 op 引导：generate 必须与 template/create 同列（matches! 宏内出现 "generate"）
+  assert(/Some\("template"\) \| Some\("create"\) \| Some\("generate"\)/.test(agentRs)
+    &&/generate_works_as_first_op_on_empty_project/.test(agentRs),
+    'generate 不是空项目的合法首 op（genUI 在建画布阶段失效）——请同步检查 T；'
+    +'真实事故：种子引导只认 template/create 时 generate 开会话失败，模型退回逐 place 叠重叠');
+  assert(/\*\*`generate <intent> \[as <name>\]`\*\*/.test(agentRs)&&/### Why not hand-place a screen/.test(agentRs),
+    '提示词未把 generate 写成建页默认路径（会退回逐 place 叠重叠）——请同步检查 T');
+  assert(/fn auditBuiltBoards\(\)/.test(script)&&/自检\$\{issues\.total>0\?'发现'/.test(script.replace(/\s+/g,''))
+    || /const issues=await auditBuiltBoards\(\)/.test(script),
+    '建画布后缺少终态自检（偏差被静默）——请同步检查 T');
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');

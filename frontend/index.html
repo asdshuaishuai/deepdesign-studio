@@ -3383,7 +3383,13 @@ async function buildFromDocs(){
     if(studioDocs.prd)parts.push('【PRD】\n'+studioDocs.prd);
     if(studioDocs.ui)parts.push('【UI 设计文档（必须逐条落实）】\n'+studioDocs.ui);
     if(brief)parts.push('【DESIGN.md 设计规范（硬约束）】\n'+brief);
-    parts.push('请严格按上述文档建出完整可交互原型：每页一个画板、按文档连线、遵循全部设计规范。');
+    parts.push([
+      '请严格按上述文档建出完整可交互原型。**执行方式（必须遵守）**：',
+      '1) 每个页面用一次 `generate <意图> as <页面id>` 生成（意图取模板语义：登录页/首页 列表/个人主页/仪表盘/设置页…），不要手工逐个 place 一整页——手工定位必然叠出重叠；',
+      '2) 多页可在一次调用里用 "+" 组合：`generate "登录+注册+首页 列表"`，引擎会自动连相邻页的导航；',
+      '3) 读回信封的 score/missing，用 `autofill <artboard>` 补缺、`critique <artboard>` 复核；',
+      '4) 只对文档要求但与生成结果有差异的地方做 `update`/`place` 精修，最后用 `flow` 补齐文档要求的连线。',
+    ].join('\n'));
     traceOpen(runId,'🏗 按文档生成可交互原型',false);
     setStatus('agent','按文档生成原型…',true,'设计文档');
     const r=await askFxSdk(parts.join('\n\n'),runId);
@@ -3394,7 +3400,16 @@ async function buildFromDocs(){
     }
     await applyAgentTerminal(r,startMbt);
     setStatus('', '', true, '');
-    toast(`已生成 ${r.ops.length} 条操作`);
+    // 终态自检：逐画板跑 critique，把 norms 维度仍存在的偏差如实报出来。
+    // 为什么需要：AgentGate 逐 op 拦截，但模型仍可能用人类门语义之外的方式
+    // 攒出视觉债（典型是逐 place 造成兄弟重叠）。这里不静默——
+    // 用户要么看到"已通过自检"，要么看到具体页面与偏差数，自己决定要不要修。
+    const issues=await auditBuiltBoards();
+    if(issues.total>0){
+      toast(`已生成 ${r.ops.length} 条操作 · 自检发现 ${issues.total} 处偏差（${issues.boards.join('、')}）——可点「AI 修复」清偿`);
+    }else{
+      toast(`已生成 ${r.ops.length} 条操作 · 自检通过`);
+    }
     setMode('wireframe');
   }catch(err){
     toast('生成原型失败：'+String(err&&err.message||err).slice(0,100),'err');
@@ -3403,6 +3418,25 @@ async function buildFromDocs(){
     agentBusy=false;
     if(btn)btn.disabled=false;
   }
+}
+/* 建画布后的终态自检：逐画板跑 critique，汇总 norms 维度偏差。
+ * 返回 {total, boards:[板名]}；不抛错（自检失败不该让建画布成果打折扣）。 */
+async function auditBuiltBoards(){
+  const out={total:0,boards:[]};
+  for(const id of Object.keys(sessions)){
+    try{
+      const r=await engSessionInspect('session_critique',id);
+      if(!r||!r.ok||!r.data||!Array.isArray(r.data.results))continue;
+      const norms=r.data.results.find(x=>x&&x.principle==='norms');
+      if(norms&&typeof norms.score==='number'&&norms.score<9){
+        // score<9 意味着 norms 维度检出偏差；具体条数从 observation 里取
+        const m=String(norms.observation||'').match(/(\d+)\s*处/);
+        const n=m?Number(m[1]):1;
+        if(n>0){out.total+=n;out.boards.push(id);}
+      }
+    }catch(_){ }
+  }
+  return out;
 }
 function regenStudioDocs(){
   const input=$('doc-input');

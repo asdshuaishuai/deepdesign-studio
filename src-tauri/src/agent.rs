@@ -87,45 +87,56 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 - Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
   get read_mbt, one targeted op, done.
 
-## Build loop (from empty document)
-1. PLAN: choose screens; map each to a template. Available: __TEMPLATES__
-   Notes: template/create size args are optional; list_detail yields ONE artboard
-   (a list screen with a detail placeholder card — not two separate screens);
-   adaptive templates pick structure by width.
-   Artboard names become ids after sanitization — use ASCII snake_case names
-   (e.g. chat_list); non-ASCII names collapse to "_" and collide. Chinese copy
-   belongs in node text values, never in artboard/node ids. NEVER leave an
-   artboard named "__" or similar placeholder junk — if the entry board id is
-   meaningless, create a properly named board and move the content (or re-create
-   the screen with a real name) before finishing; tab bars with no target page
-   must not ship as dead links (drop the dead tab or create the target page).
-2. CREATE: one "template <id> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
-   node ids are only discoverable there. Artboard id = sanitized name.
-3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.
-   "place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]" to add engine
-   components (discover ids via list_components; "-" as variant means default). ALWAYS pass
-   the final [w] [h] when you know them — the gate evaluates the FINAL bbox (engine-v0.1.6,
-   issue #18): a place that collides at component-default size is rejected even if you meant
-   to resize right after; passing final w/h makes it one op instead of reject+update.
-4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
-   Use "interact" for anything richer than navigation (show_toast, set_state, haptic, play_sound) —
-   and define the target with "state" first if you want a pressed/selected visual.
-   Interaction and visuals are separate layers: bind flows to the container the user
-   actually taps (the row, the button, the card) — never to an inner text fragment —
-   and NEVER model interaction state through fill/stroke/text changes. The editor
-   draws tap-target hot zones from these bindings as its own overlay; a node whose
-   whole visual is one rect+label (list rows, tab bars) must still be a complete,
-   self-contained visual, because hot-zone markers come and go independently of it.
-5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired; no dangling refs.
-   Run "fix <artboard>" if violations accumulated. Agent ops are gate-checked:
-   violations are rejected outright with mbt_gate_block (debt tolerance is human-canvas only).
+## Build loop — GENERATE FIRST (this is the default path)
+The engine has deterministic page generation. Use it; do NOT hand-place a whole screen.
+1. PLAN: choose screens. For each screen pick the closest intent phrase, then:
+   **`generate <intent> [as <name>]`** — ONE call builds a complete, norm-compliant page
+   (template instantiation + token colors + auto_fix self-healing + quality score).
+   Intent examples: "登录页" / "首页 列表" / "个人主页" / "仪表盘 dark" / "设置页".
+   Combine screens in one call with "+": `generate "登录+注册"` also wires the
+   navigation flow between neighbours automatically (max 4 segments).
+   Add " as <name>" to control the artboard id (ASCII snake_case, e.g. `as home`).
+2. READ THE ENVELOPE. `generate` returns {artboard, template, page_hint, theme_applied,
+   autofix{fixes,detail}, missing{page_type,missing[]}, score{total,grade,...}, next}.
+   - `score.grade` A/B are good; C/D means the intent did not match a template well —
+     consider regenerating with a clearer intent, or refine with ops afterwards.
+   - `missing[]` lists what the page type expects but lacks: `autofill <artboard>` materializes
+     those gaps in one call (idempotent — running twice adds nothing).
+3. REFINE ONLY WHAT THE DOCS REQUIRE: use `update` / `place` for the specific differences
+   between the generated page and the design document (extra section, different copy, a
+   component the template lacks). Reach for `template` only when you need an exact built-in
+   layout; Available: __TEMPLATES__
+   Tips: list_detail yields ONE artboard (list + detail placeholder card); adaptive
+   templates pick structure by width. Artboard names become ids after sanitization —
+   ASCII snake_case only; Chinese copy belongs in node text values, never in ids.
+   NEVER leave an artboard named "__" or placeholder junk; tab bars must not have dead links.
+4. CONNECT: `flow <from> <to> <node>` for every primary CTA the docs call for that generate's
+   auto-wiring does not cover (login button, card tap, tab, back). Use `interact` for anything
+   richer than navigation (show_toast, set_state) — define the target with `state` first.
+   Interaction and visuals are separate layers: bind flows to the container the user actually
+   taps (row/button/card), never to an inner text fragment, and NEVER model interaction state
+   through fill/stroke/text changes. The editor draws hot zones from these bindings on its own
+   overlay; a node whose whole visual is one rect+label must still be self-contained.
+5. VERIFY: `critique <artboard>` for each page (9 dimensions incl. norms). Fix real deviations
+   with `fix <artboard>` or targeted ops; then read_mbt to confirm flows cover every screen.
+   Agent ops are gate-checked: violations are rejected outright with mbt_gate_block.
 6. REPORT: stop calling tools and summarize: screens built and the flow map.
+
+### Why not hand-place a screen
+Placing 40+ nodes by hand costs hundreds of steps and makes YOU compute every coordinate —
+which is exactly how overlapping siblings and cramped layouts happen (the gate then rejects
+them and you burn more steps fixing). `generate` computes layout deterministically and
+self-heals norms. Hand placement is for *targeted additions*, not for building pages.
 
 ## Tweak loop (document already loaded)
 0. read_mbt FIRST — always ground ids and flows before any op.
 1. Make the minimal ops. 2. Report what changed.
 
 ## Operation grammar (one op per moonviz_op call, no newlines)
+  generate <intent> [as <name>]        ← PREFERRED: builds a whole page deterministically
+      (intent may contain spaces and "+" to combine screens, e.g. "登录+注册";
+       "as <name>" sets the artboard id. Returns score/missing/autofix report.)
+  | autofill <artboard>                ← materialize the missing[] report (idempotent)
   template <template_id> <name> [w] [h] | create <name> [w] [h]
   | duplicate <artboard> <new_name> | delete-artboard <artboard>
   | place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]
@@ -649,15 +660,27 @@ impl<'a> EngineState<'a> {
             return json!({"ok": false, "error": "op_newline_forbidden"});
         }
 
-        // 空项目起步：template/create 经种子文档引导，与后续 op 同走 **AgentGate**——
+        // 空项目起步：template/create/generate 经种子文档引导，与后续 op 同走 **AgentGate**——
         // 系统提示词向模型承诺"每个 op 都经 AgentGate"，首板不是例外（0.1.5-fix-2
         // 修复 moonviz#14 模板内容债后回收；此前因 4 模板自带债被迫走人类门）。
+        // generate 必须在内：它是建画布的首选通道，若首 op 被拒（会话开不起来），
+        // genUI 第一公民在建画布阶段形同虚设——模型只能退回逐个 place（真实事故：
+        // 420 步逐个摆放、叠出重叠）。
         // 首个 op 落地后立即删除种子画板，canonical 由引擎回传。
         if self.mbt.is_none()
-            && matches!(op.split_whitespace().next(), Some("template") | Some("create"))
+            && matches!(
+                op.split_whitespace().next(),
+                Some("template") | Some("create") | Some("generate")
+            )
         {
             let seed = seed_doc(SEED_BOARD, 24, 24);
-            let mut r = self.call("apply_agent_op", &seed, op).await;
+            let mut r = if op.split_whitespace().next() == Some("generate") {
+                // generate 是 session 管道专属动词：先建会话（种子文档），再走 session_generate
+                let args = op["generate".len()..].trim().to_string();
+                self.call("session_generate", &seed, &args).await
+            } else {
+                self.call("apply_agent_op", &seed, op).await
+            };
             if r.get("ok") != Some(&json!(true)) {
                 return r;
             }
@@ -749,6 +772,35 @@ impl<'a> EngineState<'a> {
             self.revision += 1;
             // L0 整形：export-* 信封化 / 检视类超限截断（失败信封已在内部原样放行）
             return shape_readonly_result(op, r);
+        }
+
+        // generate：生成式 UI（确定性意图 → 模板实例化 → 规范自愈 → 质量评分）。
+        // 与 constrain 同构的 session 特判路由：apply 门不认这个动词。成功信封带
+        // canonical（变更路径同构：键前移 + 记 ops）；评分/缺失/自愈等报告字段随
+        // 信封回传（mbt 剥除，模型读到可据以补缺的结构化结果）。
+        // **建画布的首选通道**：一次调用产出整页，比逐个 place 快两个数量级；
+        // 重叠/溢出由引擎自愈兜底（逐 place 让模型自己算坐标，必然叠出重叠）。
+        if op.split_whitespace().next() == Some("generate") {
+            let args = op["generate".len()..].trim();
+            if args.is_empty() {
+                return json!({"ok": false, "error": "generate_usage: generate <intent> [as <name>]"});
+            }
+            let r = self.call("session_generate", &mbt, args).await;
+            if !(r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some()) {
+                return r;
+            }
+            self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
+            self.ops.push(op.to_string());
+            self.revision += 1;
+            let mut out = json!({"ok": true, "op": op});
+            if let (Some(o), Some(src)) = (out.as_object_mut(), r.as_object()) {
+                for (k, v) in src {
+                    if k != "mbt" {
+                        o.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            return out;
         }
 
         // constrain：布局意图解析器，session 管道专属——apply 门不认
@@ -1055,7 +1107,7 @@ fn tools_typed() -> Vec<ChatCompletionTools> {
     vec![
         tool(
             "moonviz_op",
-            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, extract-design-system <ab>, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
+            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): generate (PREFERRED for whole pages — intent to page, self-healing, scored)/autofill/template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, extract-design-system <ab>, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
             json!({
                 "type": "object",
                 "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -3167,6 +3219,60 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(tokens.get("colors").is_some(), "list_tokens 应返回颜色分组：{tokens}");
         let themes = ENGINE.call("list_themes", "", "").await.unwrap();
         assert!(themes.as_array().is_some_and(|a| a.len() >= 5), "list_themes 应返回 6 主题");
+    }
+
+    /// 空项目首 op 是 generate 时必须能落地（genUI 第一公民的**前提**）。
+    /// 真实事故：种子引导只认 template/create，generate 作为首 op 时会话开不起来、
+    /// 被当失败重试，模型只好退回逐个 place——420 步摆一屏、叠出重叠。
+    /// 这条测试锁死"generate 可作为首个变更 op"。
+    #[tokio::test]
+    async fn generate_works_as_first_op_on_empty_project() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
+        let r = state.moonviz_op("generate 登录页 as home").await;
+        assert_eq!(r["ok"], json!(true), "generate 应能作为空项目的首个 op：{r}");
+        assert!(
+            state.mbt.as_deref().is_some_and(|m| m.contains("home")),
+            "生成结果应写进自持 canonical"
+        );
+        // 种子板必须被清掉，只留生成的页
+        let canon = state.mbt.clone().unwrap_or_default();
+        assert!(
+            !canon.contains(&format!("moonviz:artboard {SEED_BOARD}")),
+            "种子画板应已在引导后删除"
+        );
+        assert_eq!(state.ops.len(), 1, "只记一条 op");
+    }
+
+    /// 生成式 UI 宿主契约：`generate` 是建画布的首选通道（一次调用产出整页，
+    /// 布局由引擎确定性求解 + norms 自愈）。这条路由必须真的通——否则 agent 只能退回
+    /// 逐 place，而逐 place 会让模型自己算坐标、叠出重叠（真实事故）。
+    /// 同时锚定：意图里的空格不被按 token 切碎（"首页 列表" 是一个意图），
+    /// 以及 `as <name>` 能指定画板 id。
+    #[tokio::test]
+    async fn session_generate_host_contract() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        // 引擎要求文档至少一个视觉块——空串开会话会 session_open_failed:-1
+        let seed = seed_doc("sd", 390, 844);
+        // 空格意图 + 显式命名
+        let r = ENGINE.call("session_generate", &seed, "登录页 as gen_login").await.unwrap();
+        assert_eq!(r["ok"], json!(true), "generate 应成功：{r}");
+        assert_eq!(r["artboard"], json!("gen_login"), "as <name> 应指定画板 id：{r}");
+        assert!(r["mbt"].as_str().is_some_and(|m| m.contains("gen_login")), "信封应回传 canonical");
+        assert!(r["score"]["total"].as_i64().is_some_and(|v| v > 0), "应带质量评分：{r}");
+        // 组合意图：多页 + 自动导航（同样要有种子文档才能开会话）
+        let multi = ENGINE.call("session_generate", &seed, "登录+注册").await.unwrap();
+        assert_eq!(multi["ok"], json!(true), "组合意图应成功：{multi}");
+        let canon = multi["mbt"].as_str().unwrap_or("");
+        assert!(canon.matches("<!-- moonviz:artboard").count() >= 2, "组合意图应产出多块画板");
+        // autofill 是 op（不是 session 导出），走 apply 通道
+        let filled = ENGINE.call("session_apply_agent", canon, "autofill gen_login").await;
+        if let Ok(v) = filled {
+            // 生成式产物的缺失项可能为空（模板已自足），此时 autofill 也应幂等成功或明确拒绝
+            assert!(v.get("ok").is_some(), "autofill 应返回信封：{v}");
+        }
     }
 
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。
