@@ -204,6 +204,97 @@ fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
 }
 
+/// 阶段一：产品需求文档（PRD）。**不建画布、不调变更 op**——只产出文档文本。
+/// 与阶段二（UI 设计文档/画布）分离，让用户有机会在生成原型前审阅、修正方向。
+const PRD_INSTRUCTIONS: &str = r#"You are the embedded product analyst of deepDesign Studio.
+Your ONLY job this turn is to turn the user's one-line idea into a concise, actionable
+Product Requirements Document (PRD). You must NOT create or modify any artboard.
+
+## Output contract
+Call the `write_doc` tool exactly once with:
+- kind: "prd"
+- markdown: the complete PRD in Markdown (zh-CN unless the user writes in another language)
+
+Do not call moonviz_op. Do not call write_doc more than once. Do not answer with plain text
+instead of the tool call — the document is delivered through the tool.
+
+## PRD structure (keep it tight — this is a working document, not a novel)
+# <产品名>
+## 1. 一句话定位
+## 2. 目标用户与核心场景
+## 3. 页面清单与职责（表格：页面 | 职责 | 关键内容 | 入口来源）
+## 4. 核心流程（从入口到完成的步骤链，用编号列表）
+## 5. 关键交互与状态（需要哪些可点击行为、空态/加载态/错误态）
+## 6. 视觉与品牌方向（一句话描述调性、主色倾向、密度偏好）
+## 7. 范围边界（明确不做什么）
+
+## Rules
+- Derive the experience: "露营装备租赁小程序" implies home/browse/detail/order/confirmation —
+  decide the screen list yourself; do not ask the user (this stage never asks questions).
+- Every statement must be concrete and checkable (real labels, real numbers, real flows).
+  Never write lorem ipsum, never write "待定".
+- Screen count: 3-6 for a focused prototype. Prefer完整核心流程 over surface breadth.
+- Pages must connect: state explicitly which page leads to which (section 4).
+- Write in the user's language."#;
+
+/// 阶段二：UI 设计文档。基于 PRD + DESIGN.md 约束，产出**可执行的设计规范**，
+/// 仍然不建画布——它是"画布之前的最后一份可审阅文档"。
+const UI_DOC_INSTRUCTIONS: &str = r#"You are the embedded UI designer of deepDesign Studio.
+Given the approved PRD and the project's DESIGN.md (design system constraints), produce the
+UI Design Document. You must NOT create or modify any artboard this turn.
+
+## Output contract
+Call the `write_doc` tool exactly once with:
+- kind: "ui"
+- markdown: the complete UI Design Document in Markdown
+
+Do not call moonviz_op. Do not call write_doc more than once.
+
+## DESIGN.md is binding
+The system prompt contains the project's DESIGN.md (palette / typography / spacing / radius /
+rules). Every decision you document MUST come from it:
+- COLORS: use only the palette roles defined there. If you need a color not in the palette,
+  say so explicitly in a "待补充" line rather than inventing hex values.
+- TYPOGRAPHY: use only the defined font scale names and sizes.
+- SPACING: express every gap/padding as a multiple of the defined grid unit.
+- RADIUS: use only the defined radius bands (e.g. button 8, pill = height/2, avatar 999).
+- RULES: the norm list in DESIGN.md is enforceable by the engine — your document must not
+  contradict any of them (text contrast, button padding, list dividers, axis alignment, touch target 44x44).
+When DESIGN.md is missing or thin, derive the missing parts from the engine's token baseline
+and state clearly which values you introduced.
+
+## Document structure
+# UI 设计文档
+## 1. 设计原则（3-5 条，可检验）
+## 2. 色彩系统（表格：角色 | 值 | 用在哪里）
+## 3. 字体层级（表格：层级 | 字号 | 字重 | 用在哪里）
+## 4. 间距与圆角（网格单位、各组件档位）
+## 5. 组件规范（每个用到的组件：尺寸、变体、使用场景）
+## 6. 逐页布局（每页一个小节：结构分区、关键尺寸、层级关系）
+## 7. 交互与状态规范（tap 目标、返回路径、状态多态）
+## 8. 一致性检查清单（对照 DESIGN.md 的 rules，逐条给出本设计的落实方式）
+
+Use tables over prose for anything enumerable — the implementing step reads this document
+literally, so ambiguity costs accuracy.
+Write in the user's language."#;
+
+/// 按阶段选择系统提示词。`mode` 来自 payload：
+/// - `None`/其它 → 默认的建画布 agent（保持既有行为）
+/// - `Some("prd")` → 只产出 PRD
+/// - `Some("ui")` → 只产出 UI 设计文档
+fn instructions_for(mode: Option<&str>) -> String {
+    match mode {
+        Some("prd") => PRD_INSTRUCTIONS.to_string(),
+        Some("ui") => UI_DOC_INSTRUCTIONS.to_string(),
+        _ => instructions(),
+    }
+}
+
+/// 文档阶段（prd/ui）只暴露 write_doc + 只读工具——不给任何变更 op 机会。
+fn doc_phase(mode: Option<&str>) -> bool {
+    matches!(mode, Some("prd") | Some("ui"))
+}
+
 /// LLM 线上协议。OpenAI Chat Completions 与 Anthropic Messages 两套请求/响应格式。
 /// MiniMax 双协议支持：OpenAI 兼容端点（/v1）与 Anthropic 兼容端点（/anthropic，官方推荐）。
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -295,8 +386,8 @@ fn to_anthropic_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
 }
 
 /// OpenAI tools schema → Anthropic tools schema（name/description/input_schema）。
-fn anthropic_tools() -> Value {
-    let fns = tools_schema();
+fn anthropic_tools(mode: Option<&str>) -> Value {
+    let fns = tools_schema_for(mode);
     let arr = fns.as_array().cloned().unwrap_or_default();
     let out: Vec<Value> = arr
         .iter()
@@ -984,18 +1075,69 @@ fn tools_typed() -> Vec<ChatCompletionTools> {
     ]
 }
 
-/// tools 的序列化形态（anthropic_tools 转换与契约测试消费）。
+/// tools 的序列化形态（契约测试消费；生产路径走 tools_schema_for(mode)）。
+#[cfg(test)]
 fn tools_schema() -> Value {
     serde_json::to_value(tools_typed()).expect("tools schema 序列化不可失败（纯数据结构）")
+}
+
+/// 文档阶段的工具面：write_doc + 只读检视（read_mbt / list_components）。
+/// 刻意**不含** moonviz_op——文档阶段拿不到任何变更通道，结构上就不可能误改画布。
+fn tools_typed_doc() -> Vec<ChatCompletionTools> {
+    let tool = |name: &str, description: &str, parameters: Value| {
+        ChatCompletionTools::Function(ChatCompletionTool {
+            function: FunctionObject {
+                name: name.to_string(),
+                description: Some(description.to_string()),
+                parameters: Some(parameters),
+                ..Default::default()
+            },
+        })
+    };
+    vec![
+        tool(
+            "write_doc",
+            "Deliver the finished document. Call this exactly once with kind=\"prd\" or kind=\"ui\" and the complete Markdown.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["prd", "ui"], "description": "Which document this is"},
+                    "markdown": {"type": "string", "description": "The complete document in Markdown"}
+                },
+                "required": ["kind", "markdown"]
+            }),
+        ),
+        tool(
+            "read_mbt",
+            "Read the current canonical .mbt.md source of truth (node ids, flows, all screens).",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "list_components",
+            "List all engine UI component presets (id, category, variants).",
+            json!({"type": "object", "properties": {}}),
+        ),
+    ]
+}
+
+fn tools_schema_for(mode: Option<&str>) -> Value {
+    let tools = if doc_phase(mode) { tools_typed_doc() } else { tools_typed() };
+    serde_json::to_value(tools).expect("tools schema 序列化不可失败（纯数据结构）")
 }
 
 /// OpenAI 请求体：SDK 类型骨架 + 原始 messages 逐字合并 + thinking 方言注入。
 /// 拆成独立函数是为了 wire 契约测试——typed 骨架不得吞掉 messages 里的非标字段
 /// （MiniMax 多轮要求 assistant 消息（含 reasoning_content）完整回传）。
+#[cfg(test)]
 fn openai_request_body(model: &str, thinking: &str, messages: &[Value]) -> Value {
+    openai_request_body_for(model, thinking, messages, None)
+}
+
+/// 同 openai_request_body，但工具面按阶段选择（文档阶段不含 moonviz_op）。
+fn openai_request_body_for(model: &str, thinking: &str, messages: &[Value], mode: Option<&str>) -> Value {
     let typed = CreateChatCompletionRequest {
         model: model.to_string(),
-        tools: Some(tools_typed()),
+        tools: Some(if doc_phase(mode) { tools_typed_doc() } else { tools_typed() }),
         ..Default::default()
     };
     let mut body =
@@ -1044,18 +1186,20 @@ fn safe_base_url(u: &str) -> Option<String> {
 
 /// 单次 LLM 请求：按 protocol_for 分流——OpenAI Chat Completions（bearer）或
 /// Anthropic Messages（x-api-key + anthropic-version）；后者归一化为 OpenAI 形状返回。
-async fn chat_once(
+/// 同 chat_once，工具面按阶段选择（文档阶段只给 write_doc + 只读工具）。
+async fn chat_once_mode(
     client: &reqwest::Client,
     base_url: &str,
     api_key: &str,
     model: &str,
     thinking: &str,
     messages: &[Value],
+    mode: Option<&str>,
 ) -> Result<Value, String> {
     let protocol = protocol_for(base_url);
     let req = match protocol {
         Protocol::OpenAi => {
-            let body = openai_request_body(model, thinking, messages);
+            let body = openai_request_body_for(model, thinking, messages, mode);
             let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
             client.post(&url).bearer_auth(api_key).json(&body)
         }
@@ -1073,7 +1217,7 @@ async fn chat_once(
                 "model": model,
                 "max_tokens": max_tokens,
                 "messages": msgs,
-                "tools": anthropic_tools(),
+                "tools": anthropic_tools(mode),
             });
             if let Some(sys) = system {
                 body["system"] = json!(sys);
@@ -1160,20 +1304,21 @@ fn is_transient_llm_error(e: &str) -> bool {
 
 /// LLM 调用 + 瞬时错误指数退避重试（3 次：0.8s/2.5s/5s）——
 /// 本机网络对部分端点存在间歇性 TLS/连接阻断，单发失败不代表性故障
-async fn chat_once_with_retry(
+async fn chat_once_with_retry_mode(
     client: &reqwest::Client,
     base: &str,
     api_key: &str,
     model: &str,
     thinking: &str,
     messages: &[Value],
+    mode: Option<&str>,
 ) -> Result<Value, String> {
     let mut last = String::new();
     for wait in [0u64, 800, 2500, 5000] {
         if wait > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
         }
-        match chat_once(client, base, api_key, model, thinking, messages).await {
+        match chat_once_mode(client, base, api_key, model, thinking, messages, mode).await {
             Ok(v) => return Ok(v),
             Err(e) => {
                 last = e;
@@ -1287,6 +1432,25 @@ pub async fn run_with_steps(
     progress: Option<&(dyn Fn(Value) + Send + Sync)>,
     max_steps: usize,
 ) -> Value {
+    run_with_mode(host, instruction, mbt_b64, api_key, model, base_url, thinking, progress, max_steps, None).await
+}
+
+/// 带阶段模式的 run。`mode` 决定系统提示词与工具面：
+/// - `None` → 建画布 agent（既有默认行为，与 run_with_steps 等价）
+/// - `Some("prd")` / `Some("ui")` → 文档阶段：只写文档，结构上无法改动画布
+pub async fn run_with_mode(
+    host: &EngineHost,
+    instruction: &str,
+    mbt_b64: Option<&str>,
+    api_key: &str,
+    model: &str,
+    base_url: &str,
+    thinking: &str,
+    progress: Option<&(dyn Fn(Value) + Send + Sync)>,
+    max_steps: usize,
+    mode: Option<&str>,
+) -> Value {
+    let doc_mode = doc_phase(mode);
     let max_steps = max_steps.clamp(MAX_STEPS_MIN, MAX_STEPS_MAX);
     if api_key.trim().is_empty() {
         return json!({"ok": false, "error": "api_key_missing"});
@@ -1312,9 +1476,11 @@ pub async fn run_with_steps(
     };
 
     let mut messages: Vec<Value> = vec![
-        json!({"role": "system", "content": instructions()}),
+        json!({"role": "system", "content": instructions_for(mode)}),
         json!({"role": "user", "content": instruction}),
     ];
+    // 文档阶段收集到的文档（write_doc 的产物）；正常建画布阶段恒为空
+    let mut written_docs: serde_json::Map<String, Value> = serde_json::Map::new();
     // 运行日志（stderr → tauri dev 控制台）：无落盘日志时的最小可诊断性——
     // 每次 op 的结果、run 起止与终态。eprintln 只影响调试，不进产品 UI。
     eprintln!(
@@ -1351,7 +1517,8 @@ pub async fn run_with_steps(
 
     // ── 闲置画板清扫（开始）：清上一轮运行遗留的空占位画板 ──
     // 新项目（mbt None）与单画板文档天然跳过（总数 ≤1 不动）。
-    if state.mbt.is_some() {
+    // 文档阶段不碰画布（不改文档、不做清扫）。
+    if state.mbt.is_some() && !doc_mode {
         let _ = sweep_idle_artboards(&mut state, &emit, &mut seq).await;
     }
 
@@ -1389,7 +1556,7 @@ pub async fn run_with_steps(
         }
         // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
         // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够
-        let resp = chat_once_with_retry(&client, &base, api_key, model, thinking, &request_messages).await;
+        let resp = chat_once_with_retry_mode(&client, &base, api_key, model, thinking, &request_messages, mode).await;
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
@@ -1417,8 +1584,9 @@ pub async fn run_with_steps(
         // 不静默——截断的"总结"与半截 tool_use 都曾因不可见而被误当正常回合（issues #10）
         let truncated = resp.pointer("/choices/0/finish_reason") == Some(&json!("max_tokens"));
 
-        // 中间轮的 assistant 文本（计划/说明）进轨迹
-        let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        // 中间轮的 assistant 文本（计划/说明）进轨迹。
+        // 取 String 而非 &str：msg 随后会被 move 进 messages，文档阶段收尾还要用这段文本。
+        let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
         if !mid_text.trim().is_empty() && !tool_calls.is_empty() {
             emit("assistant_text", json!({"text": mid_text}));
         }
@@ -1430,7 +1598,7 @@ pub async fn run_with_steps(
             // 由 LLM 在剩余预算内用工具自查补齐）→ continue 回主循环；审查后再次
             // done（文本=审查报告）走正常返回。预算不足/零产出/已审查均不触发。
             let review_start = max_steps.saturating_sub(REVIEW_STEPS);
-            if !review_done && state.mbt.is_some() && !state.ops.is_empty() && step < review_start {
+            if !review_done && !doc_mode && state.mbt.is_some() && !state.ops.is_empty() && step < review_start {
                 review_done = true;
                 emit("review", json!({}));
                 for ab in artboard_ids(state.mbt.as_deref().unwrap_or("")) {
@@ -1445,6 +1613,19 @@ pub async fn run_with_steps(
                 continue;
             }
             let mut text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // 文档阶段：模型选择用纯文本回答而没调 write_doc——如实失败，不伪装成"澄清"。
+            // （澄清是建画布阶段的合法意图；文档阶段要的是一份交付物，缺失就是没完成。）
+            if doc_mode && written_docs.is_empty() {
+                emit("assistant_text", json!({"text": text}));
+                emit("failed", json!({"error": "doc_not_written", "ops": 0}));
+                return json!({
+                    "ok": false,
+                    "error": "doc_not_written",
+                    "detail": "LLM replied with text instead of calling write_doc",
+                    "mode": mode,
+                    "text": text,
+                });
+            }
             if state.mbt.is_none() && state.ops.is_empty() {
                 // 澄清式回复（CLARIFY-FIRST）：文本即 agent 的提问——照常推送轨迹
                 emit("assistant_text", json!({"text": text}));
@@ -1512,8 +1693,27 @@ pub async fn run_with_steps(
                 )}),
                 Ok(args) => match name {
                     "moonviz_op" => {
-                        let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        state.moonviz_op(&op).await
+                        // 文档阶段工具面不含 moonviz_op；模型若硬调（历史残留/幻觉）也在这里挡住，
+                        // 保证"文档阶段结构上不可能改画布"这一不变式不依赖提示词自觉
+                        if doc_mode {
+                            json!({"ok": false, "error": "doc_phase_readonly: this turn only writes documents"})
+                        } else {
+                            let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            state.moonviz_op(&op).await
+                        }
+                    }
+                    "write_doc" => {
+                        let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                        let md = args.get("markdown").and_then(|v| v.as_str()).unwrap_or("");
+                        if !matches!(kind, "prd" | "ui") {
+                            json!({"ok": false, "error": "write_doc_kind_invalid: expected prd|ui"})
+                        } else if md.trim().is_empty() {
+                            json!({"ok": false, "error": "write_doc_empty"})
+                        } else {
+                            written_docs.insert(kind.to_string(), json!(md));
+                            emit("doc_written", json!({"kind": kind, "chars": md.chars().count()}));
+                            json!({"ok": true, "kind": kind, "chars": md.chars().count()})
+                        }
                     }
                     "read_mbt" => state.read_mbt().await,
                     "list_components" => state.list_components().await,
@@ -1550,6 +1750,39 @@ pub async fn run_with_steps(
                 "tool_call_id": id,
                 "content": serde_json::to_string(&result).unwrap_or_else(|_| "{}".into()),
             }));
+        }
+        // ── 文档阶段收尾：write_doc 成功即任务完成，不再进主循环 ──
+        // 不等模型自己给总结（它没有再调工具的理由，多等一轮纯浪费 token）：
+        // 拿到期望的那份文档就返回；两份都要（组合请求）则等齐再退。
+        if doc_mode && !written_docs.is_empty() {
+            let want = match mode {
+                Some("prd") => "prd",
+                Some("ui") => "ui",
+                _ => "",
+            };
+            let satisfied = want.is_empty() || written_docs.contains_key(want);
+            if satisfied {
+                // msg 已在工具循环前 move 进 messages；这里用当时取出的 mid_text
+                let text = mid_text.to_string();
+                if !text.trim().is_empty() {
+                    emit("assistant_text", json!({"text": text}));
+                }
+                let docs = Value::Object(written_docs.clone());
+                let kind = want.to_string();
+                eprintln!("[agent] doc end: kind={kind} docs={}", written_docs.len());
+                emit(
+                    "done",
+                    json!({"stopReason": "done", "ops": 0, "docs": written_docs.len(), "kind": kind}),
+                );
+                return json!({
+                    "ok": true,
+                    "stopReason": "done",
+                    "mode": mode,
+                    "docs": docs,
+                    "ops": [],
+                    "text": text,
+                });
+            }
         }
     }
 

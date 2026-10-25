@@ -1,8 +1,10 @@
 # AGENTS.md — deepDesign Studio
 
-AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事实源是 MoonViz 引擎的 `.mbt.md` 文档**：
-人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后回写同一份文档，
-`.ddp` 只是它的认证加密容器。
+AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**一句话产出产品需求文档（PRD）→
+UI 设计文档 → 完整可交互原型**的一站式产品设计工作室。**唯一事实源是 MoonViz 引擎的
+`.mbt.md` 文档**：人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后
+回写同一份文档，`.ddp` 只是它的认证加密容器。项目级 **DESIGN.md**（设计规范文档）约束
+全局视觉一致性——配色/字体/间距/圆角/组件规范都从它派生，随 DDP 持久化。
 
 **当前版本：0.4.2-fix**（2026-10-11 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
 详见 [docs/versioning.md](docs/versioning.md)。
@@ -156,6 +158,12 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 忽略本地源**——标记在场时醒目告警并使用 Release 锚定引擎（CI 全新检出无标记，
 不受影响）。删除标记文件即恢复纯 Release 锚定。
 
+**当前工作状态：本地 SDK 模式已启用**（`ENGINE_LOCAL` → `../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm`，
+引擎 dev 0.1.9-fix-2，含 `generate` 生成式 UI / norms v2 / 动效系统 / `session_spec` /
+`session_extract_design_system`）。契约探针已扩到 **28 session API**——新增能力进 wasm 面时
+必须同步 `scripts/sync-engine.mjs` 的 `SESSION_EXPORTS`，否则本地构建的新导出无人守门。
+生产打包仍走 `--release`（硬性忽略本地源）。
+
 规范线现状（**已随 engine-v0.1.9 重出构建全量发布**，2026-10-11）：
 `core/norms.mbt`（按钮不卡文案：文案宽+24 留白、高 ≥ 字号+20；圆角档：按钮族 8、
 胶囊 高/2、avatar 999；全宽条/全宽行直角；**齐缝列表行必须有行间分割线**——
@@ -212,6 +220,34 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
   （进程内 JS 引擎宿主）已被评估并**否决**：+30~80MB 安装包税 + 依赖链脆弱
   （temporal_rs/icu_calendar 编译断裂实证）；**wasmtime 为最终形态**
   （classic wasm 宿主中立使然，见 `docs/upstream-engine-ask.md`）。
+
+## 设计工作室：DESIGN.md 契约与两阶段生成（检查 S 锚定）
+
+**DESIGN.md** 是项目级设计规范，载体是 `.mbt.md` 里的 HTML 注释块
+`<!-- deepdesign:design {...} -->`——与批注（`deepdesign:ink`）同构，DDP 自动携带、
+随文件迁移、不改 Rust 持久化层。载荷含 `palette / typography / spacing / radius /
+rules[] / notes` 与 `docs:{prd,ui}`（两份文档正文）。
+
+**真机实证的五条硬约束**（违反会静默丢内容，见 `frontend/index.html` 的 `designSerialize` 注释）：
+1. 内容里**绝不能出现 `-->` 字面量**——引擎扫描器在首个 `-->` 处截断注释。实现把 `>` 转义为
+   `\u003e`（JSON.parse 能还原）；改序列化时守住这条，否则长文档会被腰斩。
+2. 引擎会**压平行首缩进**——文档正文用表格/扁平列表/显式编号，不用嵌套缩进表达层级。
+3. 注释内不要写**未闭合的 ```mbt 围栏**——会让其后的真实围栏块被吞，文档直接打不开。
+4. 标记不能以 **moonviz** 开头（引擎当锚标记过滤）。
+5. 放**文末**最稳（位置不随删板/改名漂移；放正文前的锚点由其后最近的 `## <板名>` 决定）。
+
+**两阶段生成（`runStudioPrompt`）**：阶段1 `mode:"prd"` 产出 PRD → 阶段2 `mode:"ui"` 产出
+UI 设计文档 → 用户点「生成 UI」进建画布。硬约束：
+- **文档阶段工具面不含 `moonviz_op`**（`tools_typed_doc`）——结构上不可能改动画布，
+  外加 `if doc_mode` 兜底拦截（提示词禁令挡不住幻觉，工具面缺失才行）。
+- 每阶段独立 `runId` / `startMbt` / `max_steps`；两阶段在同一 `agentBusy` 区间串行
+  （单 wasmtime 单例，禁止并发 run）。
+- 文档阶段不调 `applyAgentTerminal`（不碰画布），`r.docs` 直接落 `studioDocs` 再 `persistDesign()`。
+- 文档阶段模型只回文本不调 `write_doc` → 报 `doc_not_written` 失败，**不伪装成澄清**
+  （澄清是建画布阶段的合法意图，文档阶段要的是交付物）。
+
+**文档面板**：`#doc-stage` 覆盖层（与 `#decl-stage` 同范式）三视图 PRD / UI 设计 / DESIGN.md；
+`mdToHtml` 是极简 Markdown 渲染（先 escHtml 再结构化，不引三方库）。
 
 ## Agent 基座约定（`agent.rs`）
 

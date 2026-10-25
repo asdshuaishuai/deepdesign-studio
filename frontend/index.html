@@ -375,6 +375,37 @@ body[data-mode="dark"] .tl-final.abnormal{color:#FECACA;background:linear-gradie
 #decl-stage .dhead .sub{font-size:11px;color:var(--tx3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #decl-stage textarea{flex:1;border:1px solid var(--panel-line,rgba(0,0,0,.1));border-radius:var(--r-lg);padding:14px;font-family:ui-monospace;font-size:11.5px;line-height:1.65;color:var(--tx);background:var(--panel-input,#fff);resize:none;outline:none}
 #decl-stage textarea:focus{border-color:var(--acc-tx);box-shadow:0 0 0 3px rgba(0,122,255,.1)}
+/* 设计文档面板：与 decl 覆盖层同范式（同一个 .canvas-scroll 内的 absolute overlay） */
+#doc-stage{position:absolute;inset:0;display:none;flex-direction:column;padding:18px;gap:12px;background:var(--stage-veil);backdrop-filter:blur(4px);z-index:30;animation:fadeUp .18s ease}
+#doc-stage .dhead{display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap}
+#doc-stage .dhead h3{font-size:14px;white-space:nowrap}
+#doc-stage .dhead .sub{font-size:11px;color:var(--tx3);flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#doc-stage .doc-tab{opacity:.62}
+#doc-stage .doc-tab.on{opacity:1;background:var(--acc-soft,rgba(0,122,255,.12));border-color:var(--acc-tx);color:var(--acc-tx)}
+#doc-body{flex:1;min-height:0;display:flex;border:1px solid var(--panel-line,rgba(0,0,0,.1));border-radius:var(--r-lg);background:var(--panel-input,#fff);overflow:hidden}
+#doc-stage .doc-pane{flex:1;min-width:0;overflow:auto;padding:18px 22px}
+#doc-stage .doc-empty{color:var(--tx3);font-size:12.5px;line-height:1.8;max-width:640px}
+#doc-stage .doc-pane h1{font-size:19px;margin:14px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--panel-line,rgba(0,0,0,.08))}
+#doc-stage .doc-pane h2{font-size:15.5px;margin:16px 0 7px;color:var(--acc-tx)}
+#doc-stage .doc-pane h3{font-size:13.5px;margin:13px 0 6px}
+#doc-stage .doc-pane p{font-size:12.5px;line-height:1.85;margin:7px 0}
+#doc-stage .doc-pane ul,#doc-stage .doc-pane ol{margin:7px 0 7px 20px;font-size:12.5px;line-height:1.8}
+#doc-stage .doc-pane li{margin:3px 0}
+#doc-stage .doc-pane code{font-family:ui-monospace;font-size:11.5px;background:rgba(0,0,0,.05);padding:1px 4px;border-radius:4px}
+#doc-stage .doc-pane pre{background:rgba(0,0,0,.04);border-radius:8px;padding:10px 12px;overflow:auto;margin:9px 0}
+#doc-stage .doc-pane pre code{background:none;padding:0}
+#doc-stage .doc-pane table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px}
+#doc-stage .doc-pane th,#doc-stage .doc-pane td{border:1px solid var(--panel-line,rgba(0,0,0,.11));padding:5px 9px;text-align:left}
+#doc-stage .doc-pane th{background:rgba(0,0,0,.035);font-weight:700}
+#doc-stage #doc-design-text{width:100%;height:100%;border:none;outline:none;resize:none;padding:16px 18px;font-family:ui-monospace;font-size:11.5px;line-height:1.65;background:transparent;color:var(--tx)}
+#doc-stage .doc-design-hint{font-size:11px;color:var(--tx3);padding:0 18px 8px}
+#doc-stage .doc-design-actions{display:flex;gap:8px;padding:0 18px 14px}
+#doc-stage .doc-foot{display:flex;gap:8px;flex-shrink:0}
+#doc-stage .doc-foot input{flex:1;border:1px solid var(--panel-line,rgba(0,0,0,.12));border-radius:10px;padding:0 13px;height:38px;font-size:12.5px;background:var(--panel-input,#fff);color:var(--tx);outline:none}
+#doc-stage .doc-foot input:focus{border-color:var(--acc-tx);box-shadow:0 0 0 3px rgba(0,122,255,.1)}
+body.mode-doc .ctools,body.mode-doc .czoom,body.mode-doc .canvas-hint,
+body.mode-doc .empty-stage,body.mode-doc .promptbar,body.mode-doc .ghost-new{display:none!important}
+body.mode-doc .doc-pane .md-h{font-weight:800}
 
 /* ---------- 状态栏 ---------- */
 .statusbar{-webkit-font-smoothing:antialiased;height:27px;display:flex;align-items:center;gap:10px;padding:0 12px;background:rgba(255,255,255,.92);border-top:var(--bd);font-family:ui-monospace;font-size:10.5px;color:var(--tx2);flex-shrink:0;overflow:hidden;z-index:20}
@@ -844,6 +875,9 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <button class="mode-btn" id="mode-decl" onclick="setMode('decl')">
         <svg class="ic" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>MBT 源码
       </button>
+      <button class="mode-btn" id="mode-doc" onclick="setMode('doc')" title="产品设计文档（PRD / UI 设计文档 / DESIGN.md）">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>设计文档
+      </button>
   </div>
   <span class="spacer" style="flex:1" data-tauri-drag-region></span>
   <button class="tbtn" onclick="newProject()" title="新建项目"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></button>
@@ -958,6 +992,33 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         <div id="decl-text-wrap">
           <div id="decl-hl"></div>
           <textarea id="decl-text" spellcheck="false" placeholder="DDP 解密后显示完整 .mbt.md 源码；提交会经过引擎校验…" oncontextmenu="event.preventDefault();declMenu(event.clientX,event.clientY)"></textarea>
+        </div>
+      </div>
+      <div id="doc-stage">
+        <div class="dhead">
+          <h3>产品设计文档</h3>
+          <span class="sub">一句话 → PRD · UI 设计文档 · 可交互原型；DESIGN.md 约束全局一致性（随 DDP 保存）</span>
+          <button class="tbtn doc-tab on" id="doc-tab-prd" onclick="switchDocTab('prd')">PRD</button>
+          <button class="tbtn doc-tab" id="doc-tab-ui" onclick="switchDocTab('ui')">UI 设计</button>
+          <button class="tbtn doc-tab" id="doc-tab-design" onclick="switchDocTab('design')">DESIGN.md</button>
+          <button class="tbtn" id="doc-regen" onclick="regenStudioDocs()" title="按当前 DESIGN.md 重新生成文档">重新生成</button>
+          <button class="tbtn pri" id="doc-build" onclick="buildFromDocs()" title="按文档建画布（第二阶段）">生成 UI</button>
+        </div>
+        <div id="doc-body">
+          <div class="doc-pane" id="doc-pane-prd"><div class="doc-empty">还没有 PRD。在下方输入产品想法，点「生成文档」——Agent 会先产出需求与设计文档，再据此建可交互原型。</div></div>
+          <div class="doc-pane" id="doc-pane-ui" style="display:none"><div class="doc-empty">UI 设计文档将在这里生成（基于 DESIGN.md 的配色/字号/间距/组件规范）。</div></div>
+          <div class="doc-pane" id="doc-pane-design" style="display:none">
+            <textarea id="doc-design-text" spellcheck="false" placeholder="DESIGN.md：设计规范文档（JSON）。留空则首次生成时自动从引擎令牌与规范基线抽取…"></textarea>
+            <div class="doc-design-hint">保存即写入 .mbt.md 的注释块（随 DDP 持久化）；「从引擎抽取」用当前画板的真实令牌重建基线。</div>
+            <div class="doc-design-actions">
+              <button class="tbtn" onclick="saveDesignDoc()">保存 DESIGN.md</button>
+              <button class="tbtn" onclick="extractDesignFromEngine()">从引擎抽取</button>
+            </div>
+          </div>
+        </div>
+        <div class="doc-foot">
+          <input id="doc-input" placeholder="一句话描述你要做的产品，例如「城市露营装备租赁小程序，5 个页面，自然绿色调」" />
+          <button class="tbtn pri" id="doc-gen" onclick="runStudioPrompt()">生成文档</button>
         </div>
       </div>
     </div>
@@ -1360,6 +1421,102 @@ function inkRestore(mbt){
   }catch(_){return false;}
 }
 
+/* ---------- DESIGN.md：设计规范文档（整体一致性的单一事实源） ----------
+ * 载体是 .mbt.md 里的 HTML 注释块，与 ink 同构（DDP 自动携带、随文件迁移、
+ * 不需要改 Rust 持久化层）。真机实证的**五条硬约束**（违反会静默丢内容）：
+ *  1. 内容里绝不能出现 `-->` 字面量（扫描器在首个 --> 处截断注释）——JSON 编码
+ *     时把 `-` 写成 `\u002d` 无法规避（序列化后仍是 -->），故 serialize 时把
+ *     ">" 转成 "\u003e"，JSON.parse 能正确还原；
+ *  2. 引擎会把注释内的行首缩进压平（嵌套列表/缩进代码块会降级）——文档正文用
+ *     表格 / 扁平列表 / 显式编号，不要依赖缩进表达层级；
+ *  3. 注释内不要写未闭合的 ```mbt 围栏（会让其后真实围栏块被吞，文档直接打不开）；
+ *  4. 注释标记不能以 moonviz 开头（引擎当锚标记过滤掉）；本实现用 deepdesign:design；
+ *  5. 放在**文末**最稳（实测位置不随删板/改名漂移）；放正文前的锚点由"其后最近的
+ *     ## <板名>"决定，没有则降级文末——所以统一追加到文档末尾，再去除多余空行。
+ * 幂等：同路径二次注入严格不翻倍（与 inkInject 同款测试口径）。 */
+let designSpec=null; // {v, palette, typography, spacing, radius, rules[], notes} 或 null
+let studioDocs={prd:'',ui:''}; // 产品需求文档 + UI 设计文档（Markdown，随 DESIGN.md 同块持久化）
+function designSerialize(){
+  const hasDocs=studioDocs&&(studioDocs.prd||studioDocs.ui);
+  if(!designSpec&&!hasDocs)return null;
+  try{
+    const payload={...(designSpec||{v:1})};
+    if(hasDocs)payload.docs={prd:studioDocs.prd||'',ui:studioDocs.ui||''};
+    // ">" → "\u003e"：杜绝 `-->` 提前闭合注释（实测坑 1）
+    return JSON.stringify(payload).replace(/>/g,'\\u003e');
+  }catch(_){return null;}
+}
+function designExtract(mbt){
+  const m=String(mbt||'').match(/<!-- deepdesign:design ([\s\S]*?) -->/);
+  return m?m[1].trim():null;
+}
+function designParse(mbt){
+  const raw=designExtract(mbt);
+  if(!raw)return null;
+  try{
+    const d=JSON.parse(raw);
+    return (d&&typeof d==='object')?d:null;
+  }catch(_){return null;}
+}
+function designInject(mbt){
+  const payload=designSerialize();
+  // remove 吃净前后换行、append 定死单换行格式——同路径二次注入严格幂等
+  let out=String(mbt||'').replace(/\s*$/,'');
+  const re=/\n*<!-- deepdesign:design [\s\S]*? -->\s*$/;
+  const had=re.test(out);
+  if(had)out=out.replace(re,'');
+  if(!payload)return out;
+  return out+'\n\n<!-- deepdesign:design '+payload+' -->\n';
+}
+function designRestore(mbt){
+  const d=designParse(mbt);
+  const ok=!!(d&&d.v===1);
+  designSpec=ok?d:null;
+  studioDocs=(ok&&d.docs)?{prd:String(d.docs.prd||''),ui:String(d.docs.ui||'')}:{prd:'',ui:''};
+  return ok;
+}
+/* 从引擎实时状态生成 DESIGN.md 初值：令牌（颜色/间距/圆角/字号）来自会话导出，
+ * 规则来自引擎当前 norms 基线——保证"文档描述的就是引擎实际执行的规范" */
+async function designFromEngine(artboard){
+  const out={v:1,generated:new Date().toISOString().slice(0,10),palette:{},typography:{},spacing:{},radius:{},rules:[],notes:''};
+  try{
+    const t=await engSessionInspect('session_extract_design_system',artboard||active);
+    if(t&&t.ok&&t.data){
+      (t.data.color_tokens||[]).forEach(c=>{if(c&&c.value&&c.name)out.palette[c.name]=c.value;});
+    }
+  }catch(_){}
+  try{
+    const r=await engSessionInspect('session_spec',artboard||active);
+    if(r&&r.ok&&r.data&&r.data.spec){
+      // CSS 变量段是项目令牌真值（--color-* / --spacing-*），优先采信
+      const css=String(r.data.spec);
+      const grab=(prefix)=>[...css.matchAll(new RegExp('--'+prefix+'-([a-z0-9_]+):\\s*([^;\\n]+);','g'))];
+      grab('color').forEach(m=>{if(!out.palette[m[1]])out.palette[m[1]]=m[2].trim();});
+      grab('spacing').forEach(m=>{out.spacing[m[1]]=m[2].trim();});
+    }
+  }catch(_){}
+  try{
+    const c=await engSessionInspect('session_critique',artboard||active);
+    if(c&&c.ok&&c.data&&Array.isArray(c.data.results)){
+      out.notes='引擎基线评分：'+c.data.results.map(x=>`${x.principle} ${x.score}/10`).join(' · ');
+    }
+  }catch(_){}
+  out.rules=[
+    '按钮不卡文案：宽 ≥ 文案宽+24（左右各 12），高按档位（chip 28 / tag 22 / fab 56）',
+    '圆角档：按钮族 8px；胶囊 高/2；头像 999；全宽条直角',
+    '列表必须有分割线：≥3 行 list_item 齐缝连排时行底补 1px divider',
+    '撞色零容忍：文字与有效背景 WCAG 对比度 < 2.0 严禁（自动翻转为黑/白）',
+    '横平竖直：rotate 仅 90° 倍数',
+    '触控目标：可交互组件最小 44×44（chip/tag 按档位）',
+    '间距网格：layout gap 用 4pt 倍数',
+    '字号层级：同屏字号 ≤ 5 种',
+    '节点密度：单画板 ≤ 80 节点',
+    '必须可返回：非入口画板须有出边 flow 或返回类节点',
+  ];
+  return out;
+}
+
+
 function syncDirtyRemote(){if(IS_TAURI&&window.__TAURI__.core)window.__TAURI__.core.invoke('set_project_dirty',{dirty:projectDirty||declDraftDirty}).catch(e=>console.warn('[dirty] Rust 脏态同步失败:',e));}
 let projectQueue=Promise.resolve();
 function serializeProject(task){const pending=projectQueue.then(task);projectQueue=pending.catch(()=>{});return pending;}
@@ -1635,7 +1792,9 @@ function applyMbtResult(result,{reset=false,acceptDraft=false,preview=false}={})
   if(reset){$('insp-body').dataset.node='';closeAgentPop();cancelInline();linkSource=null;playStack=[];}
   // preview=true（Agent 运行中同步渲染预览）：只更新画布渲染——
   // 不写 mbtText/不置脏/不进撤销/不注批注（事实源与 rebase 基线由终态回灌收口）
-  const canonical=preview?result.mbt:inkInject(result.mbt);
+  // 非 preview 时按「引擎 canonical → 注入批注 → 注入 DESIGN.md」合成事实源；
+  // 两个注入都是幂等替换，故同一份 canonical 反复合成不会累积块。
+  const canonical=preview?result.mbt:designInject(inkInject(result.mbt));
   const changed=mbtText!==canonical;
   if(!preview){mbtText=canonical;if(result.revision!==undefined)mbtRevision=Number(result.revision)||0;viewEpoch++;}
   if(changed&&!preview){
@@ -3019,11 +3178,243 @@ async function applyAgentTerminal(r,startMbt){
       applyMbtResult({ok:true,mbt:src,entry:render.entry,artboards:render.artboards,flows:render.flows,revision:r.revision||render.revision});
     }else{
       // 桥异常未带 render（或 rebase 后 render 作废）：直接从 canonical 源重渲染兜底
-      mbtText=inkInject(src);projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
+      mbtText=designInject(inkInject(src));projectDirty=true;syncFileLabel();syncDirtyRemote();await renderMbtSource();
     }
   });
 }
 function usePrompt(t){$('gp-input').value=t;runGlobalPrompt();}
+
+/* ---------- 产品设计文档面板（PRD / UI 设计文档 / DESIGN.md） ----------
+ * 定位：一句话 → 需求文档 + 设计文档 + 可交互原型。三个阶段各有独立入口：
+ *   · 生成文档（阶段1）：只产出文本，不碰画布——用户可先审阅再决定
+ *   · 生成 UI（阶段2）：带 DESIGN.md 全文建画布
+ * 文档本身存在 DESIGN.md 注释块（随 DDP 持久化）与两个内存/持久化字段中：
+ *   studioDocs = {prd:"…", ui:"…"}，同样走注释块（见 designSerialize 的 docs 键）。 */
+function switchDocTab(which){
+  STUDIO_DOC_TAB=which;
+  ['prd','ui','design'].forEach(x=>{
+    const pane=$('doc-pane-'+x),tab=$('doc-tab-'+x);
+    if(pane)pane.style.display=x===which?'block':'none';
+    if(tab)tab.classList.toggle('on',x===which);
+  });
+  if(which==='design')syncDesignTextarea();
+}
+function syncDesignTextarea(){
+  const ta=$('doc-design-text');if(!ta)return;
+  ta.value=designSpec?JSON.stringify(designSpec,null,2):'';
+}
+function saveDesignDoc(){
+  const ta=$('doc-design-text');if(!ta)return;
+  const raw=ta.value.trim();
+  if(!raw){designSpec=null;persistDesign();toast('DESIGN.md 已清空');renderDocStage();return;}
+  let obj;
+  try{obj=JSON.parse(raw);}catch(err){toast('DESIGN.md 不是合法 JSON：'+String(err.message||err).slice(0,80),'err');return;}
+  if(!obj||typeof obj!=='object'){toast('DESIGN.md 需要是 JSON 对象','err');return;}
+  obj.v=1;
+  designSpec=obj;
+  persistDesign();
+  toast('DESIGN.md 已保存（随 DDP 持久化）');
+  renderDocStage();
+}
+function persistDesign(){
+  // 经队列写回事实源：与其他写入串行化，幂等替换注释块
+  serializeProject(async()=>{
+    if(!mbtText)return;
+    const next=designInject(mbtText);
+    if(next!==mbtText){mbtText=next;projectDirty=true;syncFileLabel();syncDirtyRemote();viewEpoch++;}
+  });
+}
+async function extractDesignFromEngine(){
+  const ab=active||Object.keys(sessions)[0];
+  if(!ab){toast('先建一个画板或生成原型，再抽取设计基线','err');return;}
+  try{
+    designSpec=await designFromEngine(ab);
+    syncDesignTextarea();
+    toast('已从引擎抽取 '+ab+' 的设计基线（令牌/规范/评分）');
+  }catch(err){toast('抽取失败：'+String(err).slice(0,80),'err');}
+}
+/* 极简 Markdown → HTML（只覆盖文档实际会出现的子集；不做完整解析，不引三方库）。
+ * 安全：所有文本先 escHtml，再对已转义文本做结构替换。 */
+function mdToHtml(md){
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines=String(md||'').split('\n');
+  const out=[];let inCode=false,inUl=false,inOl=false,inTable=false;
+  const closeList=()=>{if(inUl){out.push('</ul>');inUl=false;}if(inOl){out.push('</ol>');inOl=false;}};
+  const closeTable=()=>{if(inTable){out.push('</tbody></table>');inTable=false;}};
+  const inline=t=>esc(t)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  for(const raw of lines){
+    const line=raw.replace(/\s+$/,'');
+    if(/^```/.test(line.trim())){closeList();closeTable();out.push(inCode?'</pre>':'<pre><code>');inCode=!inCode;continue;}
+    if(inCode){out.push(esc(raw));continue;}
+    if(/^\s*$/.test(line)){closeList();closeTable();continue;}
+    const h=line.match(/^(#{1,4})\s+(.*)$/);
+    if(h){closeList();closeTable();out.push('<h'+h[1].length+'>'+inline(h[2])+'</h'+h[1].length+'>');continue;}
+    if(/^\s*\|/.test(line)){
+      closeList();
+      const cells=line.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+      if(!inTable){out.push('<table><thead><tr>'+cells.map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr></thead><tbody>');inTable=true;continue;}
+      if(cells.every(c=>/^:?-{2,}:?$/.test(c)))continue; // 分隔行
+      out.push('<tr>'+cells.map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>');continue;
+    }
+    closeTable();
+    const li=line.match(/^\s*[-*]\s+(.*)$/);
+    if(li){if(inOl){out.push('</ol>');inOl=false;}if(!inUl){out.push('<ul>');inUl=true;}out.push('<li>'+inline(li[1])+'</li>');continue;}
+    const oi=line.match(/^\s*(\d+)\.\s+(.*)$/);
+    if(oi){if(inUl){out.push('</ul>');inUl=false;}if(!inOl){out.push('<ol>');inOl=true;}out.push('<li>'+inline(oi[2])+'</li>');continue;}
+    closeList();out.push('<p>'+inline(line)+'</p>');
+  }
+  if(inCode)out.push('</pre>');
+  closeList();closeTable();
+  return out.join('\n');
+}
+function renderDocStage(){
+  const d=studioDocs||{};
+  const prd=$('doc-pane-prd'),ui=$('doc-pane-ui');
+  if(prd)prd.innerHTML=d.prd?mdToHtml(d.prd):'<div class="doc-empty">还没有 PRD。在下方输入产品想法，点「生成文档」——Agent 会先产出需求与设计文档，再据此建可交互原型。</div>';
+  if(ui)ui.innerHTML=d.ui?mdToHtml(d.ui):'<div class="doc-empty">UI 设计文档将在这里生成（基于 DESIGN.md 的配色/字号/间距/组件规范）。</div>';
+  syncDesignTextarea();
+  const has=!!(d.prd||d.ui);
+  const regen=$('doc-regen'),build=$('doc-build');
+  if(regen)regen.style.display=has?'':'none';
+  if(build)build.style.display=has?'':'none';
+}
+let STUDIO_DOC_TAB='prd';
+
+/* ---------- 两阶段生成编排：一句话 → PRD + UI 设计文档 → 可交互原型 ----------
+ * 阶段隔离的硬要求（探查得出，改动时勿破坏）：
+ *  · 每阶段独立的 runId / startMbt / max_steps —— rebase 基准与预览归属都按阶段算
+ *  · 两阶段必须在同一个 agentBusy 持有区间内串行（单 wasmtime 单例，禁止并发 run）
+ *  · 阶段1 必须先 await applyAgentTerminal 写回 mbtText，阶段2 的 askFxSdk 才有正确基底
+ *    （askFxSdk 恒读全局 mbtText）
+ *  · 文档阶段不写画布，因此不调 applyAgentTerminal（r.docs 直接落 studioDocs） */
+function askFxSdkMode(instruction,runId,mode){
+  // 文档阶段预算独立：PRD/UI 文档是"一次 write_doc 就结束"的任务，实测 1-3 步足矣；
+  // 给 120 是防模型先做若干只读探查（read_mbt/list_components）再落笔。
+  // 不沿用用户的 maxSteps（那个是建画布预算，500-2000 会拖长文档阶段的等待）。
+  const steps=mode?120:(Number(agentConfig.maxSteps)||500);
+  const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto',max_steps:steps,run:runId||0,mode};
+  return window.__TAURI__.core.invoke('invoke_fx_sdk',{payload:JSON.stringify(payload),apiKey:agentConfig.apiKey||''})
+    .catch(e=>{throw Error(String(e));})
+    .then(data=>{
+      if(!data||data.ok!==true){
+        const d=(data&&(data.detail?data.error+': '+data.detail:data.error))||'fxsdk_failed';
+        throw Error(d);
+      }
+      return data;
+    });
+}
+/* DESIGN.md 摘要：注入到阶段提示词的素材（阶段1 用它约束 PRD 的视觉方向，
+ * 阶段2 用它约束建画布）。缺失时如实告知模型"暂无基线，需自行建立"。 */
+function designBrief(){
+  if(!designSpec)return '';
+  const s=designSpec;
+  const lines=[];
+  if(s.palette&&Object.keys(s.palette).length)lines.push('色彩令牌：'+Object.entries(s.palette).map(([k,v])=>`${k}=${v}`).join(' · '));
+  if(s.typography&&Object.keys(s.typography).length)lines.push('字体层级：'+Object.entries(s.typography).map(([k,v])=>`${k}=${typeof v==='object'?JSON.stringify(v):v}`).join(' · '));
+  if(s.spacing&&Object.keys(s.spacing).length)lines.push('间距：'+Object.entries(s.spacing).map(([k,v])=>`${k}=${v}`).join(' · '));
+  if(s.radius&&Object.keys(s.radius).length)lines.push('圆角：'+Object.entries(s.radius).map(([k,v])=>`${k}=${v}`).join(' · '));
+  if(Array.isArray(s.rules)&&s.rules.length)lines.push('引擎规范（必须遵守）：\n'+s.rules.map(r=>'- '+r).join('\n'));
+  if(s.notes)lines.push('引擎基线：'+s.notes);
+  return lines.join('\n');
+}
+async function runStudioPrompt(){
+  const input=$('doc-input');
+  const idea=(input&&input.value||'').trim();
+  if(!idea){toast('先输入一句话产品描述','err');return;}
+  if(agentBusy){toast('Agent 正在生成，完成后再试','err');return;}
+  agentBusy=true;
+  const genBtn=$('doc-gen');if(genBtn)genBtn.disabled=true;
+  try{
+    loadAgentConfig();
+    // 没有设计基线时，先按引擎令牌抽一份——保证阶段1 就有约束可依
+    if(!designSpec){
+      try{designSpec=await designFromEngine(active||Object.keys(sessions)[0]);}catch(_){}
+    }
+    // ── 阶段 1：PRD ──
+    const brief=designBrief();
+    const prdInstr=`产品想法：${idea}\n\n${brief?('【现有 DESIGN.md 基线】\n'+brief+'\n\n'):''}请产出 PRD。`;
+    const run1=nextAgentRun();
+    traceOpen(run1,'📄 阶段1 · 生成产品需求文档',false);
+    setStatus('agent','生成 PRD…',true,'设计文档');
+    const r1=await askFxSdkMode(prdInstr,run1,'prd');
+    const prd=r1.docs&&r1.docs.prd?String(r1.docs.prd):'';
+    if(!prd)throw Error('未产出 PRD');
+    studioDocs.prd=prd;
+    // ── 阶段 2：UI 设计文档（基于 PRD + DESIGN.md）──
+    const uiInstr=`【已确认的 PRD】\n${prd}\n\n${brief?('【DESIGN.md 设计规范（必须遵守）】\n'+brief+'\n\n'):''}请据此产出 UI 设计文档。`;
+    const run2=nextAgentRun();
+    traceOpen(run2,'🎨 阶段2 · 生成 UI 设计文档',false);
+    setStatus('agent','生成 UI 设计文档…',true,'设计文档');
+    const r2=await askFxSdkMode(uiInstr,run2,'ui');
+    const ui=r2.docs&&r2.docs.ui?String(r2.docs.ui):'';
+    if(!ui)throw Error('未产出 UI 设计文档');
+    studioDocs.ui=ui;
+    // 落盘：文档随 DESIGN.md 注释块持久化（幂等替换）
+    persistDesign();
+    renderDocStage();
+    switchDocTab('prd');
+    setStatus('', '', true, '');
+    toast('文档已生成 — 可编辑 DESIGN.md 后点「生成 UI」建可交互原型');
+  }catch(err){
+    const msg=String(err&&err.message||err);
+    toast('文档生成失败：'+msg.slice(0,100),'err');
+    setStatus('', '', false, '');
+  }finally{
+    agentBusy=false;
+    if(genBtn)genBtn.disabled=false;
+  }
+}
+/* 按现有文档建画布（第二阶段之外的"建 UI"入口）：把 UI 设计文档 + DESIGN.md 作为约束，
+ * 让建画布 agent 一次产出可交互原型。 */
+async function buildFromDocs(){
+  if(agentBusy){toast('Agent 正在生成，完成后再试','err');return;}
+  if(!studioDocs.prd&&!studioDocs.ui){toast('先生成文档','err');return;}
+  agentBusy=true;
+  const btn=$('doc-build');if(btn)btn.disabled=true;
+  const runId=nextAgentRun();
+  const startMbt=mbtText;
+  try{
+    loadAgentConfig();
+    const brief=designBrief();
+    const parts=[];
+    if(studioDocs.prd)parts.push('【PRD】\n'+studioDocs.prd);
+    if(studioDocs.ui)parts.push('【UI 设计文档（必须逐条落实）】\n'+studioDocs.ui);
+    if(brief)parts.push('【DESIGN.md 设计规范（硬约束）】\n'+brief);
+    parts.push('请严格按上述文档建出完整可交互原型：每页一个画板、按文档连线、遵循全部设计规范。');
+    traceOpen(runId,'🏗 按文档生成可交互原型',false);
+    setStatus('agent','按文档生成原型…',true,'设计文档');
+    const r=await askFxSdk(parts.join('\n\n'),runId);
+    if(!r.ops||!r.ops.length){
+      if(r.text&&r.text.trim()){toast('Agent 需要澄清：'+String(r.text).slice(0,80));}
+      else toast('未生成可执行操作','err');
+      return;
+    }
+    await applyAgentTerminal(r,startMbt);
+    setStatus('', '', true, '');
+    toast(`已生成 ${r.ops.length} 条操作`);
+    setMode('wireframe');
+  }catch(err){
+    toast('生成原型失败：'+String(err&&err.message||err).slice(0,100),'err');
+    setStatus('', '', false, '');
+  }finally{
+    agentBusy=false;
+    if(btn)btn.disabled=false;
+  }
+}
+function regenStudioDocs(){
+  const input=$('doc-input');
+  if(input&&!input.value.trim()){
+    // 无输入时用已有 PRD 第一行作为回归意图
+    const first=(studioDocs.prd||'').split('\n').find(l=>/^#\s+/.test(l));
+    if(first)input.value=first.replace(/^#\s+/,'').trim();
+  }
+  runStudioPrompt();
+}
+
+
 
 /* ---------- 模板/设备/Prompt 快捷 ---------- */
 function quickStart(tid,w,h){return addBoard(`template ${tid}`,w,h,'human');}
@@ -3057,8 +3448,9 @@ function setMode(m){
   document.body.classList.add('mode-'+m);
   document.body.classList.toggle('design-active',m==='wireframe'||m==='hifi');
   if(m!=='wireframe'&&m!=='hifi')closeAgentPop();
-  ['wireframe','hifi','decl'].forEach(x=>{const b=$('mode-'+x);if(b)b.classList.toggle('on',x===m);});
+  ['wireframe','hifi','decl','doc'].forEach(x=>{const b=$('mode-'+x);if(b)b.classList.toggle('on',x===m);});
   $('decl-stage').style.display=m==='decl'?'flex':'none';
+  $('doc-stage').style.display=m==='doc'?'flex':'none';
   if(m==='play'){
     // 演示起点按实际交互逻辑判定（2026-10-10 升级「起点页」定则）：
     // 声明 entry 且确为交互根（无入边）→ 从它开始；否则取交互根；
@@ -3077,6 +3469,7 @@ function setMode(m){
       if(n)toast(`演示仅支持 tap 交互；另有 ${n} 个非 tap 交互绑定不会响应`);
     });}
   else if(m==='decl'){loadDeclMain();}
+  else if(m==='doc'){renderDocStage();}
   else {playClearHot();renderStage();}
 }
 async function renderDeclHighlight(){
@@ -3663,12 +4056,12 @@ function redrawInk(){
   });
 }
 function clearInk(){inkPaths=[];inkCur=null;if(inkCtx)inkCtx.clearRect(0,0,innerWidth,innerHeight);}
-/* 退出演示：批注重注入 mbtText（幂等：替换旧块）+ 置脏——用户 ⌘S 落盘进 DDP。
+/* 退出演示：批注 + DESIGN.md 重注入 mbtText（幂等：替换旧块）+ 置脏——用户 ⌘S 落盘进 DDP。
  * 经 serializeProject 入队：与人类 op / agent 终态回灌串行化，防写写竞态。 */
 function inkPersist(){
   if(mode==='play')return;
   serializeProject(async()=>{
-    const next=inkInject(mbtText);
+    const next=designInject(inkInject(mbtText));
     if(next!==mbtText){mbtText=next;projectDirty=true;syncFileLabel();syncDirtyRemote();viewEpoch++;}
   });
 }
@@ -4041,6 +4434,7 @@ async function openProject(path){
     // return 时旧文件 + 新口令的组合会让 ⌘S 用错口令重加密旧文件
     ddpSessionPassword=password;ddpPasswordByPath[r.path]=password;
     inkRestore(b64ToUtf8(r.mbt_b64)); // 批注随文档恢复（注入层见 inkPersist 注释）
+    designRestore(b64ToUtf8(r.mbt_b64)); // DESIGN.md 随文档恢复（同一注释块机制）
     applyMbtResult(result,{reset:true});filePath=r.path;projectDirty=false;syncDirtyRemote();
     // 项目边界：旧项目的澄清提问/拖拽偏移/演示交互缓存不得泄入新项目（id 撞名时真会串）
     agentThread.pending=null;const th=$('gp-thread');if(th)th.classList.remove('open');

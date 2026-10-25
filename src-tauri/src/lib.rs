@@ -516,6 +516,8 @@ async fn invoke_fx_sdk(
     let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let base_url = p.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
     let thinking = p.get("thinking_level").and_then(|v| v.as_str()).unwrap_or("auto");
+    // 阶段模式：prd / ui 走文档阶段（只产出文档、不建画布）；缺省是建画布 agent
+    let mode = p.get("mode").and_then(|v| v.as_str()).filter(|s| matches!(*s, "prd" | "ui"));
     // 步数上限：前端设置面板可调（默认 500；夹紧防异常值）
     let max_steps = p.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(500) as usize;
     // 实时轨迹：agent 循环每步经 progress 回调 → Tauri 事件 agent-event → 前端时间线；
@@ -557,7 +559,7 @@ async fn invoke_fx_sdk(
         }
     };
     let result =
-        agent::run_with_steps(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress), max_steps)
+        agent::run_with_mode(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress), max_steps, mode)
             .await;
     if let (Some(dir), Some(file)) = (&journal, &journal_file) {
         journal_append(

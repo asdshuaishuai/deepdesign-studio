@@ -308,6 +308,47 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '演示前进导航未收口到 playGo 单点（栈不变量多写一处就会漏）——请同步检查 R');
 }
 
+/* 检查 S：产品设计工作室（PRD → UI 设计文档 → 可交互原型）+ DESIGN.md 一致性契约。
+ * DESIGN.md 载体是 .mbt.md 的注释块，真机实证有五条硬约束（见 index.html 的
+ * designSerialize 注释）：`-->` 会截断注释、缩进被压平、moonviz 前缀被过滤等。
+ * 其中「`-->` 防护」与「幂等」是可静态锚定的实现形态，其余靠运行时约束。 */
+{
+  assert(/<!-- deepdesign:design /.test(script)&&/function designSerialize\(/.test(script),
+    'DESIGN.md 注释块载体/序列化缺失——请同步检查 S');
+  assert(/\.replace\(\/>\/g,'\\\\u003e'\)/.test(script),
+    "DESIGN.md 序列化未把 '>' 转义为 \\u003e——注释块会被 '-->' 提前截断（真机实证坑）——请同步检查 S");
+  assert(/function designInject\(mbt\)\{[\s\S]{0,600}?return out\+'\\n\\n<!-- deepdesign:design '\+payload\+' -->\\n';/.test(script),
+    'DESIGN.md 注入未固定文末追加格式（幂等前提）——请同步检查 S');
+  assert(/const canonical=preview\?result\.mbt:designInject\(inkInject\(result\.mbt\)\);/.test(script),
+    '事实源合成未同时注入批注与 DESIGN.md（applyMbtResult）——请同步检查 S');
+  assert(/designRestore\(b64ToUtf8\(r\.mbt_b64\)\)/.test(script),
+    '打开项目未恢复 DESIGN.md——请同步检查 S');
+  assert(/function runStudioPrompt\(\)/.test(script)&&/askFxSdkMode\(prdInstr,run1,'prd'\)/.test(script)
+    &&/askFxSdkMode\(uiInstr,run2,'ui'\)/.test(script),
+    '两阶段编排缺失或阶段 mode 未分别下发 prd/ui——请同步检查 S');
+  assert(/const run1=nextAgentRun\(\);[\s\S]{0,2000}?const run2=nextAgentRun\(\);/.test(script),
+    '两阶段未各用独立 runId（预览归属/轨迹卡片会串）——请同步检查 S');
+  assert(/id="doc-stage"/.test(html)&&/id="doc-pane-prd"/.test(html)&&/id="doc-pane-ui"/.test(html)
+    &&/id="doc-pane-design"/.test(html),
+    '设计文档面板三视图（PRD / UI 设计 / DESIGN.md）缺失——请同步检查 S');
+  assert(/function mdToHtml\(md\)/.test(script)&&/const esc=s=>String\(s\|\|''\)\.replace\(\/&\/g,'&amp;'\)/.test(script),
+    'Markdown 渲染未先转义再结构化（XSS 风险）——请同步检查 S');
+}
+
+/* Rust 侧：文档阶段的工具面必须不含 moonviz_op（结构上不可能改画布）。
+ * 这是"文档阶段只产出文档"不变式的真正保障——提示词禁令可以被幻觉绕过，
+ * 工具面缺失不能。 */
+{
+  const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
+  assert(/fn tools_typed_doc\(\)[\s\S]{0,1400}?\n\}/.test(agentRs)
+    &&!/fn tools_typed_doc\(\)[\s\S]{0,1400}?"moonviz_op"/.test(agentRs),
+    '文档阶段工具面含 moonviz_op——文档阶段必须结构上无法改画布——请同步检查 S');
+  assert(/if doc_mode \{\s*json!\(\{"ok": false, "error": "doc_phase_readonly/.test(agentRs),
+    '文档阶段缺少 moonviz_op 兜底拦截（提示词禁令不足以防护）——请同步检查 S');
+  assert(/fn doc_phase\(mode: Option<&str>\) -> bool \{\s*matches!\(mode, Some\("prd"\) \| Some\("ui"\)\)/.test(agentRs),
+    'doc_phase 判定缺失或口径漂移——请同步检查 S');
+}
+
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */
 assert.match(script,/schedulePreview\(p\.mbt_b64,p\.run,p\.preview_seq\)/,'preview 事件未携带 run/序列进入调度');
 assert.match(script,/p\.generation!==previewGeneration\|\|p\.epoch!==viewEpoch/,'paintPreview 缺少 generation/epoch 新鲜度校验');
