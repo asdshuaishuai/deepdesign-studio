@@ -93,6 +93,8 @@ const SESSION_MUTATING = new Set([
   'session_apply_agent', 'session_apply_human', 'session_auto_fix',
   'session_constrain', 'session_tap', 'session_generate_responsive',
   'session_component_compile_b64',
+  // 生成式 UI：意图 → 模板实例化 → 自愈，必然改文档（漏了会让缓存键停在旧 canonical）
+  'session_generate',
 ]);
 // （SESSION_EVICT 已随 0.1.6-fix/#19 移除：此前 auto_fix/constrain 改文档但信封
 // 不回传 canonical，只能弃缓存防脏键；信封补齐后统一走上方键前移。）

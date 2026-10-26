@@ -2808,6 +2808,9 @@ async function sendAgent(){
   agentBusy=true;$('ap-send').disabled=true;
   const res=$('ap-result');
   let terminalCommitted=false;
+  // runId 必须在 try 之外：catch 里的 traceFailCard 要用它——
+  // 声明在 try 内时 catch 读到会抛 ReferenceError，把真实错误（如未配端点）冒充成别的问题
+  const runId=nextAgentRun();
   try{
     loadAgentConfig();
     // 注入选区上下文，让 agent 知道用户针对哪个节点/画板；澄清续轮拼接上文
@@ -2816,7 +2819,6 @@ async function sendAgent(){
       ? `${base}\n\n[Agent 上一轮的提问]: ${agentThread.pending}\n\n[用户已回答]: 请基于回答继续执行（直接操作，不要再次追问）。`
       : base;
     const startMbt=mbtText; // run 起点快照：rebase 比对基准（askFxSdk 期间无人类 op 进队列）
-    const runId=nextAgentRun();
     traceOpen(runId,`节点 ${selected} · ${text}`,!!agentThread.pending);
     activePreviewRun=runId;
     const r=await askFxSdk(ctx,runId);
@@ -2882,6 +2884,8 @@ function trackAgent(instruction,cmds){
  * op 原文完整保留在行 title 悬停里，排障不受影响。 */
 const AGENT_OP_HUMAN={
   // 变更类（op 语法见 agent.rs INSTRUCTIONS「Operation grammar」）
+  'generate':{k:'生成页面「{intent}」',p:a=>({intent:(a||[]).join(' ').replace(/\s+as\s+\S+$/,'')})},
+  'autofill':{k:'补全画板 {ab} 的缺失元素',p:a=>({ab:a[0]||''})},
   'template':{k:'从模板创建画板 {name}',p:a=>({name:a[1]||a[0]||''})},
   'create':{k:'创建画板 {name}',p:a=>({name:a[0]||''})},
   'duplicate':{k:'复制画板为 {id}',p:a=>({id:a[1]||a[0]||''})},
@@ -3137,6 +3141,8 @@ async function runGlobalPrompt(){
   // 两次都过检查 → 重复建板 + 并发 run（违反标志自身"不允许并发"的不变量）
   if(agentBusy){toast('上一条还在生成中…');return;}
   agentBusy=true;$('gp-send')&&($('gp-send').disabled=true);
+  // runId 必须在 try 之外：catch 里的 traceFailCard 要用它（声明在 try 内会 TDZ）
+  const runId=nextAgentRun();
   try{
     // Keep the prompt draft until the user replaces it.
     // 快捷放置：仅当输入「精确等于」某个组件 id 时才本地放置，其余一律交给 LLM
@@ -3156,7 +3162,6 @@ async function runGlobalPrompt(){
     loadAgentConfig();
     setStatus('agent',t,true,'AI 处理中…');
     // 澄清式多轮：agent 上一轮的提问 + 本轮用户回答 → 拼接为完整指令
-    const runId=nextAgentRun();
     activePreviewRun=runId;
     traceOpen(runId,t,!!agentThread.pending);
     const instruction=agentThread.pending

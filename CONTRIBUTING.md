@@ -37,7 +37,7 @@ cd deepdesign-studio
 
 node scripts/sync-engine.mjs      # 1. 拉取引擎 wasm 产物（sha512 校验 + 契约探针）
 cd src-tauri && cargo build       # 2. 构建（实测冷编译约 60s）
-cargo test                        # 3. 测试（47 个测试，全绿是基线）
+cargo test                        # 3. 测试（48 个测试，全绿是基线）
 cd .. && node test_studio.cjs     # 4. 前端契约测试
 
 ./dev.sh --fresh                  # 开发运行（macOS/Linux；Windows 用 dev.bat）

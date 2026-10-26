@@ -684,6 +684,15 @@ impl<'a> EngineState<'a> {
             if r.get("ok") != Some(&json!(true)) {
                 return r;
             }
+            // generate 的报告字段（score/missing/autofix/template/artboard…）必须在
+            // 后面的 delete-artboard 覆盖 r 之前保留下来：提示词第 2 步要求模型
+            // "READ THE ENVELOPE" 并据此 autofill 补缺，新项目的首 op 恰恰最容易
+            // 用 generate——丢了这些字段等于让首屏生成变成黑盒。
+            let report: Option<Value> = if op.split_whitespace().next() == Some("generate") {
+                Some(r.clone())
+            } else {
+                None
+            };
             let committed = r
                 .get("mbt")
                 .and_then(|v| v.as_str())
@@ -698,11 +707,22 @@ impl<'a> EngineState<'a> {
             self.last_render = Some(r.clone());
             self.ops.push(op.to_string());
             self.revision += 1;
-            return json!({
+            let mut out = json!({
                 "ok": true, "op": op,
                 "revision": r.get("revision").cloned().unwrap_or(json!(0)),
                 "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
             });
+            // 合并 generate 报告（剥 mbt，与常规 generate 路由的信封形态一致）
+            if let (Some(rep), Some(o)) = (report, out.as_object_mut()) {
+                if let Some(src) = rep.as_object() {
+                    for (k, v) in src {
+                        if k != "mbt" && k != "ok" {
+                            o.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+            return out;
         }
 
         let Some(mbt) = self.mbt.clone() else {
@@ -3333,6 +3353,24 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             "种子画板应已在引导后删除"
         );
         assert_eq!(state.ops.len(), 1, "只记一条 op");
+    }
+
+    /// 首 op 的 generate 必须把**报告字段**一并交回（score/missing/autofix/template/artboard）。
+    /// 提示词第 2 步要求模型读信封再 autofill 补缺；首屏生成恰恰最容易用 generate，
+    /// 若信封只剩 {ok,op,revision,artboards}，模型拿不到缺什么、自愈了什么都看不见。
+    #[tokio::test]
+    async fn first_op_generate_keeps_report_fields() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
+        let r = state.moonviz_op("generate 登录页 as home").await;
+        assert_eq!(r["ok"], json!(true), "{r}");
+        assert_eq!(r["artboard"], json!("home"), "报告里的 artboard 字段应保留：{r}");
+        assert_eq!(r["template"], json!("login"), "报告里的 template 字段应保留：{r}");
+        assert!(r["score"]["total"].as_i64().is_some_and(|v| v > 0), "报告里应有质量评分：{r}");
+        assert!(r["missing"]["page_type"].as_str().is_some(), "报告里应有缺失分析：{r}");
+        assert!(r.get("autofix").is_some(), "报告里应有自愈统计：{r}");
+        assert!(r.get("mbt").is_none(), "mbt 本体应剥除（与常规 generate 路由一致）");
     }
 
     /// 生成式 UI 宿主契约：`generate` 是建画布的首选通道（一次调用产出整页，
