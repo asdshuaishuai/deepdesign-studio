@@ -110,6 +110,9 @@ assert.deepEqual(stubMasking,[],
 /* 检查 D：跨文件契约——Rust 原生菜单 id 必须都被 nativeMenuAction 处理。
  * lib.rs 用 typeof 守卫兜底，所以漏映射时菜单静默失效，任何前端自测都发现不了。 */
 const libRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','lib.rs'),'utf8');
+// 后端源码只读一次：多个检查块共用（重复 readFileSync 纯浪费，且以后加断言不必再抄路径）
+const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
+const hostRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','wasmtime_host.rs'),'utf8');
 const tauriConf=fs.readFileSync(path.join(__dirname,'src-tauri','tauri.conf.json'),'utf8');
 // id 允许大小写/数字/下划线：只收 [a-z-] 会让 "open_ddp2" 这类 id 静默逃过契约检查
 const menuIds=[...libRs.matchAll(/MenuItem::with_id\(\s*app,\s*"([A-Za-z0-9_-]+)"/g)].map(m=>m[1]);
@@ -279,7 +282,6 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
  * 步数耗尽路径曾零事件（时间线静默，分不清运行是否结束）、failed 仅单行弱标志；
  * Rust 侧必须为 max_turns 路径补发 done 终态事件，前端三种终态都必须落终态卡。 */
 {
-  const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
   assert(agentRs.includes('"stopReason": "max_turns", "ops"'),
     'agent.rs 步数耗尽路径未发 done 终态事件——轨迹静默回归，请同步检查 Q');
   assert(agentRs.includes('"error": e, "ops": state.ops.len()'),
@@ -338,14 +340,23 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '一句话生成 PRD 的入口缺失（mode=prd 未下发）——请同步检查 S');
   assert(/function buildFromDocs\(\)/.test(script)&&/askFxSdk\(parts\.join\('\\n\\n'\),runId\)/.test(script),
     'PRD → 原型的生成入口缺失——请同步检查 S');
-  assert(/syncPrdFromEditor\(\);[\s\S]{0,400}?if\(!studioDocs\.prd\)/.test(script),
-    '生成原型前未收回 PRD 编辑器内容/未以 PRD 为门槛——请同步检查 S');
+  // 建画布前必须先把编辑器内容收回真源，且以「非空白的设计文档」为门槛
+  // （纯空白不算有内容——否则会把空文档发给 agent）
+  assert(/syncPrdFromEditor\(\);[\s\S]{0,400}?if\(!String\(studioDocs\.prd\|\|''\)\.trim\(\)\)/.test(script),
+    '生成原型前未收回设计文档编辑器内容/未以非空内容为门槛——请同步检查 S');
   // 第一栏是「设计文档」（需求设计），它才是建原型的唯一功能依据
   assert(/【设计文档（需求设计）——这是唯一的功能与范围依据】/.test(script),
     '建画布提示词未把设计文档声明为唯一功能依据——请同步检查 S');
   assert(/doc-tab on" id="doc-tab-prd"[^>]*>设计文档</.test(html)
     &&/id="doc-tab-design"[^>]*>设计规范</.test(html),
     '第一栏必须叫「设计文档」且与「设计规范」明确区分——请同步检查 S');
+  // 位置断言（不是存在性）：设计文档是 C 位第一栏，必须排在 UI 说明与设计规范之前
+  assert(html.indexOf('id="doc-tab-prd"') < html.indexOf('id="doc-tab-ui"')
+    && html.indexOf('id="doc-tab-ui"') < html.indexOf('id="doc-tab-design"'),
+    '面板内的栏位顺序变了（设计文档必须是第一栏）——请同步检查 S');
+  // 顶栏模式切换同理：设计文档排在绘图模式之前（用户决策）
+  assert(html.indexOf('id="mode-doc"') < html.indexOf('id="mode-wireframe"'),
+    '顶栏里设计文档未排在绘图模式之前（C 位入口顺序）——请同步检查 S');
   assert(/const ui=\$\('doc-pane-ui'\);[\s\S]{0,300}?\u53ef\u9009/.test(script),
     'UI 说明未标注为可选中间产物（它不该是必经步骤）——请同步检查 S');
   assert(/id="doc-stage"/.test(html)&&/id="doc-pane-prd"/.test(html)&&/id="doc-prd-text"/.test(html)
@@ -390,7 +401,6 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
  * 这是"文档阶段只产出文档"不变式的真正保障——提示词禁令可以被幻觉绕过，
  * 工具面缺失不能。 */
 {
-  const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
   assert(/fn tools_typed_doc\(\)[\s\S]{0,1400}?\n\}/.test(agentRs)
     &&!/fn tools_typed_doc\(\)[\s\S]{0,1400}?"moonviz_op"/.test(agentRs),
     '文档阶段工具面含 moonviz_op——文档阶段必须结构上无法改画布——请同步检查 S');
@@ -408,8 +418,6 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
  *   2) agent 首 op 引导：generate 与 template/create 同权
  *   3) 提示词：Build loop 把 generate 写成默认路径并解释为何不能手工摆页 */
 {
-  const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
-  const hostRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','wasmtime_host.rs'),'utf8');
   assert(/"session_generate" => \{[\s\S]{0,700}?rsplit_once\(" as "\)/.test(hostRs),
     'host 未按 " as " 切分 generate 的 name（intent 含空格会被切碎）——请同步检查 T');
   assert(/"session_generate" => \{[\s\S]{0,400}?let rest = op\.trim\(\);/.test(hostRs),

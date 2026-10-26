@@ -244,7 +244,7 @@ instead of the tool call — the document is delivered through the tool.
   decide the screen list yourself; do not ask the user (this stage never asks questions).
 - Every statement must be concrete and checkable (real labels, real numbers, real flows).
   Never write lorem ipsum, never write "待定".
-- Screen count: 3-6 for a focused prototype. Prefer完整核心流程 over surface breadth.
+- Screen count: 3-6 for a focused prototype. Prefer a complete core flow over surface breadth.
 - Pages must connect: state explicitly which page leads to which (section 4).
 - Write in the user's language."#;
 
@@ -1205,7 +1205,7 @@ fn openai_request_body(model: &str, thinking: &str, messages: &[Value]) -> Value
     openai_request_body_for(model, thinking, messages, None)
 }
 
-/// 同 openai_request_body，但工具面按阶段选择（文档阶段不含 moonviz_op）。
+/// chat 请求体构造（带阶段）：文档阶段的工具面不含 moonviz_op。
 fn openai_request_body_for(model: &str, thinking: &str, messages: &[Value], mode: Option<&str>) -> Value {
     let typed = CreateChatCompletionRequest {
         model: model.to_string(),
@@ -1258,7 +1258,7 @@ fn safe_base_url(u: &str) -> Option<String> {
 
 /// 单次 LLM 请求：按 protocol_for 分流——OpenAI Chat Completions（bearer）或
 /// Anthropic Messages（x-api-key + anthropic-version）；后者归一化为 OpenAI 形状返回。
-/// 同 chat_once，工具面按阶段选择（文档阶段只给 write_doc + 只读工具）。
+/// LLM 单次调用（带阶段）：文档阶段只给 write_doc + 只读工具。
 async fn chat_once_mode(
     client: &reqwest::Client,
     base_url: &str,
