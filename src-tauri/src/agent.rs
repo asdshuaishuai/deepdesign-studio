@@ -50,9 +50,10 @@ fn seed_doc(id: &str, w: i64, h: i64) -> String {
 /// 引擎模板清单（id 与 MoonViz `list-templates` 对齐，尺寸以引擎实际产出为准）。
 /// 改这里必须同步 `template_ids_match_engine` 契约测试。
 const ENGINE_TEMPLATES: &str = "login(登录页) | signup(注册页) | dashboard(仪表盘) | profile(个人主页)
-settings(设置页) | list_detail(列表-详情) | onboarding(引导页) | empty_state(空状态)
-web_landing(Web落地页 1280x800) | web_login(Web登录 1280x800) | web_dashboard(Web仪表盘 1280x800)
-pc_app(PC桌面 1280x800) | adaptive_landing(自适应落地页) | login_v2(登录页v2)";
+settings(设置页) | list(列表页) | detail(详情页) | checkout(确认订单) | list_detail(聊天列表) | onboarding(引导页)
+empty_state(空状态) | web_landing(Web落地页 1280x800) | web_login(Web登录 1280x800)
+web_dashboard(Web仪表盘 1280x800) | pc_app(PC桌面 1280x800) | adaptive_landing(自适应落地页)
+login_v2(登录页v2)";
 
 const INSTRUCTIONS: &str = r#"You are the embedded design agent of deepDesign Studio, a visual prototyping editor.
 You operate as a product designer, not a command executor: interpret what the user wants to
