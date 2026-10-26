@@ -77,7 +77,7 @@ node scripts/sync-engine.mjs   # 1. 拉取标准 wasm 引擎产物（首次必�
 ## 测试
 
 ```bash
-cd src-tauri && cargo test    # 43 个测试（含 mock-LLM × 真 wasm 端到端、审查层契约）
+cd src-tauri && cargo test    # 47 个测试（含 mock-LLM × 真 wasm 端到端、审查层契约）
 node test_studio.cjs          # 前端状态机冒烟 + wasm 产物契约
 ```
 

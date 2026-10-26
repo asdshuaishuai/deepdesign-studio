@@ -397,6 +397,9 @@ body[data-mode="dark"] .tl-final.abnormal{color:#FECACA;background:linear-gradie
 #doc-stage .doc-pane table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px}
 #doc-stage .doc-pane th,#doc-stage .doc-pane td{border:1px solid var(--panel-line,rgba(0,0,0,.11));padding:5px 9px;text-align:left}
 #doc-stage .doc-pane th{background:rgba(0,0,0,.035);font-weight:700}
+#doc-stage .doc-pane blockquote{margin:9px 0;padding:6px 12px;border-left:3px solid var(--acc-tx,rgba(0,122,255,.5));background:rgba(0,122,255,.045);color:var(--tx2)}
+#doc-stage .doc-pane blockquote p{margin:3px 0}
+#doc-stage .doc-pane hr{border:none;border-top:1px solid var(--panel-line,rgba(0,0,0,.12));margin:14px 0}
 #doc-stage #doc-design-text{width:100%;height:100%;border:none;outline:none;resize:none;padding:16px 18px;font-family:ui-monospace;font-size:11.5px;line-height:1.65;background:transparent;color:var(--tx)}
 #doc-stage .doc-design-hint{font-size:11px;color:var(--tx3);padding:0 18px 8px}
 #doc-stage .doc-design-actions{display:flex;gap:8px;padding:0 18px 14px}
@@ -1447,7 +1450,7 @@ function inkRestore(mbt){
  *     ">" 转成 "\u003e"，JSON.parse 能正确还原；
  *  2. 引擎会把注释内的行首缩进压平（嵌套列表/缩进代码块会降级）——文档正文用
  *     表格 / 扁平列表 / 显式编号，不要依赖缩进表达层级；
- *  3. 注释内不要写未闭合的 ```mbt 围栏（会让其后真实围栏块被吞，文档直接打不开）；
+ *  3. 注释内不要写未闭合的 mbt 代码围栏（会让其后真实围栏块被吞，文档直接打不开）；
  *  4. 注释标记不能以 moonviz 开头（引擎当锚标记过滤掉）；本实现用 deepdesign:design；
  *  5. 放在**文末**最稳（实测位置不随删板/改名漂移）；放正文前的锚点由"其后最近的
  *     ## <板名>"决定，没有则降级文末——所以统一追加到文档末尾，再去除多余空行。
@@ -1457,16 +1460,31 @@ let studioDocs={prd:'',ui:''}; // 产品需求文档 + UI 设计文档（Markdow
 function designSerialize(){
   const hasDocs=studioDocs&&(studioDocs.prd||studioDocs.ui);
   if(!designSpec&&!hasDocs)return null;
+  // 缓存：applyMbtResult 是每个 op 都走的路径，PRD/UI 文档合起来可能上万字——
+  // 每次重新 JSON.stringify + 全串 replace 是纯浪费。缓存键取两者的引用+长度，
+  // 内容变化必然改变其中一项（编辑器输入走 studioDocs 替换，不是原地改）。
+  const key=(designSpec?JSON.stringify(designSpec).length:0)+'|'+(studioDocs?((studioDocs.prd||'').length+(studioDocs.ui||'').length):0);
+  if(_designCache.key===key&&_designCache.spec===designSpec&&_designCache.prd===studioDocs.prd&&_designCache.ui===studioDocs.ui){
+    return _designCache.out;
+  }
   try{
     const payload={...(designSpec||{v:1})};
+    // docs 只归 studioDocs 管：designSpec 里残留的旧 docs 必须先删，
+    // 否则「清空 PRD」后旧内容会随 designSpec 一起被写回注释块、重开即复活
+    delete payload.docs;
     if(hasDocs)payload.docs={prd:studioDocs.prd||'',ui:studioDocs.ui||''};
     // ">" → "\u003e"：杜绝 `-->` 提前闭合注释（实测坑 1）
-    return JSON.stringify(payload).replace(/>/g,'\\u003e');
+    const out=JSON.stringify(payload).replace(/>/g,'\\u003e');
+    _designCache={key,spec:designSpec,prd:studioDocs?studioDocs.prd:'',ui:studioDocs?studioDocs.ui:'',out};
+    return out;
   }catch(_){return null;}
 }
+let _designCache={key:'',spec:null,prd:'',ui:'',out:null};
 function designExtract(mbt){
-  const m=String(mbt||'').match(/<!-- deepdesign:design ([\s\S]*?) -->/);
-  return m?m[1].trim():null;
+  // 取**最后一块**：designInject 总是追加到文末，若文档里还残留旧块（源码模式下手改、
+  // 或引擎把块挪到了末尾之前），最后一个才是当前真源。取第一个会读到陈旧内容。
+  const all=[...String(mbt||'').matchAll(/<!-- deepdesign:design ([\s\S]*?) -->/g)];
+  return all.length?all[all.length-1][1].trim():null;
 }
 function designParse(mbt){
   const raw=designExtract(mbt);
@@ -1478,19 +1496,31 @@ function designParse(mbt){
 }
 function designInject(mbt){
   const payload=designSerialize();
-  // remove 吃净前后换行、append 定死单换行格式——同路径二次注入严格幂等
-  let out=String(mbt||'').replace(/\s*$/,'');
-  const re=/\n*<!-- deepdesign:design [\s\S]*? -->\s*$/;
-  const had=re.test(out);
-  if(had)out=out.replace(re,'');
+  // 删除**所有**既有块再按固定格式追加一块——同路径二次注入严格幂等，
+  // 且能清掉文档中部残留的旧块（只删文末块会让旧块活着、designExtract 读到歧义）。
+  let out=String(mbt||'').replace(/\n*<!-- deepdesign:design [\s\S]*? -->\n?/g,'\n').replace(/\s*$/,'');
   if(!payload)return out;
   return out+'\n\n<!-- deepdesign:design '+payload+' -->\n';
+}
+/* 引擎 canonical（剥掉前端注入的注释块）。会话缓存/历史栈的相等性判定用它——
+ * mbtText 里带着批注与设计文档注释块，而引擎回传的 canonical 不含，
+ * 直接比会让缓存永远失效、每个 op 都重新解析整份文档。 */
+function mbtCanonical(mbt){
+  return String(mbt||'').replace(/\n*<!-- deepdesign:(?:ink|design) [\s\S]*? -->\n?/g,'\n').replace(/\s+$/,'');
 }
 function designRestore(mbt){
   const d=designParse(mbt);
   const ok=!!(d&&d.v===1);
-  designSpec=ok?d:null;
-  studioDocs=(ok&&d.docs)?{prd:String(d.docs.prd||''),ui:String(d.docs.ui||'')}:{prd:'',ui:''};
+  if(ok){
+    // docs 归属 studioDocs：从 designSpec 里摘出去，否则「设计规范」的 JSON 编辑器
+    // 会显示 PRD 全文，且 clearPrd 后旧 docs 会随 designSpec 一起被写回注释块
+    const {docs, ...spec}=d;
+    designSpec=spec;
+    studioDocs=docs?{prd:String(docs.prd||''),ui:String(docs.ui||'')}:{prd:'',ui:''};
+  }else{
+    designSpec=null;
+    studioDocs={prd:'',ui:''};
+  }
   return ok;
 }
 /* 从引擎实时状态生成 DESIGN.md 初值：令牌（颜色/间距/圆角/字号）来自会话导出，
@@ -1628,13 +1658,16 @@ async function histEnsure(){
   await loadEngine();
   if(!engineExports)return null;
   engineRecycleIfNeeded();
-  if(histS&&histDoc===mbtText&&histSynced)return histS.handle;
+  // 相等性比较必须忽略前端注入的注释块（批注 + 设计文档）：引擎回传的 canonical
+  // 不含它们，直接比 mbtText 会永远不等 → 每个 op 都重开会话、把整份带 PRD 的文档
+  // 重新灌进引擎解析（实测这是存在设计文档后最大的一笔开销）。
+  if(histS&&histDoc===mbtCanonical(mbtText)&&histSynced)return histS.handle;
   if(histS){try{engineExports.session_close(histS.handle);}catch(_){ } histS=null;}
   if(!mbtText)return null;
   engSlotLoad('in_reset','in_push',mbtText);
   const h=engineExports.session_open_in();
   if(!Number.isInteger(h)||h<0)return null;
-  histS={handle:h};histDoc=mbtText;histSynced=true;
+  histS={handle:h};histDoc=mbtCanonical(mbtText);histSynced=true;
   // 引擎按画板各自维护撤销栈（moonviz 探针实证）：逐板 init，无 baseline commit——
   // 首次 undo 前 commits 为空，诚实报「没有可撤销的操作」而非空转一步
   for(const id of Object.keys(sessions)){
@@ -3243,24 +3276,50 @@ async function extractDesignFromEngine(){
   }catch(err){toast('抽取失败：'+String(err).slice(0,80),'err');}
 }
 /* 极简 Markdown → HTML（只覆盖文档实际会出现的子集；不做完整解析，不引三方库）。
- * 安全：所有文本先 escHtml，再对已转义文本做结构替换。 */
+ * 安全：**所有**文本与属性值都走仓库统一的 escHtml（转 5 个字符，含引号）——
+ * 自建 3 字符转义器会把 `"` 放进 href 从而逃出属性（tauri.conf.json 放行
+ * script-src-attr 'unsafe-inline'，等于可执行内联事件）。链接另做 scheme 白名单，
+ * 挡掉 javascript:/data: 这类伪协议。 */
 function mdToHtml(md){
-  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const esc=escHtml;
+  // 链接目标白名单：只放行 http(s)/mailto/页内锚点。命中不了的一律降级为纯文本，
+  // 不保留可点击性（宁可少一个链接，也不给伪协议留口子）。
+  const safeHref=u=>{
+    const s=String(u||'').trim();
+    if(/^(https?:\/\/|mailto:|#|\/)/i.test(s))return esc(s);
+    return null;
+  };
   const lines=String(md||'').split('\n');
-  const out=[];let inCode=false,inUl=false,inOl=false,inTable=false;
+  const out=[];let inCode=false,inUl=false,inOl=false,inTable=false,inQuote=false;
   const closeList=()=>{if(inUl){out.push('</ul>');inUl=false;}if(inOl){out.push('</ol>');inOl=false;}};
   const closeTable=()=>{if(inTable){out.push('</tbody></table>');inTable=false;}};
+  const closeQuote=()=>{if(inQuote){out.push('</blockquote>');inQuote=false;}};
   const inline=t=>esc(t)
     .replace(/`([^`]+)`/g,'<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,(m,label,url)=>{
+      const href=safeHref(url);
+      return href?`<a href="${href}" target="_blank" rel="noreferrer">${label}</a>`:label;
+    });
   for(const raw of lines){
     const line=raw.replace(/\s+$/,'');
-    if(/^```/.test(line.trim())){closeList();closeTable();out.push(inCode?'</pre>':'<pre><code>');inCode=!inCode;continue;}
+    if(/^```/.test(line.trim())){closeList();closeTable();closeQuote();out.push(inCode?'</pre>':'<pre><code>');inCode=!inCode;continue;}
     if(inCode){out.push(esc(raw));continue;}
-    if(/^\s*$/.test(line)){closeList();closeTable();continue;}
-    const h=line.match(/^(#{1,4})\s+(.*)$/);
-    if(h){closeList();closeTable();out.push('<h'+h[1].length+'>'+inline(h[2])+'</h'+h[1].length+'>');continue;}
+    if(/^\s*$/.test(line)){closeList();closeTable();closeQuote();continue;}
+    // 标题 1-6 级：与 looksLikeMarkdown 的 /^#{1,6}\s+/ 判定保持一致，
+    // 否则 5/6 级标题会被判成 Markdown 却渲染成字面量井号
+    const h=line.match(/^(#{1,6})\s+(.*)$/);
+    if(h){closeList();closeTable();closeQuote();out.push('<h'+h[1].length+'>'+inline(h[2])+'</h'+h[1].length+'>');continue;}
+    // 分隔线（判定器认这条，渲染器必须也认）
+    if(/^\s*([-*_])\1{2,}\s*$/.test(line)){closeList();closeTable();closeQuote();out.push('<hr>');continue;}
+    // 引用（同上：判定器认，渲染器必须也认，否则会退化成 <p>&gt; ...</p>）
+    const q=line.match(/^>\s?(.*)$/);
+    if(q){
+      closeList();closeTable();
+      if(!inQuote){out.push('<blockquote>');inQuote=true;}
+      out.push('<p>'+inline(q[1])+'</p>');continue;
+    }
+    closeQuote();
     if(/^\s*\|/.test(line)){
       closeList();
       const cells=line.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
@@ -3269,14 +3328,15 @@ function mdToHtml(md){
       out.push('<tr>'+cells.map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>');continue;
     }
     closeTable();
-    const li=line.match(/^\s*[-*]\s+(.*)$/);
+    // 无序列表含 `+` —— 与判定器一致（Markdown 三种项目符号等价）
+    const li=line.match(/^\s*[-*+]\s+(.*)$/);
     if(li){if(inOl){out.push('</ol>');inOl=false;}if(!inUl){out.push('<ul>');inUl=true;}out.push('<li>'+inline(li[1])+'</li>');continue;}
     const oi=line.match(/^\s*(\d+)\.\s+(.*)$/);
     if(oi){if(inUl){out.push('</ul>');inUl=false;}if(!inOl){out.push('<ol>');inOl=true;}out.push('<li>'+inline(oi[2])+'</li>');continue;}
     closeList();out.push('<p>'+inline(line)+'</p>');
   }
   if(inCode)out.push('</pre>');
-  closeList();closeTable();
+  closeList();closeTable();closeQuote();
   return out.join('\n');
 }
 /* 设计文档面板：内容真源是 studioDocs.prd，textarea 是编辑视图。
@@ -3292,10 +3352,10 @@ function syncPrdFromEditor(){
   if(PRD_EDITING&&ta)studioDocs.prd=ta.value;
 }
 /* Markdown 特征探测：命中结构信号即视为 Markdown。
- * 计分设计（阈值 2）：`# 标题` / ``` 围栏 / `>` 引用 / 分隔线 这类**独占一行的
+ * 计分设计（阈值 2）：ATX 标题 / 代码围栏 / 引用 / 分隔线 这类**独占一行的
  * 结构标记**单独出现就足以判定（用户粘一份只有标题或只有引用的片段很常见）；
  * 表格行/列表项同样计 2（它们几乎不会在纯文本里成行出现）；
- * 行内标记（**粗体**/`代码`/链接）只计 1，需要凑够两处才判定——单个星号
+ * 行内标记（粗体/行内代码/链接）只计 1，需要凑够两处才判定——单个星号
  * 或单个反引号在纯文本里太常见，不能当证据。
  * 刻意**不**把「普通换行的散文」判成 Markdown——那类内容会被 <p> 压平原有
  * 换行分组，反而丧失纯文本的可读性（用户要的正是"原样"）。 */
@@ -3379,11 +3439,30 @@ function clearPrd(){
   renderDocStage();
   toast('设计文档已清空');
 }
+/* 编辑即同步：输入先落 studioDocs 并置脏（保证 ⌘S / 关窗守卫能看见这份草稿），
+ * 再 debounce 落盘到注释块（避免每按键一次全量重写 mbtText）。
+ * 没有这层监听的话，「切模式→renderDocStage 回写旧值」和「直接 ⌘S」都会丢稿。 */
+let _prdPersistDeb=0;
+function bindPrdInput(){
+  const ta=$('doc-prd-text');
+  if(!ta||ta.dataset.bound==='1')return;
+  ta.dataset.bound='1';
+  ta.addEventListener('input',()=>{
+    studioDocs.prd=ta.value;
+    projectDirty=true;syncFileLabel();syncDirtyRemote();
+    clearTimeout(_prdPersistDeb);
+    _prdPersistDeb=setTimeout(()=>persistDesign(),400);
+  });
+}
 function renderDocStage(){
   const d=studioDocs||{};
   // 设计文档：编辑态写 textarea；预览态按**内容格式**决定渲染（Markdown 渲染 / 纯文本原样）
   const ta=$('doc-prd-text');
-  if(ta&&PRD_EDITING)ta.value=d.prd||'';
+  if(ta&&PRD_EDITING){
+    // 只在内容真变了时回写——无条件赋值会在每次切模式/重渲染时把光标打回开头
+    const next=d.prd||'';
+    if(ta.value!==next)ta.value=next;
+  }
   else if(ta){
     const pane=$('doc-pane-prd');
     const box=pane&&pane.querySelector(':scope > .doc-rendered');
@@ -3423,8 +3502,11 @@ function askFxSdkMode(instruction,runId,mode){
     .catch(e=>{throw Error(String(e));})
     .then(data=>{
       if(!data||data.ok!==true){
-        const d=(data&&(data.detail?data.error+': '+data.detail:data.error))||'fxsdk_failed';
-        throw Error(d);
+        // 文档阶段即便失败也可能已经写出一份（模型写了 ui 却要 prd，或步数耗尽）：
+        // 把已产出的文档挂到 error 上带回，调用方可选择保留而不是整份丢弃
+        const err=new Error((data&&(data.detail?data.error+': '+data.detail:data.error))||'fxsdk_failed');
+        if(data&&data.docs&&typeof data.docs==='object')err.partialDocs=data.docs;
+        throw err;
       }
       return data;
     });
@@ -3451,6 +3533,8 @@ async function runStudioPrompt(){
   if(agentBusy){toast('Agent 正在生成，完成后再试','err');return;}
   agentBusy=true;
   const genBtn=$('doc-gen');if(genBtn)genBtn.disabled=true;
+  // runId 必须在 try 之外：catch 里的 traceFailCard 要用它，声明在 try 内会 TDZ
+  const run1=nextAgentRun();
   try{
     loadAgentConfig();
     if(!designSpec){
@@ -3458,7 +3542,6 @@ async function runStudioPrompt(){
     }
     const brief=designBrief();
     const prdInstr=`产品想法：${idea}\n\n${brief?('【设计规范基线（只约束视觉，不决定页面内容）】\n'+brief+'\n\n'):''}请产出 PRD。`;
-    const run1=nextAgentRun();
     traceOpen(run1,'📄 生成设计文档',false);
     setStatus('agent','生成设计文档…',true,'设计文档');
     const r1=await askFxSdkMode(prdInstr,run1,'prd');
@@ -3472,7 +3555,17 @@ async function runStudioPrompt(){
     toast('设计文档已生成 — 可直接「生成原型」，或先修改');
   }catch(err){
     const msg=String(err&&err.message||err);
-    toast('设计文档生成失败：'+msg.slice(0,100),'err');
+    // 失败也要给时间线一个终态（Rust 侧前置校验失败时零事件，容器会永远空着）
+    traceFailCard(run1,msg);
+    // 部分产出不丢：模型可能写出了一份（只是 kind 不符或步数耗尽），保留下来让用户自己判断
+    const partial=err&&err.partialDocs;
+    if(partial&&partial.prd){
+      studioDocs.prd=String(partial.prd);
+      persistDesign();renderDocStage();switchDocTab('prd');
+      toast('设计文档生成未完成，但已保留模型写出的部分内容（请检查后使用）','err');
+    }else{
+      toast('设计文档生成失败：'+msg.slice(0,100),'err');
+    }
     setStatus('', '', false, '');
   }finally{
     agentBusy=false;
@@ -3530,7 +3623,9 @@ async function buildFromDocs(){
     }
     setMode('wireframe');
   }catch(err){
-    toast('生成原型失败：'+String(err&&err.message||err).slice(0,100),'err');
+    const msg=String(err&&err.message||err);
+    traceFailCard(runId,msg); // 失败也要有终态（Rust 前置校验失败时零事件）
+    toast('生成原型失败：'+msg.slice(0,100),'err');
     setStatus('', '', false, '');
   }finally{
     agentBusy=false;
@@ -4518,6 +4613,12 @@ async function exportDdpCommit(password){
 }
 /* 保存：已有路径（打开/导出过）→ 原地回写并复用会话口令；否则回落导出对话框 */
 async function saveProject(){
+  // 保存前必须把设计文档编辑器里的最新内容收回真源并落进 mbtText——
+  // 编辑器有 400ms debounce，直接在 debounce 窗口内按 ⌘S 会写丢刚打的字
+  syncPrdFromEditor();
+  clearTimeout(_prdPersistDeb);
+  const withDocs=designInject(mbtText);
+  if(withDocs!==mbtText){mbtText=withDocs;projectDirty=true;}
   if(mbtText&&filePath){
     try{
       // 进 serializeProject：与在途 op 串行化，mbtText 取队列时点的一致快照——
@@ -4609,6 +4710,7 @@ async function openProject(path){
     boardOffsets={};playIx={};playIxHits={};
     if(mode==='play')setMode('play'); // 演示中换项目：归一返回栈到新活动画板
     setFileLabel(r.path.split(/[\\/]/).pop());syncProjName(r.path);rememberProject(r.path);
+    renderDocStage(); // 切项目后文档面板必须跟上，否则停在文档页会显示上一个项目的设计文档
     toast('已打开 DDP，并从 MBT 重新渲染');});
 }
 async function newProject(){
@@ -4625,6 +4727,9 @@ async function newProject(){
     mbtText='';mbtRevision=0;sessions={};active='';selected='';flows=[];inkPaths=[];
     filePath='';placing=0;linkSource=null;playStack=[];
     boardOffsets={};playIx={};playIxHits={}; // 拖拽偏移/演示交互缓存跨项目残留会让撞名画板移位、热区误执行
+    // 设计文档/设计规范同样是项目级数据——不清空就会在首次 op 时被 designInject
+    // 写进新项目的文档并随 DDP 落盘（旧项目的 PRD 泄入新项目）
+    designSpec=null;studioDocs={prd:'',ui:''};PRD_EDITING=true;
 
     // 残留即复活通道:nodes 让空项目进 play;declDraftDirty 让
     // 旧文档全文留在源码编辑器(校验并渲染会把旧项目带回新项目)——全部归零
@@ -4633,6 +4738,7 @@ async function newProject(){
     closeAgentPop();cancelInline();
     $('ap-input').value='';$('gp-input').value='';$('tl-body').replaceChildren();
     projectDirty=false;fileLabelName='新项目';syncFileLabel();syncDirtyRemote();syncProjName('');
+    renderDocStage();
     renderStage();renderAbs();renderFlows();renderInspector();
     setStatus('human','new',true,'空白项目');
   });
@@ -5010,6 +5116,7 @@ function renderEngineInfo(){
   const src=$('eng-src');if(src)src.textContent=engineInfo?engineInfo.source:'–';
 }
 initEngineInfo();
+bindPrdInput(); // 设计文档编辑即同步（防切模式/⌘S 丢稿）
   async function askFxSdk(instruction,runId){
   const payload={instruction,mbt_b64:utf8ToB64(mbtText),api_key:agentConfig.apiKey||undefined,model:agentConfig.model||undefined,base_url:agentConfig.baseUrl||undefined,thinking_level:agentConfig.thinkingLevel||'auto',max_steps:Number(agentConfig.maxSteps)||500,run:runId||0};
 

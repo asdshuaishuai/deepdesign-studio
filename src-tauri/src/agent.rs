@@ -1839,6 +1839,32 @@ pub async fn run_with_mode(
     }
 
     // 跑满步数：尽力返回当前状态。
+    // 文档阶段（prd/ui）走的是另一条兜底：模型跑了很久却始终没交出期望的那份文档，
+    // 必须如实报 doc_not_written 并把**已经写出来的**文档交回（否则前端只能显示
+    // fxsdk_failed，用户拿不到任何已产出的内容）。
+    if doc_mode {
+        let want = match mode {
+            Some("prd") => "prd",
+            Some("ui") => "ui",
+            _ => "",
+        };
+        emit(
+            "failed",
+            json!({"error": "doc_not_written", "ops": 0, "kind": want, "docs": written_docs.len()}),
+        );
+        eprintln!("[agent] doc end: stop=max_turns kind={want} docs={}", written_docs.len());
+        return json!({
+            "ok": false,
+            "error": "doc_not_written",
+            "detail": format!("model exhausted {max_steps} steps without delivering kind={want}"),
+            "mode": mode,
+            "docs": Value::Object(written_docs),
+            "ops": [],
+            "stopReason": "max_turns",
+            "text": "",
+        });
+    }
+
     // 轨迹终态事件必须显式发出——此前该路径零事件，前端时间线既不知道运行已结束、
     // 更无法分辨正常/异常（stopReason 只存在于返回契约，实时轨迹看不到）
     state.ensure_render().await;
@@ -1883,6 +1909,25 @@ async fn finish_partial(state: &mut EngineState<'_>, error: &str) -> Value {
 /// 0.37ms/op；AgentGate 逐条重校验，「拒绝即跳过并报告」（op 在新基底上合法失效
 /// 不是错误，宁缺勿债绝不留 gate debt）；只读 op 过滤（无副作用）。
 /// 失败信封保留引擎错误原文（skipped[].error），供前端轨迹呈现与模型可见性。
+/// rebase 的动词路由：与 `EngineState::moonviz_op` 的 session 特判保持同构。
+/// `generate` / `constrain` 只存在于 session 管道——`session_apply_agent` 会以
+/// `mbt_operation_unsupported` 拒绝它们。若不在此分流，用户在 agent 跑动期间做了
+/// 任何人类编辑，rebase 就会把本次 run 里**所有** generate 记为 skipped，
+/// 而 generate 正是建页主路径 → 原型几乎空白（静默的数据丢失）。
+fn rebase_via(r: &Value) -> bool {
+    r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some()
+}
+
+async fn rebase_apply_one(host: &EngineHost, cur: &str, op: &str) -> Result<Value, String> {
+    let head = op.split_whitespace().next().unwrap_or("");
+    let (fn_name, args) = match head {
+        "generate" => ("session_generate", op["generate".len()..].trim()),
+        "constrain" => ("session_constrain", op["constrain".len()..].trim()),
+        _ => ("session_apply_agent", op),
+    };
+    host.call(fn_name, cur, args).await
+}
+
 pub async fn rebase_ops(host: &EngineHost, latest_mbt: &str, ops: &[String]) -> Value {
     let mut cur = latest_mbt.to_string();
     let mut applied: Vec<Value> = Vec::new();
@@ -1890,14 +1935,14 @@ pub async fn rebase_ops(host: &EngineHost, latest_mbt: &str, ops: &[String]) -> 
     for op in ops.iter().filter(|o| !is_readonly_op(o)) {
         // host 级失败（trap/腐坏读等 Err）与门拒绝同语义：跳过并保留错误原文，
         // 不中断整个 rebase（宿主随后自会弃缓存，下次按权威 canonical 重开）
-        let r = match host.call("session_apply_agent", &cur, op).await {
+        let r = match rebase_apply_one(host, &cur, op).await {
             Ok(r) => r,
             Err(e) => {
                 skipped.push(json!({"op": op, "error": e}));
                 continue;
             }
         };
-        if r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some() {
+        if rebase_via(&r) {
             cur = r.get("mbt").and_then(|v| v.as_str()).unwrap_or_default().to_string();
             applied.push(json!(op));
         } else {
@@ -3095,6 +3140,51 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         );
     }
 
+    /// rebase 必须认识 session-only 动词（generate / constrain）。
+    /// `session_apply_agent` 会以 mbt_operation_unsupported 拒绝它们；若不分流，
+    /// 用户在 agent 跑动期间做任何人类编辑，rebase 就会把本次 run 的所有 generate
+    /// 记为 skipped —— 而 generate 是建页主路径，等于原型几乎空白（静默丢数据）。
+    #[tokio::test]
+    async fn rebase_replays_generate_and_constrain() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        // 人类先建一块板（模拟 run 起点）
+        let d0 = ENGINE
+            .call("apply_agent_op", &seed_doc("rb2", 390, 844), "template login rb2")
+            .await
+            .unwrap();
+        let doc0 = d0.get("mbt").and_then(|v| v.as_str()).expect("canonical 回传").to_string();
+        // 「人类」在 run 期间又挪了一个节点（触发前端 rebase 判定）
+        let latest = ENGINE
+            .call("apply_agent_op", &doc0, "move rb2 welcome_title 20 700")
+            .await
+            .unwrap()
+            .get("mbt")
+            .and_then(|v| v.as_str())
+            .expect("canonical 回传")
+            .to_string();
+        // run 的 op 流里全是 generate（新主路径）+ 一条 constrain
+        let ops = vec![
+            "generate 首页 列表 as home".to_string(),
+            "generate 个人主页 as profile".to_string(),
+            "constrain rb2 居中".to_string(),
+        ];
+        let out = rebase_ops(&ENGINE, &latest, &ops).await;
+        assert_eq!(out["ok"], json!(true), "{out}");
+        let applied = out["applied"].as_array().expect("applied 数组");
+        let skipped = out["skipped"].as_array().expect("skipped 数组");
+        assert_eq!(
+            applied.len(), ops.len(),
+            "generate/constrain 都是 session-only 动词，rebase 必须分流重放（skipped={skipped:?}）"
+        );
+        assert!(skipped.is_empty(), "不应有任何 op 被跳过：{skipped:?}");
+        let canon = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
+        assert!(canon.contains("moonviz:artboard home"), "generate 的页必须落地");
+        assert!(canon.contains("moonviz:artboard profile"), "第二页必须落地");
+        // 人类编辑也保住了（rebase 的前提）
+        assert!(canon.contains("y=700") || canon.contains("y=700,"), "人类挪动的节点位置应保留");
+    }
+
     /// 终态 rebase（docs/agent-rebase.md 方案 C）：人类编辑推进文档后，run 的变更
     /// op 流重放到最新 canonical——保住人类编辑；无冲突 op 应用；与新布局冲突的 op
     /// 被门拒跳过并保留错误原文；只读 op 过滤不进重放流。
@@ -3273,6 +3363,28 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             // 生成式产物的缺失项可能为空（模板已自足），此时 autofill 也应幂等成功或明确拒绝
             assert!(v.get("ok").is_some(), "autofill 应返回信封：{v}");
         }
+    }
+
+    /// arg2 槽是 wasm 实例级状态，不会随会话清空。`generate` 的无名分支必须显式
+    /// 清空它——否则残留的上一页 name 会让新页原地覆盖旧页（静默丢页），或把上一次
+    /// constrain 的意图当画板名（造出垃圾画板）。这条测试锁死"无名 generate 不继承 name"。
+    #[tokio::test]
+    async fn generate_without_name_does_not_inherit_stale_arg2() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let seed = seed_doc("sd", 390, 844);
+        // 先带名生成一页，把 name 写进 arg2 槽
+        let named = ENGINE.call("session_generate", &seed, "登录页 as named_page").await.unwrap();
+        assert_eq!(named["artboard"], json!("named_page"), "首次应使用显式名字：{named}");
+        let after_named = named["mbt"].as_str().unwrap_or("").to_string();
+        // 再无名生成：不得写到 named_page 上（那就是静默覆盖），应新增一页
+        let anon = ENGINE.call("session_generate", &after_named, "首页 列表").await.unwrap();
+        assert_eq!(anon["ok"], json!(true), "无名 generate 应成功：{anon}");
+        let got = anon["artboard"].as_str().unwrap_or("");
+        assert_ne!(got, "named_page", "无名 generate 继承了残留 name（会把新页覆盖到旧页上）");
+        let canon = anon["mbt"].as_str().unwrap_or("");
+        let boards = canon.matches("<!-- moonviz:artboard ").count();
+        assert!(boards >= 3, "应新增画板而不是覆盖（当前 {boards} 块：sd + named_page + 新页）");
     }
 
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。

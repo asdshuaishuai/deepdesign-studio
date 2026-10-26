@@ -3,6 +3,16 @@ const html=fs.readFileSync(path.join(__dirname,'frontend','index.html'),'utf8');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const markup=html.slice(0,html.indexOf('<script>'));
 const source=script;
+
+/* 检查 X：前端脚本必须能被真实解析器接受。
+ * 历史事故（本次审查发现）：注释里写三反引号会提前闭合代码块标记，
+ * 整份内联脚本解析失败 → 应用白屏，而所有静态断言照样全绿（它们只做正则匹配）。
+ * 注释里写 Markdown 示例是很容易踩的坑，必须有一次真实 parse。 */
+try{
+  new vm.Script(script,{filename:'frontend/index.html:inline'});
+}catch(e){
+  assert.fail(`前端内联脚本无法解析（应用会白屏）：${e.message}\n${String(e.stack||'').split('\n')[1]||''}`);
+}
 const elements=new Map();
 function element(id){if(!elements.has(id))elements.set(id,{value:'',style:{},dataset:{},textContent:'',innerHTML:'',className:'',classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},focus(){},select(){},querySelectorAll(){return[]},replaceChildren(){}});return elements.get(id)}
 
@@ -308,7 +318,7 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '演示前进导航未收口到 playGo 单点（栈不变量多写一处就会漏）——请同步检查 R');
 }
 
-/* 检查 S：产品设计工作室（PRD → UI 设计文档 → 可交互原型）+ DESIGN.md 一致性契约。
+/* 检查 S：产品设计工作室（设计文档 → 可交互原型，UI 说明可选）+ 设计规范一致性契约。
  * DESIGN.md 载体是 .mbt.md 的注释块，真机实证有五条硬约束（见 index.html 的
  * designSerialize 注释）：`-->` 会截断注释、缩进被压平、moonviz 前缀被过滤等。
  * 其中「`-->` 防护」与「幂等」是可静态锚定的实现形态，其余靠运行时约束。 */
@@ -357,8 +367,23 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'Markdown 内容未走渲染分支——请同步检查 S');
   assert(/looksLikeMarkdown\(studioDocs\.prd\)\?'按 Markdown 渲染':'纯文本（原样显示）'/.test(script),
     '预览态缺少格式标签（用户无法确认系统按哪种格式解读）——请同步检查 S');
-  assert(/function mdToHtml\(md\)/.test(script)&&/const esc=s=>String\(s\|\|''\)\.replace\(\/&\/g,'&amp;'\)/.test(script),
-    'Markdown 渲染未先转义再结构化（XSS 风险）——请同步检查 S');
+  // XSS：不用源码形态断言（那会锁死实现细节），直接在 vm 里跑真实渲染器验证注入不生效
+  const xssCtx=vm.createContext({});
+  vm.runInContext([
+    (script.match(/^const escHtml=.*$/m)||[])[0],
+    fn('mdToHtml'),
+  ].join('\n')+'\nthis.render=mdToHtml;',xssCtx);
+  // 用不含圆括号的载荷：`[^)]+` 会在第一个 ')' 处截断，带括号的载荷根本进不了 href
+  // （实测：`[x](a" onmouseover="alert(1))` 连链接都不成立，会被当成普通文字）
+  const xssOut=xssCtx.render('# t\n\n[x](a" onmouseover="alert`1`)\n\n<img src=y onerror=alert`1`>\n\n**<script>alert`1`</script>**');
+  assert(!/<a[^>]*onmouseover/i.test(xssOut),'Markdown 渲染把 onmouseover 塞进了 <a> 标签——请同步检查 S');
+  assert(!/<img[^>]*onerror/i.test(xssOut),'Markdown 渲染放行了 <img onerror> 标签（原始 HTML 未被转义）——请同步检查 S');
+  assert(!/<script/i.test(xssOut),'Markdown 渲染放行了 <script> 标签——请同步检查 S');
+  // 伪协议必须降级为纯文本（不可点击）——这是白名单唯一能挡住的攻击面
+  const jsOut=xssCtx.render('# t\n\n[危险](javascript:alert`1`)');
+  assert(!/href="javascript:/i.test(jsOut),'Markdown 渲染放行了 javascript: 伪协议——请同步检查 S');
+  assert(!/href="data:/i.test(xssCtx.render('# t\n\n[危险](data:text/html,x)')),'Markdown 渲染放行了 data: 伪协议——请同步检查 S');
+  assert(/href="https:\/\/example\.com"/.test(xssCtx.render('# t\n\n[正常](https://example.com)')),'合法 https 链接被误杀——请同步检查 S');
 }
 
 /* Rust 侧：文档阶段的工具面必须不含 moonviz_op（结构上不可能改画布）。
@@ -399,9 +424,14 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     +'真实事故：种子引导只认 template/create 时 generate 开会话失败，模型退回逐 place 叠重叠');
   assert(/\*\*`generate <intent> \[as <name>\]`\*\*/.test(agentRs)&&/### Why not hand-place a screen/.test(agentRs),
     '提示词未把 generate 写成建页默认路径（会退回逐 place 叠重叠）——请同步检查 T');
-  assert(/fn auditBuiltBoards\(\)/.test(script)&&/自检\$\{issues\.total>0\?'发现'/.test(script.replace(/\s+/g,''))
-    || /const issues=await auditBuiltBoards\(\)/.test(script),
-    '建画布后缺少终态自检（偏差被静默）——请同步检查 T');
+  // 自检必须真的把结果**报出来**，而不是只在代码里跑一遍就完（偏差被静默等于没做）。
+  // 锚定实际的两条 toast 模板：有偏差时报条数与页面，无偏差时报通过。
+  assert(/function auditBuiltBoards\(\)/.test(script)&&/const issues=await auditBuiltBoards\(\)/.test(script),
+    '建画布后缺少终态自检（auditBuiltBoards 未接入）——请同步检查 T');
+  assert(/自检发现 \$\{issues\.total\} 处偏差（\$\{issues\.boards\.join/.test(script),
+    '自检结果未如实上报（有偏差时必须报条数与页面名）——请同步检查 T');
+  assert(/自检通过/.test(script),
+    '自检无偏差时缺少「自检通过」的正向反馈——请同步检查 T');
 }
 
 /* 检查 S2：设计文档的**内容格式判定**必须真能区分 Markdown 与纯文本。

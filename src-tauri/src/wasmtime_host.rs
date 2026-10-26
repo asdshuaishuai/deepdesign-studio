@@ -381,14 +381,15 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                     parts.iter().skip(1).copied().collect::<Vec<_>>().join(" "),
                 ),
             ),
-            // 生成式 UI：op 形如 `generate <intent> [as <name>]`
-            // （与 constrain 同构：辅槽=intent，三槽=name）。intent 本身可含空格，
-            // 所以按 " as " 切分而不是按 token 位置——"登录页 dark" 里没有 as。
             // 生成式 UI：宿主收到的 op 已是**剥掉动词的前缀**（agent 路由层切掉
             // "generate" 后才 call），形如 `<intent> [as <name>]`。
-            // 因此这里绝不能 skip(1)——那会把意图的第一个词当动词丢掉
-            // （"登录页 as gen_login" → "页 as gen_login"）。intent 本身可含空格，
-            // 所以按 " as " 切分而不是按 token 位置。
+            // 两点硬约束：
+            //  1. 绝不能 skip(1)——那会把意图的第一个词当动词丢掉
+            //     （"登录页 as gen_login" → "页 as gen_login"）；
+            //  2. **无名分支必须显式清空 arg2 槽**。arg2 是 wasm 实例级状态，不会
+            //     随会话/项目重置；`SlotPlan::Arg` 只写 arg 槽，残留的 name 会让引擎
+            //     把新页写到上一页的名字上（静默覆盖），或把上一次 constrain 的意图
+            //     当画板名（造出垃圾画板）。所以两条分支统一走 Arg2，name 缺省为空串。
             "session_generate" => {
                 let rest = op.trim();
                 match rest.rsplit_once(" as ") {
@@ -398,7 +399,7 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                     ),
                     _ => (
                         "session_generate_in".to_string(),
-                        SlotPlan::Arg(rest.to_string()),
+                        SlotPlan::Arg2(rest.to_string(), String::new()),
                     ),
                 }
             }

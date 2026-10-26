@@ -1,7 +1,7 @@
 # AGENTS.md — deepDesign Studio
 
-AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**一句话产出产品需求文档（PRD）→
-UI 设计文档 → 完整可交互原型**的一站式产品设计工作室。**唯一事实源是 MoonViz 引擎的
+AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**一句话产出产品需求设计文档 →
+完整可交互原型**的一站式产品设计工作室。**唯一事实源是 MoonViz 引擎的
 `.mbt.md` 文档**：人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后
 回写同一份文档，`.ddp` 只是它的认证加密容器。项目级 **DESIGN.md**（设计规范文档）约束
 全局视觉一致性——配色/字体/间距/圆角/组件规范都从它派生，随 DDP 持久化。
@@ -35,7 +35,7 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
 
 必须守住的边界：
 
-- **前端只能经 `window.__TAURI__.core.invoke` 调上面 8 个命令**，没有 HTTP 层，不要引入 fetch/axios。
+- **前端只能经 `window.__TAURI__.core.invoke` 调上面注册的 Tauri 命令**，没有 HTTP 层，不要引入 fetch/axios。
 - **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、wasmtime 宿主、DDP 加解密。
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
 - **人类操作与 Agent 操作走不同引擎入口**：画布走 `apply_human_op`，Agent 变更走
@@ -47,7 +47,7 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
   的 `moonviz-wasm-classic-<version>.wasm`——**纯 WASM MVP、宿主中立、零 import**；
   docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
   Builtins 提案、仅 V8 类引擎可跑，本仓库不用）。sync-engine.mjs 拉取 + sha512 校验 +
-  真机契约探针（7 经典/4 检视/26 session 导出 + `_in` 面实跑 + 模板/组件/会话计数）。
+  真机契约探针（7 经典/4 检视/28 session 导出 + `_in` 面实跑 + 模板/组件/会话计数）。
   **engine-v0.1.2 的 `_in` 字节契约面（issue #8）是全部宿主的写路径**：wasmtime_host、
   前端（engSlotLoad）、sync 探针三处消费——文档/op/artboard 经 in/arg/arg2 三槽 UTF-8
   分块压入（每块小端 4 字节+有效长度），`*_in()` 变体解码调经典入口。**写方向的逆向
@@ -67,7 +67,7 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
 **Rust 命令必须在 `src-tauri/` 下执行**——仓库根目录没有 `Cargo.toml`，也没有 `package.json`。
 
 ```bash
-cd src-tauri && cargo test        # 测试：方言表/协议/归一化单测 + base_url 策略 + wasm 契约（node 宿主跑真产物）+ 4 个端到端（mock LLM）+ 模型快照契约
+cd src-tauri && cargo test        # 测试：方言表/协议/归一化单测 + base_url 策略 + wasm 契约（wasmtime 进程内宿主）+ mock LLM 端到端 + 模型快照契约
 cd src-tauri && cargo build
 node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（在仓库根跑，classic wasm 无 node 版本门槛）
 node scripts/sync-engine.mjs      # 引擎产物同步（GitHub Releases classic wasm → frontend/vendor/；先跑这个）
