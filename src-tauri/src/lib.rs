@@ -613,7 +613,7 @@ fn menu_t(zh: &str) -> String {
             ("儲存","保存"),("匯出 DDP…","导出 DDP…"),("匯出 HTML 原型…","导出 HTML 原型…"),
             ("匯出 SVG（目前畫板）…","导出 SVG（当前画板）…"),("還原","撤销"),("重做","重做"),
             ("剪下","剪切"),("複製","复制"),("貼上","粘贴"),("全選","全选"),
-            ("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
+            ("設計文件","设计文档"),("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
             ("示範模式","演示模式"),("新增畫板","新建画板"),("複製目前畫板","复制当前画板"),
             ("校驗並渲染","校验并渲染"),("自動修復（引擎還債）","自动修复（引擎还债）"),
             ("設定…","设置…"),("結束 deepDesign","退出 deepDesign"),("快捷鍵與選單說明","快捷键与菜单说明"),
@@ -624,7 +624,7 @@ fn menu_t(zh: &str) -> String {
             ("儲存","保存"),("匯出 DDP…","导出 DDP…"),("匯出 HTML 原型…","导出 HTML 原型…"),
             ("匯出 SVG（目前畫板）…","导出 SVG（当前画板）…"),("復原","撤销"),("重做","重做"),
             ("剪下","剪切"),("複製","复制"),("貼上","粘贴"),("全選","全选"),
-            ("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
+            ("設計文件","设计文档"),("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
             ("示範模式","演示模式"),("新增畫板","新建画板"),("複製目前畫板","复制当前画板"),
             ("校驗並渲染","校验并渲染"),("自動修復（引擎還債）","自动修复（引擎还债）"),
             ("設定…","设置…"),("結束 deepDesign","退出 deepDesign"),("快捷鍵與選單說明","快捷键与菜单说明"),
@@ -635,7 +635,7 @@ fn menu_t(zh: &str) -> String {
             ("保存","保存"),("DDP を書き出す…","导出 DDP…"),("HTML プロトタイプを書き出す…","导出 HTML 原型…"),
             ("SVG を書き出す（現在のボード）…","导出 SVG（当前画板）…"),("取り消す","撤销"),("やり直す","重做"),
             ("カット","剪切"),("コピー","复制"),("ペースト","粘贴"),("すべて選択","全选"),
-            ("ワイヤーフレーム","线框图"),("ハイファイ","高保真"),("MBT ソース","MBT 源码"),("ウィンドウに合わせる","适配窗口"),
+            ("設計ドキュメント","设计文档"),("ワイヤーフレーム","线框图"),("ハイファイ","高保真"),("MBT ソース","MBT 源码"),("ウィンドウに合わせる","适配窗口"),
             ("デモモード","演示模式"),("新規ボード","新建画板"),("現在のボードを複製","复制当前画板"),
             ("検証して描画","校验并渲染"),("自動修復（エンジン負債解消）","自动修复（引擎还债）"),
             ("設定…","设置…"),("deepDesign を終了","退出 deepDesign"),("ショートカットとメニューの説明","快捷键与菜单说明"),
@@ -646,7 +646,7 @@ fn menu_t(zh: &str) -> String {
             ("저장","保存"),("DDP 내보내기…","导出 DDP…"),("HTML 프로토타입 내보내기…","导出 HTML 原型…"),
             ("SVG 내보내기(현재 보드)…","导出 SVG（当前画板）…"),("실행 취소","撤销"),("다시 실행","重做"),
             ("잘라내기","剪切"),("복사","复制"),("붙여넣기","粘贴"),("모두 선택","全选"),
-            ("와이어프레임","线框图"),("하이파이","高保真"),("MBT 소스","MBT 源码"),("창에 맞춤","适配窗口"),
+            ("디자인 문서","设计文档"),("와이어프레임","线框图"),("하이파이","高保真"),("MBT 소스","MBT 源码"),("창에 맞춤","适配窗口"),
             ("데모 모드","演示模式"),("새 보드","新建画板"),("현재 보드 복제","复制当前画板"),
             ("검증 후 렌더링","校验并渲染"),("자동 수정(엔진 부채 해소)","自动修复（引擎还债）"),
             ("설정…","设置…"),("deepDesign 종료","退出 deepDesign"),("단축키 및 메뉴 안내","快捷键与菜单说明"),
@@ -657,7 +657,7 @@ fn menu_t(zh: &str) -> String {
             ("Enregistrer","保存"),("Exporter en DDP…","导出 DDP…"),("Exporter le prototype HTML…","导出 HTML 原型…"),
             ("Exporter en SVG (planche actuelle)…","导出 SVG（当前画板）…"),("Annuler","撤销"),("Rétablir","重做"),
             ("Couper","剪切"),("Copier","复制"),("Coller","粘贴"),("Tout sélectionner","全选"),
-            ("Wireframe","线框图"),("Haute fidélité","高保真"),("Source MBT","MBT 源码"),("Ajuster à la fenêtre","适配窗口"),
+            ("Document de conception","设计文档"),("Wireframe","线框图"),("Haute fidélité","高保真"),("Source MBT","MBT 源码"),("Ajuster à la fenêtre","适配窗口"),
             ("Mode démo","演示模式"),("Nouvelle planche","新建画板"),("Dupliquer la planche","复制当前画板"),
             ("Valider et rendre","校验并渲染"),("Correction auto (dette moteur)","自动修复（引擎还债）"),
             ("Réglages…","设置…"),("Quitter deepDesign","退出 deepDesign"),("Raccourcis et menus","快捷键与菜单说明"),
@@ -668,7 +668,7 @@ fn menu_t(zh: &str) -> String {
             ("Save","保存"),("Export DDP…","导出 DDP…"),("Export HTML Prototype…","导出 HTML 原型…"),
             ("Export SVG (Current Board)…","导出 SVG（当前画板）…"),("Undo","撤销"),("Redo","重做"),
             ("Cut","剪切"),("Copy","复制"),("Paste","粘贴"),("Select All","全选"),
-            ("Wireframe","线框图"),("High-Fidelity","高保真"),("MBT Source","MBT 源码"),("Fit Window","适配窗口"),
+            ("Design Document","设计文档"),("Wireframe","线框图"),("High-Fidelity","高保真"),("MBT Source","MBT 源码"),("Fit Window","适配窗口"),
             ("Demo Mode","演示模式"),("New Board","新建画板"),("Duplicate Board","复制当前画板"),
             ("Validate & Render","校验并渲染"),("Auto-Fix (engine debt)","自动修复（引擎还债）"),
             ("Settings…","设置…"),("Quit deepDesign","退出 deepDesign"),("Shortcuts & Menus","快捷键与菜单说明"),
@@ -800,24 +800,31 @@ fn build_native_menus(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
     let view = SubmenuBuilder::new(app, &menu_t("视图"))
         .item(&MenuItem::with_id(
             app,
+            "view-doc",
+            &menu_t("设计文档"),
+            true,
+            Some("CmdOrCtrl+1"),
+        )?)
+        .item(&MenuItem::with_id(
+            app,
             "view-wireframe",
             &menu_t("线框图"),
             true,
-            Some("CmdOrCtrl+1"),
+            Some("CmdOrCtrl+2"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "view-hifi",
             &menu_t("高保真"),
             true,
-            Some("CmdOrCtrl+2"),
+            Some("CmdOrCtrl+3"),
         )?)
         .item(&MenuItem::with_id(
             app,
             "view-decl",
             &menu_t("MBT 源码"),
             true,
-            Some("CmdOrCtrl+3"),
+            Some("CmdOrCtrl+4"),
         )?)
         .item(&MenuItem::with_id(
             app,

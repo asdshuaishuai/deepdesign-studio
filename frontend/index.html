@@ -899,7 +899,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   <button class="tbtn" onclick="saveProject()" title="保存（⌘S）· 已有路径原地回写，否则另存"><svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
   <button class="tbtn" onclick="openSettings()" title="设置（外观 / AI 端点）" aria-label="Agent 设置"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <span class="tsep"></span>
-  <button class="tbtn" onclick="togglePlay()" title="演示模式（⌘4）· 工作区内禁编辑"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5z"/></svg>演示</button>
+  <button class="tbtn" onclick="togglePlay()" title="演示模式（⌘5）· 工作区内禁编辑"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5z"/></svg>演示</button>
   <button class="tbtn pri" onclick="exportDdp()" title="导出加密 DDP 视觉文档"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>导出 DDP</button>
   <div class="winctl">
     <button class="wbtn" onclick="winCtl('minimize')" title="最小化" aria-label="最小化"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
@@ -1141,8 +1141,8 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     </table>
     <h4>菜单栏 · 视图</h4>
     <table>
-      <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>线框图 / 高保真 / MBT 源码</td></tr>
-      <tr><td><kbd>⌘4</kbd></td><td>演示模式（Esc 退出）</td></tr>
+      <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd> / <kbd>⌘4</kbd></td><td>设计文档 / 线框图 / 高保真 / MBT 源码</td></tr>
+      <tr><td><kbd>⌘5</kbd></td><td>演示模式（Esc 退出）</td></tr>
       <tr><td><kbd>⌘0</kbd></td><td>适配窗口</td></tr>
     </table>
     <h4>菜单栏 · 画板</h4>
@@ -2604,9 +2604,9 @@ function canvasMenu(x,y){
     {label:'⧉ 复制当前画板',kbd:'⇧⌘D',action:()=>duplicateActiveBoard()},
     '-',
     {label:mode==='hifi'?'◻ 切换到线框图':'🎨 切换到高保真',action:()=>setMode(mode==='hifi'?'wireframe':'hifi')},
-    {label:'‹/› 查看 MBT 源码',kbd:'⌘3',action:()=>setMode('decl')},
+    {label:'‹/› 查看 MBT 源码',kbd:'⌘4',action:()=>setMode('decl')},
     {label:'✓ 校验并渲染',action:()=>validateMbt()},
-    {label:'▶ 演示模式',kbd:'⌘4',action:()=>setMode('play')},
+    {label:'▶ 演示模式',kbd:'⌘5',action:()=>setMode('play')},
     '-',
     {label:'⛶ 适配窗口',kbd:'⌘0',action:()=>zoomFit()},
   ]);
@@ -2682,6 +2682,7 @@ function nativeMenuAction(id){
     'export-ddp':()=>exportDdp(),
     'export-html':()=>exportHtmlProto(),
     'export-svg':()=>exportSvg(),
+    'view-doc':()=>setMode('doc'),
     'view-wireframe':()=>setMode('wireframe'),
     'view-hifi':()=>setMode('hifi'),
     'view-decl':()=>setMode('decl'),
@@ -2727,7 +2728,7 @@ document.addEventListener('keydown',async e=>{
   if(settingsOpen){if(e.key==='Escape')closeSettings();return;} // 模态开时全局分发短路：防 Backspace 误删弹窗后的画布节点
   if(mode==='play'){
     if(e.key==='Escape'){if(inkMode)toggleInk();else playBack();return;}
-    if(e.metaKey||e.ctrlKey||e.altKey)return; // Windows 无原生菜单：⌘S/⌘4 等组合在演示中照常可用
+    if(e.metaKey||e.ctrlKey||e.altKey)return; // Windows 无原生菜单：⌘S/⌘5 等组合在演示中照常可用
     return;
   }
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();$('gp-input').focus();return;}
@@ -2746,10 +2747,11 @@ document.addEventListener('keydown',async e=>{
       'f':()=>sh?runAutoFix():null,
       'h':()=>sh?exportHtmlProto():null,
       'z':()=>sh?redoMbt():undoMbt(),
-      '1':()=>setMode('wireframe'),
-      '2':()=>setMode('hifi'),
-      '3':()=>setMode('decl'),
-      '4':()=>setMode('play'),
+      '1':()=>setMode('doc'),
+      '2':()=>setMode('wireframe'),
+      '3':()=>setMode('hifi'),
+      '4':()=>setMode('decl'),
+      '5':()=>setMode('play'),
       '0':()=>zoomFit(),
       '/':()=>openShortcuts(),
       ',':()=>openSettings(),
@@ -3708,7 +3710,7 @@ function addBoard(prefix,w,h,src){return serializeProject(async()=>{
 
 /* ---------- 模式切换 ---------- */
 function setMode(m){
-  // 空项目进演示无意义（欢迎页无交互可演示）——菜单/⌘4 与工具栏按钮同守卫。
+  // 空项目进演示无意义（欢迎页无交互可演示）——菜单/⌘5 与工具栏按钮同守卫。
   // enteringPlay 必须在 mode=m 赋值前捕获：下方演示初始化曾用 `mode!=='play'`
   // 做守卫，而 mode 已是新值——守卫恒假成死代码，栈从未播种、起点页从不生效
   // （2026-10-11 热区消失/失效事故根因：演示落在最后编辑的画板上，该板无出边

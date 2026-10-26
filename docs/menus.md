@@ -31,10 +31,11 @@
 ### 视图
 | 菜单项 | 快捷键 | 动作 id → 前端函数 |
 |--------|--------|--------------------|
-| 线框图 | ⌘1 | `view-wireframe` → `setMode('wireframe')` |
-| 高保真 | ⌘2 | `view-hifi` → `setMode('hifi')` |
-| MBT 源码 | ⌘3 | `view-decl` → `setMode('decl')` |
-| 演示模式 | ⌘4 | `view-play` → `setMode('play')` |
+| 设计文档 | ⌘1 | `view-doc` → `setMode('doc')` |
+| 线框图 | ⌘2 | `view-wireframe` → `setMode('wireframe')` |
+| 高保真 | ⌘3 | `view-hifi` → `setMode('hifi')` |
+| MBT 源码 | ⌘4 | `view-decl` → `setMode('decl')` |
+| 演示模式 | ⌘5 | `view-play` → `setMode('play')` |
 | 适配窗口 | ⌘0 | `view-fit` → `zoomReset()` |
 
 ### 画板
