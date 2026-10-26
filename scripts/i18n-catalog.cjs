@@ -12,6 +12,13 @@ const py=fs.readFileSync(path.join(ROOT,'scripts','gen-i18n.py'),'utf8');
 
 /* ── 新增 UI 键（本次修复引入：确认框/文件过滤器/删除画板/相对时间/模板分组）── */
 const NEW_ENTRIES={
+  /* ── 文档阶段轨迹增强 ── */
+  '撰写文档':['ドキュメントを作成','문서 작성','Write document','Rédiger le document'],
+  /* ── 文档目录（doc 模式左栏）── */
+  '文档目录':['文書目次','문서 목차','Document Outline','Plan du document'],
+  '设计文档为空——写入内容后，这里会显示章节目录':['設計ドキュメントが空です。内容を書くとここに目次が表示されます','설계 문서가 비어 있습니다. 내용을 작성하면 여기에 목차가 표시됩니다','The design document is empty — write something and its outline will appear here',"Le document de conception est vide — écrivez du contenu et son plan apparaîtra ici"],
+  '本文档没有 Markdown 标题（#/##/###），无法生成目录':['Markdown 見出し（#/##/###）がないため目次を生成できません','Markdown 제목(#/##/###)이 없어 목차를 만들 수 없습니다','No Markdown headings (#/##/###) in this document — no outline available','Aucun titre Markdown (#/##/###) dans ce document — plan indisponible'],
+  '设计规范暂无内容——保存或「从引擎抽取」后按顶层键导航':['デザイン仕様はまだ空です。保存または抽出するとトップレベルキーで移動できます','디자인 사양이 비어 있습니다. 저장 또는 추출 후 최상위 키로 이동합니다','Design spec is empty — save or extract to navigate by top-level keys',"La spécification de design est vide — enregistrez ou extrayez pour naviguer par clés de premier niveau"],
   '未保存的更改':['変更未保存','저장되지 않은 변경','Unsaved Changes','Modifications non enregistrées'],
   '当前文档有未保存的更改（含源码草稿），确定退出吗？':['未保存の変更（ソース草案を含む）があります。終了しますか？','저장되지 않은 변경(소스 초안 포함)이 있습니다. 종료할까요?','This document has unsaved changes (including source draft). Quit anyway?','Ce document a des modifications non enregistrées (brouillon source inclus). Quitter ?'],
   '当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。':['未保存の変更（ソース草案を含む）があります。新しいファイルを開くと破棄されます。','저장되지 않은 변경(소스 초안 포함)이 있습니다. 새 파일을 열면 버려집니다.','This document has unsaved changes (including source draft). Opening a new file will discard them.','Ce document a des modifications non enregistrées (brouillon source inclus). Ouvrir un autre fichier les ignorera.'],

@@ -305,14 +305,24 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
 - `safe_base_url` 有 SSRF 防护：仅放行 https 与 localhost/私有网段 http（IP 段是精确判定，
   `172.20.x` 放行、`172.2.x`/`172.255.x` 拒绝，DNS 前缀伪装如 `10.evil.com` 拒绝）。改动时守住单测。
 - **实时轨迹（agent-event 事件流）**：run() 循环每步经 progress 回调 → `app.emit("agent-event")`
-  → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`tool_start`/`tool_end`
-  （op、✓/✗、耗时、门拒绝详情）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。run id 由 lib.rs 注入每个事件（前端按它过滤归属），
+  → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`assistant_thinking`
+  （**仅 doc 模式**发射的思考过程 reasoning_content/reasoning；Anthropic thinking 块在 normalize 时
+  归一为 reasoning_content——建画布阶段刻意不发，一步一思考会淹没 op 流，mock 测试
+  `doc_phase_emits_assistant_thinking_events` 锚定双向）、`tool_start`/`tool_end`
+  （op、✓/✗、耗时、门拒绝详情；write_doc 的 op 是整段 JSON，humanize 为「撰写文档」且 op 不进
+  title 防 ✓ 行回显 JSON）、`doc_written`（kind/chars/md——md 全文以折叠行进轨迹，右侧时间线
+  要能完整读到模型写出的每一句）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。
+  run id 由 lib.rs 注入每个事件（前端按它过滤归属），
   **丢 run id = 时间线 100% 失效**（历史事故）。**终态二元卡（检查 Q 锚定）**：每条轨迹必须以终态卡收尾显式回答
   「结束没有、正常与否」——`done`(stopReason=done) 绿卡完成；`done`(stopReason=max_turns，**步数耗尽路径必须发事件**，此前静默)
   与 `failed`（LLM 中断/无响应）红卡异常终止（`traceFinalCard` 助手，内部统一 escHtml）；`failed` 事件携带 ops，
   前端据此区分「已保留部分」与「零提交」；run 前置校验失败（api_key/base_url 等 Rust 零事件早退）由前端 `traceFailCard` 补落红卡。
   长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
   展开全文），与 gp-thread 面板、trackAgent 卡三处呈现同一事实，改呈现须同步折叠语义。
+  **轨迹是全局唯一时间线**：按 run 分块 prepend 到同一 `#tl-body`，不随顶部模式 tab 切换、
+  不按文档/画布分流（清空只能手动「清空追踪记录」）。**状态栏收尾语义**：`setStatus('')` 是
+  复位（READY + 默认提示语），不是 no-op——过程态（如「生成设计文档…」）必须在 run 结束时
+  被复位，否则绿卡已完成、底部还挂着生成中（2026-10-27 用户实测）。
 - **Agent 运行中预览（preview）四重新鲜度校验**：Rust 每次成功 moonviz_op ≥1.5s 推一帧全量 canonical，
   前端 `schedulePreview`/`paintPreview` 同时校验 **run 归属 + preview_seq 序号 + generation + viewEpoch**——
   旧 run 迟到帧、同 epoch 乱序 WASM 返回、终态/切项目后的残留帧一律丢弃；成功终态只 `invalidatePreview()`
@@ -431,6 +441,16 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
   - **动态防线**：靠字符串切片取真实状态机——`indexOf("const APP_VER")` 到
     `indexOf('function mbtResult(')` 划区段，再 `indexOf('function NAME(')` 逐函数抽。
     动这些标记、改函数名、或把签名写成非 `function name(` 形式，都会让它**静默取到错东西**。
+  - **外部驱动 E2E 的三个入口（都是一次性、无参数时零行为）**：
+    ① localStorage `dd-dev-autorun[‑studio]=<指令>` 重启触发——**注意 WebKit localStorage
+    是 WKWebView 私有层，外部直接写 sqlite 经常被无声丢弃**（2026-10-26 实测两次注入
+    均未到达，值已消失；只读 sqlite 查看到的还可能是 checkpoint 滞后的旧视图）；
+    ② `?studio=<一句话>` / `?project=<路径>` 查询参数（新窗口经 open_project_window 携带）；
+    ③ **AppleScript AX 自动化（当前最可靠）**：System Events 对进程 `deepdesign-studio`
+    先递归设 `AXManualAccessibility=true` 激活 WebView AX 树，随后 AXFocused 聚焦输入框 +
+    `keystroke "v" using command down`（**剪贴板粘贴**——keystroke 直打会丢字符且不支持
+    中文，AXValue 直设不生效）+ AXPress 点按钮。已知坑：`pgrep -f "deepDesign"` 匹配不到
+    小写二进制名 `deepdesign-studio`，判进程存活要用 `ps aux | grep -i`。
 - Rust 端到端测试的跳过门已收紧：**wasm 产物缺失 → 合法跳过**（eprintln 提示）；
   **产物在场但宿主/编解码调用失败 → panic**（静默跳过曾把 codec 损坏伪装成绿灯，变异实验实证）。
   受影响的 10 个引擎门测试：`wasm_engine_surface_contract`、`template_ids_match_engine`、

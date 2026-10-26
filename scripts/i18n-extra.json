@@ -329,11 +329,29 @@
   "Onboarding",
   "Onboarding"
  ],
+ "引擎": [
+  "エンジン",
+  "엔진",
+  "Engine",
+  "Moteur"
+ ],
  "引擎升级 0.1.8：多画板撤销修复": [
   "エンジン 0.1.8 に更新：複数アートボードの取り消しを修正",
   "엔진 0.1.8 업그레이드: 다중 아트보드 실행 취소 수정",
   "Engine upgraded to 0.1.8: multi-artboard undo fix",
   "Moteur mis à jour en 0.1.8 : correction de l'annulation multi-planches"
+ ],
+ "引擎来源": [
+  "エンジンソース",
+  "엔진 소스",
+  "Engine source",
+  "Source du moteur"
+ ],
+ "引擎版本": [
+  "エンジンバージョン",
+  "엔진 버전",
+  "Engine version",
+  "Version du moteur"
  ],
  "当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。": [
   "未保存の変更（ソース草案を含む）があります。新しいファイルを開くと破棄されます。",
@@ -377,6 +395,12 @@
   "Discard Changes",
   "Abandonner les modifications"
  ],
+ "文档目录": [
+  "文書目次",
+  "문서 목차",
+  "Document Outline",
+  "Plan du document"
+ ],
  "更新日志": [
   "更新履歴",
   "업데이트 로그",
@@ -394,6 +418,12 @@
   "이 앱은 오픈소스 커뮤니티 위에 세워졌습니다. 위 프로젝트의 저작권은 각 저자에게 있습니다.",
   "This app stands on the open source community — the projects above remain the property of their respective authors.",
   "Cette application s'appuie sur la communauté open source — les projets listés restent la propriété de leurs auteurs respectifs."
+ ],
+ "本文档没有 Markdown 标题（#/##/###），无法生成目录": [
+  "Markdown 見出し（#/##/###）がないため目次を生成できません",
+  "Markdown 제목(#/##/###)이 없어 목차를 만들 수 없습니다",
+  "No Markdown headings (#/##/###) in this document — no outline available",
+  "Aucun titre Markdown (#/##/###) dans ce document — plan indisponible"
  ],
  "查看主题清单": [
   "テーマ一覧を取得",
@@ -593,6 +623,18 @@
   "Setting color token {t}",
   "Définition du token de couleur {t}"
  ],
+ "设计文档为空——写入内容后，这里会显示章节目录": [
+  "設計ドキュメントが空です。内容を書くとここに目次が表示されます",
+  "설계 문서가 비어 있습니다. 내용을 작성하면 여기에 목차가 표시됩니다",
+  "The design document is empty — write something and its outline will appear here",
+  "Le document de conception est vide — écrivez du contenu et son plan apparaîtra ici"
+ ],
+ "设计规范暂无内容——保存或「从引擎抽取」后按顶层键导航": [
+  "デザイン仕様はまだ空です。保存または抽出するとトップレベルキーで移動できます",
+  "디자인 사양이 비어 있습니다. 저장 또는 추출 후 최상위 키로 이동합니다",
+  "Design spec is empty — save or extract to navigate by top-level keys",
+  "La spécification de design est vide — enregistrez ou extrayez pour naviguer par clés de premier niveau"
+ ],
  "评审画板 {ab} 的设计": [
   "ボード {ab} のデザインをレビュー",
   "보드 {ab} 디자인 검토",
@@ -629,6 +671,12 @@
   "Idle artboard sweep: empty placeholders cleaned around Agent runs",
   "Nettoyage des planches inactives : les espaces réservés vides sont purgés autour des exécutions de l'agent"
  ],
+ "集成模式": [
+  "統合モード",
+  "통합 모드",
+  "Integration mode",
+  "Mode d'intégration"
+ ],
  "鸿蒙版首发；Linux 提供 deb 与 AppImage（玲珑下线）": [
   "HarmonyOS 版を初公開。Linux は deb と AppImage を提供（linyaps 廃止）",
   "HarmonyOS 버전 첫 공개; Linux는 deb 및 AppImage 제공(링롱폐지)",
@@ -641,34 +689,16 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
+ "撰写文档": [
+  "ドキュメントを作成",
+  "문서 작성",
+  "Write document",
+  "Rédiger le document"
+ ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",
   "최소 하나의 보드는 남겨야 합니다",
   "Keep at least one board",
   "Gardez au moins une planche"
- ],
- "引擎": [
-  "エンジン",
-  "엔진",
-  "Engine",
-  "Moteur"
- ],
- "引擎版本": [
-  "エンジンバージョン",
-  "엔진 버전",
-  "Engine version",
-  "Version du moteur"
- ],
- "集成模式": [
-  "統合モード",
-  "통합 모드",
-  "Integration mode",
-  "Mode d'intégration"
- ],
- "引擎来源": [
-  "エンジンソース",
-  "엔진 소스",
-  "Engine source",
-  "Source du moteur"
  ]
 }

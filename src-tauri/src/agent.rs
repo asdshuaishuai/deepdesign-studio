@@ -420,6 +420,7 @@ fn anthropic_tools(mode: Option<&str>) -> Value {
 /// （arguments 回填为 JSON **字符串**，与 OpenAI 一致）。
 fn normalize_anthropic_response(v: &Value) -> Value {
     let mut text = String::new();
+    let mut reasoning = String::new();
     let mut tool_calls: Vec<Value> = Vec::new();
     if let Some(blocks) = v.get("content").and_then(|c| c.as_array()) {
         for b in blocks {
@@ -427,6 +428,13 @@ fn normalize_anthropic_response(v: &Value) -> Value {
                 Some("text") => {
                     if let Some(t) = b.get("text").and_then(|x| x.as_str()) {
                         text.push_str(t);
+                    }
+                }
+                Some("thinking") => {
+                    // thinking 块归一为 reasoning_content（OpenAI 形状），主循环据此
+                    // 发射 assistant_thinking——文档阶段要完整展示思考过程
+                    if let Some(t) = b.get("thinking").and_then(|x| x.as_str()) {
+                        reasoning.push_str(t);
                     }
                 }
                 Some("tool_use") => {
@@ -452,6 +460,7 @@ fn normalize_anthropic_response(v: &Value) -> Value {
             "message": {
                 "role": "assistant",
                 "content": text,
+                "reasoning_content": reasoning,
                 "tool_calls": tool_calls,
             },
             "finish_reason": stop_reason,
@@ -1660,6 +1669,20 @@ pub async fn run_with_mode(
         // 中间轮的 assistant 文本（计划/说明）进轨迹。
         // 取 String 而非 &str：msg 随后会被 move 进 messages，文档阶段收尾还要用这段文本。
         let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // 文档阶段的思考过程进轨迹（reasoning_content=OpenAI 侧非标字段；reasoning=
+        // OpenRouter 形状；Anthropic 侧已在 normalize 时归一为 reasoning_content）。
+        // 文档阶段是用户「阅读」的产物——思考与文字都要完整可见（2026-10-26 用户要求）。
+        // 建画布阶段刻意不发射：一步一思考会把 op 流淹没。
+        if doc_mode {
+            let think = msg
+                .get("reasoning_content")
+                .and_then(|v| v.as_str())
+                .or_else(|| msg.get("reasoning").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            if !think.trim().is_empty() {
+                emit("assistant_thinking", json!({"text": think}));
+            }
+        }
         if !mid_text.trim().is_empty() && !tool_calls.is_empty() {
             emit("assistant_text", json!({"text": mid_text}));
         }
@@ -3046,6 +3069,68 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             !second.contains("unavailable"),
             "只读 op 仍被拦为不可用（session 路由未生效）：{}",
             &second[..second.len().min(400)]
+        );
+    }
+
+    /// 文档阶段轨迹可读性（2026-10-26 用户要求）：doc 模式下模型的思考
+    /// （reasoning_content；Anthropic 侧经 normalize 的 thinking 块同理）必须以
+    /// assistant_thinking 事件**完整**下发——轨迹面板要能读到全量思考。
+    /// 建画布阶段同响应**不**发射（一步一思考会淹没 op 流）。
+    #[tokio::test]
+    async fn doc_phase_emits_assistant_thinking_events() {
+        // ── doc 模式：write_doc 不碰 wasm，无需引擎就绪 ──
+        let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null,
+                "reasoning_content": "思考：先定页面清单（首页/详情/订单/我的/设置），再逐页写职责。",
+                "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "write_doc",
+                 "arguments": "{\"kind\": \"prd\", \"markdown\": \"# 测试 PRD\\n\\n## 页面清单\\n首页/详情/订单/我的/设置，各自职责如上。\"}"}}]}}]
+        })]).await;
+        let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let ev2 = events.clone();
+        let progress = move |v: Value| ev2.lock().unwrap().push(v);
+        let out = run_with_mode(
+            &ENGINE, "写一份 PRD", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port}"), "auto", Some(&progress), 30, Some("prd"),
+        ).await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(out["stopReason"], json!("done"));
+        let evs = events.lock().unwrap();
+        let thinks: Vec<&str> = evs.iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(
+            thinks,
+            vec!["思考：先定页面清单（首页/详情/订单/我的/设置），再逐页写职责。"],
+            "doc 模式必须完整下发思考事件: {evs:?}"
+        );
+        drop(evs);
+        // ── 画布模式：同形状的响应不得发射 assistant_thinking ──
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let (port2, mock2, _bodies2) = spawn_mock_llm(vec![
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null,
+                    "reasoning_content": "画布阶段的思考不该进轨迹。",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "moonviz_op",
+                     "arguments": "{\"op\": \"template login wl\"}"}}]}}]
+            }),
+            serde_json::json!({"choices": [{"message": {"role": "assistant", "content": "已建板。"}}]}),
+        ]).await;
+        let events2: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let ev3 = events2.clone();
+        let progress2 = move |v: Value| ev3.lock().unwrap().push(v);
+        let out2 = run_with_mode(
+            &ENGINE, "建一个登录页", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port2}"), "auto", Some(&progress2), 30, None,
+        ).await;
+        mock2.abort();
+        assert_eq!(out2["ok"], json!(true), "{out2}");
+        let evs2 = events2.lock().unwrap();
+        assert!(
+            !evs2.iter().any(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking")),
+            "画布模式不得发射思考事件（会淹没 op 流）: {evs2:?}"
         );
     }
 
