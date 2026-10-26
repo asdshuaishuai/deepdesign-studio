@@ -2982,6 +2982,22 @@ function ensureTraceListener(){
   window.__TAURI__.event.listen('agent-event',ev=>{
     const p=ev.payload||{};
     if(p.type==='preview'){schedulePreview(p.mbt_b64,p.run,p.preview_seq);return;}
+    // 文档阶段没有 op/preview，模型只在最后调一次 write_doc——若不处理这个事件，
+    // 整段等待期在界面上就是黑盒（用户看不到任何进展）。这里同时做两件事：
+    // 落轨迹 + 把文档内容立刻写进面板（不等 run 结束的终态回灌）。
+    if(p.type==='doc_written'){
+      const kind=String(p.kind||'');
+      const md=String(p.md||'');
+      const label=kind==='ui'?'UI 说明':'设计文档';
+      const dbox=document.getElementById('tl-run-'+p.run);
+      if(dbox)appendTraceLine(dbox,`📝 已产出${label} · ${p.chars||md.length} 字`,'tl-ok');
+      if(md){
+        if(kind==='prd')studioDocs.prd=md; else if(kind==='ui')studioDocs.ui=md;
+        renderDocStage();
+        if(kind==='prd')switchDocTab('prd');
+      }
+      return;
+    }
     const box=document.getElementById('tl-run-'+p.run);if(!box)return;
     if(p.type==='assistant_text'){appendTraceLine(box,'🤖 '+p.text,'tl-assist');return;}
     if(p.type==='tool_start'){
@@ -3544,7 +3560,7 @@ async function runStudioPrompt(){
   if(!idea){toast('先输入一句话产品描述','err');return;}
   if(agentBusy){toast('Agent 正在生成，完成后再试','err');return;}
   agentBusy=true;
-  const genBtn=$('doc-gen');if(genBtn)genBtn.disabled=true;
+  const genBtn=$('doc-gen');if(genBtn){genBtn.disabled=true;genBtn.textContent='生成中…';}
   // runId 必须在 try 之外：catch 里的 traceFailCard 要用它，声明在 try 内会 TDZ
   const run1=nextAgentRun();
   try{
@@ -3555,6 +3571,9 @@ async function runStudioPrompt(){
     const brief=designBrief();
     const prdInstr=`产品想法：${idea}\n\n${brief?('【设计规范基线（只约束视觉，不决定页面内容）】\n'+brief+'\n\n'):''}请产出 PRD。`;
     traceOpen(run1,'📄 生成设计文档',false);
+    // 轨迹面板里先落一条“进行中”，让用户知道已经开始等模型（而不是界面卡死）
+    const tb=document.getElementById('tl-run-'+run1);
+    if(tb)appendTraceLine(tb,'⏳ 正在理解需求并撰写设计文档…','tl-tool pending');
     setStatus('agent','生成设计文档…',true,'设计文档');
     const r1=await askFxSdkMode(prdInstr,run1,'prd');
     const prd=r1.docs&&r1.docs.prd?String(r1.docs.prd):'';
@@ -3581,7 +3600,7 @@ async function runStudioPrompt(){
     setStatus('', '', false, '');
   }finally{
     agentBusy=false;
-    if(genBtn)genBtn.disabled=false;
+    if(genBtn){genBtn.disabled=false;genBtn.textContent='生成设计文档';}
   }
 }
 /* 按现有文档建画布（第二阶段之外的"建 UI"入口）：把 UI 设计文档 + DESIGN.md 作为约束，
@@ -5341,6 +5360,18 @@ loadEngine().then(()=>{           // wasm 引擎预加载（画布首帧 op 前�
   // 多窗口：新项目窗口经 ?project=<路径> 启动，引擎就绪后自动免对话框打开该项目
   const bootProject=IS_TAURI?new URLSearchParams(location.search).get('project'):null;
   if(bootProject)openProject(decodeURIComponent(bootProject));
+  // 工作室驱动入口：?studio=<一句话想法> 启动即进设计文档阶段并自动生成。
+  // 用途是外部端到端驱动（GUI 键盘注入对未签名的 Tauri 窗口不可用），
+  // 与 dd-dev-autorun 同性质：显式参数、不写死、无参数时零行为。
+  const bootStudio=IS_TAURI?new URLSearchParams(location.search).get('studio'):null;
+  if(bootStudio){
+    const idea=decodeURIComponent(bootStudio);
+    setTimeout(()=>{
+      if(mode!=='doc')setMode('doc');
+      const inp=$('doc-input'); if(inp)inp.value=idea;
+      setTimeout(()=>runStudioPrompt(),400);
+    },1500);
+  }
 });
 renderAbs();
 syncFileLabel();
@@ -5357,10 +5388,18 @@ setStatus('','',true);
 document.body.classList.add('mode-wireframe','design-active');
 /* 开发者自驱测试入口：localStorage 写入 dd-dev-autorun=<指令> 后重启，
  * 启动即自动经 runGlobalPrompt 执行该指令（一次性，用后即焚）——
- * 用于外部驱动端到端功能测试（无键盘注入依赖） */
+ * 用于外部驱动端到端功能测试（无键盘注入依赖）。
+ * dd-dev-autorun-studio=<一句话想法>：同样一次性，但走设计文档阶段
+ * （runStudioPrompt），用于端到端验证「一句话 → 设计文档 → 原型」全链路。 */
 try{
   const devp=localStorage.getItem('dd-dev-autorun');
   if(devp){localStorage.removeItem('dd-dev-autorun');setTimeout(()=>{$('gp-input').value=devp;runGlobalPrompt();},1200);}
+  const devs=localStorage.getItem('dd-dev-autorun-studio');
+  if(devs){localStorage.removeItem('dd-dev-autorun-studio');setTimeout(()=>{
+    if(mode!=='doc')setMode('doc');
+    const inp=$('doc-input'); if(inp)inp.value=devs;
+    setTimeout(()=>runStudioPrompt(),300);
+  },1200);}
 }catch(_){ }
 /* 露营 e2e 的前端 autorun 残留已删（曾以无条件 setTimeout 每次启动自动跑真实 LLM
  * run；露营链路由 src-tauri/tests/agent_llm_e2e.rs 的 CAMPING_E2E 环境门控覆盖，

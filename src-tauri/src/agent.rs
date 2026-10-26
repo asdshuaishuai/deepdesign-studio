@@ -1783,7 +1783,9 @@ pub async fn run_with_mode(
                             json!({"ok": false, "error": "write_doc_empty"})
                         } else {
                             written_docs.insert(kind.to_string(), json!(md));
-                            emit("doc_written", json!({"kind": kind, "chars": md.chars().count()}));
+                            // 正文随事件下发：文档阶段没有 op/preview 可看，
+                            // 前端要靠这份内容即时渲染面板——否则整个等待期是黑盒
+                            emit("doc_written", json!({"kind": kind, "chars": md.chars().count(), "md": md}));
                             json!({"ok": true, "kind": kind, "chars": md.chars().count()})
                         }
                     }
