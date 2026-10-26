@@ -345,6 +345,18 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '外部产品文档导入入口缺失（PRD 必须支持粘贴/导入）——请同步检查 S');
   assert(/function togglePrdEdit\(\)/.test(script)&&/id="doc-prd-preview"/.test(html),
     'PRD 编辑/预览切换缺失——请同步检查 S');
+  /* 展示形态按**内容**判断，不按文件类型（用户决策）：
+   * Markdown → 渲染排版；纯文本 → 原样显示（保留换行缩进）。
+   * 判定器与两条渲染分支都必须存在，且纯文本分支走 pre.doc-plain。 */
+  assert(/function looksLikeMarkdown\(text\)/.test(script),
+    '缺少内容格式判定器（无法区分 Markdown 与纯文本）——请同步检查 S');
+  assert(/function renderPrdView\(text\)/.test(script)
+    &&/<pre class="doc-plain">'\+escHtml\(t\)\+'<\/pre>/.test(script),
+    '纯文本未走「原样显示」分支（会被错当 Markdown 压平换行）——请同步检查 S');
+  assert(/looksLikeMarkdown\(t\)\)return mdToHtml\(t\)/.test(script),
+    'Markdown 内容未走渲染分支——请同步检查 S');
+  assert(/looksLikeMarkdown\(studioDocs\.prd\)\?'按 Markdown 渲染':'纯文本（原样显示）'/.test(script),
+    '预览态缺少格式标签（用户无法确认系统按哪种格式解读）——请同步检查 S');
   assert(/function mdToHtml\(md\)/.test(script)&&/const esc=s=>String\(s\|\|''\)\.replace\(\/&\/g,'&amp;'\)/.test(script),
     'Markdown 渲染未先转义再结构化（XSS 风险）——请同步检查 S');
 }
@@ -390,6 +402,50 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
   assert(/fn auditBuiltBoards\(\)/.test(script)&&/自检\$\{issues\.total>0\?'发现'/.test(script.replace(/\s+/g,''))
     || /const issues=await auditBuiltBoards\(\)/.test(script),
     '建画布后缺少终态自检（偏差被静默）——请同步检查 T');
+}
+
+/* 检查 S2：设计文档的**内容格式判定**必须真能区分 Markdown 与纯文本。
+ * 静态断言只能证明函数在场——刻意把判定器改成恒 true/恒 false 也照样绿。
+ * 这里把判定器与渲染分支抽出来真跑（用户决策：Markdown 渲染、纯文本原样显示）。 */
+{
+  const a=script.indexOf('function looksLikeMarkdown(');
+  assert(a>=0,'未能定位 looksLikeMarkdown——请同步检查 S2');
+  const fmtCtx=vm.createContext({});
+  // 用花括号匹配逐个抽真实定义（按注释/文本切片会跨进注释体，parse 失败）
+  const escLine=(script.match(/^const escHtml=.*$/m)||[])[0];
+  assert(escLine,'未能抽取 escHtml 定义——请同步检查 S2');
+  vm.runInContext([
+    escLine,
+    fn('mdToHtml'),
+    fn('looksLikeMarkdown'),
+    fn('renderPrdView'),
+    'this.check=looksLikeMarkdown;this.view=renderPrdView;',
+  ].join('\n'),fmtCtx);
+  const mdCases=[
+    ['# 标题\n\n正文',true,'ATX 标题'],
+    ['| 页面 | 职责 |\n|---|---|\n| 首页 | 浏览 |',true,'表格'],
+    ['- 要点一\n- 要点二\n- 要点三',true,'无序列表'],
+    ['```\ncode\n```',true,'代码围栏'],
+    ['> 引用一句',true,'引用'],
+  ];
+  const plainCases=[
+    ['产品需求：\n\n露营装备租赁小程序。\n面向城市年轻人。\n\n核心流程：\n首页浏览后进入详情。','多段散文'],
+    ['客户名称：张三\n订单编号：20261026\n金额：1280 元','键值纯文本'],
+    ['这是一句话','单行'],
+    ['','空内容'],
+  ];
+  for(const [text,want,label] of mdCases){
+    assert.equal(fmtCtx.check(text),want,`Markdown 判定错误（${label}）：内容被误判`);
+  }
+  for(const [text,label] of plainCases){
+    assert.equal(fmtCtx.check(text),false,`纯文本被误判成 Markdown（${label}）——预览会压平原有换行`);
+  }
+  // 渲染分支：Markdown 出结构标签，纯文本出 pre.doc-plain 且内容逐字保留
+  assert(/<h1>|<h2>/.test(fmtCtx.view('# 标题\n\n正文')),'Markdown 内容未渲染出标题结构');
+  const plainText='第一行\n  缩进的第二行\n第三行';
+  const plainHtml=fmtCtx.view(plainText);
+  assert(/<pre class="doc-plain">/.test(plainHtml),'纯文本未走原样显示分支（应包在 pre.doc-plain 里）');
+  assert(plainHtml.includes('第一行\n  缩进的第二行\n第三行'),'纯文本原样显示丢了换行或缩进');
 }
 
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */

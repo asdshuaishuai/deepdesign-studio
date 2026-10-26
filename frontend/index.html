@@ -409,6 +409,10 @@ body[data-mode="dark"] .tl-final.abnormal{color:#FECACA;background:linear-gradie
 #doc-stage .doc-mode-label{font-size:11px;color:var(--tx3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #doc-stage #doc-prd-text{flex:1;width:100%;border:none;outline:none;resize:none;padding:16px 20px;font-family:ui-monospace;font-size:12px;line-height:1.75;background:transparent;color:var(--tx)}
 #doc-stage #doc-pane-prd.doc-preview{overflow:auto;padding:18px 22px;display:block}
+/* 纯文本预览：原样显示（保留换行与缩进），与 Markdown 渲染明确区分 */
+#doc-stage .doc-plain{margin:0;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.75;white-space:pre-wrap;word-break:break-word;color:var(--tx);background:transparent;padding:0}
+/* 形态标签：告诉用户系统按哪种格式解读了这份内容 */
+#doc-stage .doc-fmt-tag{margin-top:16px;padding-top:10px;border-top:1px dashed var(--panel-line,rgba(0,0,0,.12));font-size:10.5px;color:var(--tx3);text-align:right}
 #doc-stage .doc-pane .doc-opt{font-size:9px;opacity:.6;margin-left:3px;font-weight:500}
 body.mode-doc .ctools,body.mode-doc .czoom,body.mode-doc .canvas-hint,
 body.mode-doc .empty-stage,body.mode-doc .promptbar,body.mode-doc .ghost-new{display:none!important}
@@ -3275,32 +3279,76 @@ function mdToHtml(md){
   closeList();closeTable();
   return out.join('\n');
 }
-/* PRD 面板是 C 位：默认是可编辑 textarea（外文档直接粘贴），点「预览」切只读渲染。
- * 内容真源是 studioDocs.prd；textarea 只是它的编辑视图（切换/失焦时同步回去）。 */
+/* 设计文档面板：内容真源是 studioDocs.prd，textarea 是编辑视图。
+ *
+ * **展示形态按内容判断，不按文件类型**（用户决策）：
+ *   · 内容看起来是 Markdown → 渲染成排版好的文档（标题/列表/表格/代码块）
+ *   · 内容看起来是纯文本   → 原样显示（保留换行与缩进，不强行解释成结构）
+ * 判断只看文本特征，与来源（手写/粘贴/导入 .md 或 .txt/Agent 生成）无关。
+ * 编辑态永远是 textarea——渲染只发生在「预览」态，避免富文本编辑器带来的复杂度。 */
 let PRD_EDITING=true;
 function syncPrdFromEditor(){
   const ta=$('doc-prd-text');
   if(PRD_EDITING&&ta)studioDocs.prd=ta.value;
+}
+/* Markdown 特征探测：命中结构信号即视为 Markdown。
+ * 计分设计（阈值 2）：`# 标题` / ``` 围栏 / `>` 引用 / 分隔线 这类**独占一行的
+ * 结构标记**单独出现就足以判定（用户粘一份只有标题或只有引用的片段很常见）；
+ * 表格行/列表项同样计 2（它们几乎不会在纯文本里成行出现）；
+ * 行内标记（**粗体**/`代码`/链接）只计 1，需要凑够两处才判定——单个星号
+ * 或单个反引号在纯文本里太常见，不能当证据。
+ * 刻意**不**把「普通换行的散文」判成 Markdown——那类内容会被 <p> 压平原有
+ * 换行分组，反而丧失纯文本的可读性（用户要的正是"原样"）。 */
+function looksLikeMarkdown(text){
+  const t=String(text||'');
+  if(!t.trim())return false;
+  const lines=t.split('\n');
+  let score=0;
+  for(const raw of lines){
+    const l=raw.trim();
+    if(!l)continue;
+    if(/^#{1,6}\s+\S/.test(l))score+=2;                    // ATX 标题
+    else if(/^```/.test(l))score+=2;                        // 代码围栏
+    else if(/^>\s+\S/.test(l))score+=2;                     // 引用
+    else if(/^\s*([-*_])\1{2,}\s*$/.test(l))score+=2;       // 分隔线
+    else if(/^\s*\|.*\|\s*$/.test(l))score+=2;              // 表格行
+    else if(/^\s*[-*+]\s+\S/.test(l))score+=2;              // 无序列表
+    else if(/^\s*\d+\.\s+\S/.test(l))score+=2;              // 有序列表
+    else if(/\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\)/.test(l))score+=1; // 行内标记
+  }
+  return score>=2;
+}
+function renderPrdView(text){
+  const t=String(text||'');
+  if(!t.trim())return '<div class="doc-empty">设计文档为空。点「编辑」写入，或先让 Agent 生成。</div>';
+  if(looksLikeMarkdown(t))return mdToHtml(t);
+  // 纯文本：原样保留（escHtml 后放进 pre，换行/缩进一字不动）
+  return '<pre class="doc-plain">'+escHtml(t)+'</pre>';
 }
 function togglePrdEdit(){
   const pane=$('doc-pane-prd'),ta=$('doc-prd-text'),btn=$('doc-prd-preview');
   if(!pane||!btn)return;
   if(PRD_EDITING){
     syncPrdFromEditor();
-    persistDesign(); // PRD 变更也要落盘（注释块是唯一载体）
+    persistDesign(); // 设计文档变更也要落盘（注释块是唯一载体）
     PRD_EDITING=false;
     pane.classList.add('doc-preview');
     if(ta)ta.style.display='none';
     pane.querySelectorAll(':scope > .doc-rendered').forEach(n=>n.remove());
     const box=document.createElement('div');
     box.className='doc-rendered';
-    box.innerHTML=studioDocs.prd?mdToHtml(studioDocs.prd):'<div class="doc-empty">PRD 为空。点「预览」回到编辑，或先让 Agent 生成。</div>';
+    box.innerHTML=renderPrdView(studioDocs.prd);
+    // 形态标签：让用户知道系统按哪种格式解读了内容
+    const tag=document.createElement('div');
+    tag.className='doc-fmt-tag';
+    tag.textContent=looksLikeMarkdown(studioDocs.prd)?'按 Markdown 渲染':'纯文本（原样显示）';
     pane.appendChild(box);
+    pane.appendChild(tag);
     btn.textContent='编辑';
   }else{
     PRD_EDITING=true;
     pane.classList.remove('doc-preview');
-    pane.querySelectorAll(':scope > .doc-rendered').forEach(n=>n.remove());
+    pane.querySelectorAll(':scope > .doc-rendered, :scope > .doc-fmt-tag').forEach(n=>n.remove());
     if(ta){ta.style.display='';ta.value=studioDocs.prd||'';}
     btn.textContent='预览';
   }
@@ -3333,16 +3381,18 @@ function clearPrd(){
 }
 function renderDocStage(){
   const d=studioDocs||{};
-  // PRD：编辑态写 textarea，预览态渲染 Markdown
+  // 设计文档：编辑态写 textarea；预览态按**内容格式**决定渲染（Markdown 渲染 / 纯文本原样）
   const ta=$('doc-prd-text');
   if(ta&&PRD_EDITING)ta.value=d.prd||'';
   else if(ta){
     const pane=$('doc-pane-prd');
     const box=pane&&pane.querySelector(':scope > .doc-rendered');
-    if(box)box.innerHTML=d.prd?mdToHtml(d.prd):'<div class="doc-empty">设计文档为空。</div>';
+    if(box)box.innerHTML=renderPrdView(d.prd);
+    const tag=pane&&pane.querySelector(':scope > .doc-fmt-tag');
+    if(tag)tag.textContent=(!d.prd||!String(d.prd).trim())?'':(looksLikeMarkdown(d.prd)?'按 Markdown 渲染':'纯文本（原样显示）');
   }
   const ui=$('doc-pane-ui');
-  if(ui)ui.innerHTML=d.ui?mdToHtml(d.ui):'<div class="doc-empty">UI 说明是<strong>可选</strong>的中间产物（色彩/字体/间距/组件/逐页布局的细化）。不写它也能直接按设计文档生成原型——引擎的生成式 UI 会按设计规范自行决定这些细节。</div>';
+  if(ui)ui.innerHTML=d.ui?renderPrdView(d.ui):'<div class="doc-empty">UI 说明是<strong>可选</strong>的中间产物（色彩/字体/间距/组件/逐页布局的细化）。不写它也能直接按设计文档生成原型——引擎的生成式 UI 会按设计规范自行决定这些细节。</div>';
   syncDesignTextarea();
   // 「生成原型」只在有设计文档时可用（它是唯一的功能依据）
   const build=$('doc-build');
