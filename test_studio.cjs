@@ -330,8 +330,12 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'PRD → 原型的生成入口缺失——请同步检查 S');
   assert(/syncPrdFromEditor\(\);[\s\S]{0,400}?if\(!studioDocs\.prd\)/.test(script),
     '生成原型前未收回 PRD 编辑器内容/未以 PRD 为门槛——请同步检查 S');
-  assert(/\u3010\u4ea7\u54c1\u9700\u6c42\u6587\u6863\uff08PRD\uff09\u2014\u2014\u8fd9\u662f\u552f\u4e00\u7684\u529f\u80fd\u4e0e\u8303\u56f4\u4f9d\u636e\u3011/.test(script),
-    '建画布提示词未把 PRD 声明为唯一功能依据——请同步检查 S');
+  // 第一栏是「设计文档」（需求设计），它才是建原型的唯一功能依据
+  assert(/【设计文档（需求设计）——这是唯一的功能与范围依据】/.test(script),
+    '建画布提示词未把设计文档声明为唯一功能依据——请同步检查 S');
+  assert(/doc-tab on" id="doc-tab-prd"[^>]*>设计文档</.test(html)
+    &&/id="doc-tab-design"[^>]*>设计规范</.test(html),
+    '第一栏必须叫「设计文档」且与「设计规范」明确区分——请同步检查 S');
   assert(/const ui=\$\('doc-pane-ui'\);[\s\S]{0,300}?\u53ef\u9009/.test(script),
     'UI 说明未标注为可选中间产物（它不该是必经步骤）——请同步检查 S');
   assert(/id="doc-stage"/.test(html)&&/id="doc-pane-prd"/.test(html)&&/id="doc-prd-text"/.test(html)

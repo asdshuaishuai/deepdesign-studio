@@ -882,7 +882,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <button class="mode-btn" id="mode-decl" onclick="setMode('decl')">
         <svg class="ic" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>MBT 源码
       </button>
-      <button class="mode-btn" id="mode-doc" onclick="setMode('doc')" title="产品设计文档（PRD / UI 设计文档 / DESIGN.md）">
+      <button class="mode-btn" id="mode-doc" onclick="setMode('doc')" title="设计文档（需求设计文档 / UI 说明 / 设计规范）">
         <svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>设计文档
       </button>
   </div>
@@ -1003,27 +1003,27 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </div>
       <div id="doc-stage">
         <div class="dhead">
-          <h3>产品需求文档</h3>
-          <span class="sub">PRD 是设计的起点：生成或粘贴需求 → 一键转成可交互原型（DESIGN.md 只约束视觉规范）</span>
-          <button class="tbtn doc-tab on" id="doc-tab-prd" onclick="switchDocTab('prd')">PRD</button>
+          <h3>设计文档</h3>
+          <span class="sub">第一步：写或粘贴产品需求设计文档，一键转成可交互原型（规范见「设计规范」栏）</span>
+          <button class="tbtn doc-tab on" id="doc-tab-prd" onclick="switchDocTab('prd')">设计文档</button>
           <button class="tbtn doc-tab" id="doc-tab-ui" onclick="switchDocTab('ui')">UI 说明<span class="doc-opt">可选</span></button>
           <button class="tbtn doc-tab" id="doc-tab-design" onclick="switchDocTab('design')">设计规范</button>
-          <button class="tbtn pri" id="doc-build" onclick="buildFromDocs()" title="按 PRD 当期内容生成交互原型（不需要先写 UI 说明）">生成原型</button>
+          <button class="tbtn pri" id="doc-build" onclick="buildFromDocs()" title="按设计文档当期内容生成交互原型">生成原型</button>
         </div>
         <div id="doc-body">
           <div class="doc-pane" id="doc-pane-prd">
             <div class="doc-prd-toolbar">
-              <span class="doc-mode-label">编辑 PRD（可直接粘贴外部产品文档）</span>
+              <span class="doc-mode-label">编辑设计文档（可直接粘贴外部产品需求文档）</span>
               <button class="tbtn" id="doc-prd-preview" onclick="togglePrdEdit()">预览</button>
               <button class="tbtn" onclick="importPrdFromFile()" title="从 .md / .txt 文件导入">导入文件</button>
-              <button class="tbtn" onclick="clearPrd()" title="清空 PRD">清空</button>
+              <button class="tbtn" onclick="clearPrd()" title="清空设计文档">清空</button>
             </div>
-            <textarea id="doc-prd-text" spellcheck="false" placeholder="在这里写或粘贴产品需求文档（Markdown）。&#10;&#10;也可以不写——直接在下方输入一句话让 Agent 生成 PRD。"></textarea>
+            <textarea id="doc-prd-text" spellcheck="false" placeholder="在这里写或粘贴产品需求设计文档（Markdown）。&#10;&#10;也可以不写——直接在下方输入一句话让 Agent 生成。"></textarea>
           </div>
-          <div class="doc-pane" id="doc-pane-ui" style="display:none"><div class="doc-empty">UI 说明是<strong>可选</strong>的中间产物（色彩/字体/间距/组件/逐页布局的细化）。不写它也能直接按 PRD 生成原型——引擎的生成式 UI 会按 DESIGN.md 的规范自行决定这些细节。</div></div>
+          <div class="doc-pane" id="doc-pane-ui" style="display:none"><div class="doc-empty">UI 说明是<strong>可选</strong>的中间产物（色彩/字体/间距/组件/逐页布局的细化）。不写它也能直接按设计文档生成原型——引擎的生成式 UI 会按设计规范的配色与规则自行决定这些细节。</div></div>
           <div class="doc-pane" id="doc-pane-design" style="display:none">
             <textarea id="doc-design-text" spellcheck="false" placeholder="设计规范（JSON）：配色令牌 / 字体层级 / 间距网格 / 圆角档 / 引擎规范清单。留空则首次生成时自动从引擎令牌与规范基线抽取…"></textarea>
-            <div class="doc-design-hint">这是<strong>规范文档</strong>，不是设计说明——它只约束「用什么颜色/字号/间距/圆角/规范」，不描述页面长什么样。保存即写入 .mbt.md 注释块（随 DDP 持久化）。</div>
+            <div class="doc-design-hint">这一栏是<strong>视觉规范</strong>，不是设计文档——它只约束「用什么颜色/字号/间距/圆角/必须守什么规则」，不描述页面内容（页面内容由第一栏的设计文档决定）。保存即写入 .mbt.md 注释块（随 DDP 持久化）。</div>
             <div class="doc-design-actions">
               <button class="tbtn" onclick="saveDesignDoc()">保存规范</button>
               <button class="tbtn" onclick="extractDesignFromEngine()">从引擎抽取</button>
@@ -1032,7 +1032,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         </div>
         <div class="doc-foot">
           <input id="doc-input" placeholder="或者直接一句话描述产品，例如「城市露营装备租赁小程序，5 个页面，自然绿色调」" />
-          <button class="tbtn" id="doc-gen" onclick="runStudioPrompt()">生成 PRD</button>
+          <button class="tbtn" id="doc-gen" onclick="runStudioPrompt()">生成设计文档</button>
         </div>
       </div>
     </div>
@@ -3329,7 +3329,7 @@ function clearPrd(){
   studioDocs.prd='';
   persistDesign();
   renderDocStage();
-  toast('PRD 已清空');
+  toast('设计文档已清空');
 }
 function renderDocStage(){
   const d=studioDocs||{};
@@ -3339,12 +3339,12 @@ function renderDocStage(){
   else if(ta){
     const pane=$('doc-pane-prd');
     const box=pane&&pane.querySelector(':scope > .doc-rendered');
-    if(box)box.innerHTML=d.prd?mdToHtml(d.prd):'<div class="doc-empty">PRD 为空。</div>';
+    if(box)box.innerHTML=d.prd?mdToHtml(d.prd):'<div class="doc-empty">设计文档为空。</div>';
   }
   const ui=$('doc-pane-ui');
-  if(ui)ui.innerHTML=d.ui?mdToHtml(d.ui):'<div class="doc-empty">UI 说明是<strong>可选</strong>的中间产物（色彩/字体/间距/组件/逐页布局的细化）。不写它也能直接按 PRD 生成原型——引擎的生成式 UI 会按设计规范自行决定这些细节。</div>';
+  if(ui)ui.innerHTML=d.ui?mdToHtml(d.ui):'<div class="doc-empty">UI 说明是<strong>可选</strong>的中间产物（色彩/字体/间距/组件/逐页布局的细化）。不写它也能直接按设计文档生成原型——引擎的生成式 UI 会按设计规范自行决定这些细节。</div>';
   syncDesignTextarea();
-  // 「生成原型」只在有 PRD 时可用（PRD 是唯一的功能依据）
+  // 「生成原型」只在有设计文档时可用（它是唯一的功能依据）
   const build=$('doc-build');
   if(build)build.disabled=!d.prd;
 }
@@ -3409,20 +3409,20 @@ async function runStudioPrompt(){
     const brief=designBrief();
     const prdInstr=`产品想法：${idea}\n\n${brief?('【设计规范基线（只约束视觉，不决定页面内容）】\n'+brief+'\n\n'):''}请产出 PRD。`;
     const run1=nextAgentRun();
-    traceOpen(run1,'📄 生成产品需求文档',false);
-    setStatus('agent','生成 PRD…',true,'需求文档');
+    traceOpen(run1,'📄 生成设计文档',false);
+    setStatus('agent','生成设计文档…',true,'设计文档');
     const r1=await askFxSdkMode(prdInstr,run1,'prd');
     const prd=r1.docs&&r1.docs.prd?String(r1.docs.prd):'';
-    if(!prd)throw Error('未产出 PRD');
+    if(!prd)throw Error('未产出设计文档');
     studioDocs.prd=prd;
     persistDesign();
     renderDocStage();
     switchDocTab('prd');
     setStatus('', '', true, '');
-    toast('PRD 已生成 — 可直接「生成原型」，或先改 PRD');
+    toast('设计文档已生成 — 可直接「生成原型」，或先修改');
   }catch(err){
     const msg=String(err&&err.message||err);
-    toast('PRD 生成失败：'+msg.slice(0,100),'err');
+    toast('设计文档生成失败：'+msg.slice(0,100),'err');
     setStatus('', '', false, '');
   }finally{
     agentBusy=false;
@@ -3434,7 +3434,7 @@ async function runStudioPrompt(){
 async function buildFromDocs(){
   if(agentBusy){toast('Agent 正在生成，完成后再试','err');return;}
   syncPrdFromEditor();
-  if(!studioDocs.prd){toast('先写/粘贴 PRD，或让 Agent 生成一份','err');return;}
+  if(!studioDocs.prd){toast('先写/粘贴设计文档，或让 Agent 生成一份','err');return;}
   agentBusy=true;
   const btn=$('doc-build');if(btn)btn.disabled=true;
   const runId=nextAgentRun();
@@ -3446,20 +3446,20 @@ async function buildFromDocs(){
     const parts=[];
     // PRD 是主输入（页面清单/流程/交互/范围都在里面）；
     // UI 说明是可选细化——有就一起给，没有就让引擎按规范自行决定视觉细节。
-    parts.push('【产品需求文档（PRD）——这是唯一的功能与范围依据】\n'+studioDocs.prd);
-    if(studioDocs.ui)parts.push('【UI 说明（可选细化，与 PRD 冲突时以 PRD 为准）】\n'+studioDocs.ui);
+    parts.push('【设计文档（需求设计）——这是唯一的功能与范围依据】\n'+studioDocs.prd);
+    if(studioDocs.ui)parts.push('【UI 说明（可选细化，与设计文档冲突时以设计文档为准）】\n'+studioDocs.ui);
     if(brief)parts.push('【设计规范（只约束视觉：配色/字号/间距/圆角/必须遵守的规范）】\n'+brief);
     else parts.push('【设计规范】当前项目还没有 DESIGN.md——请按引擎默认令牌与规范生成（会用主题令牌取色）。');
     parts.push([
-      '请严格按 PRD 的**页面清单**建出完整可交互原型。**执行方式（必须遵守）**：',
-      '1) PRD 里每一页用一次 `generate <意图> as <页面id>` 生成（意图取模板语义：登录页/首页 列表/个人主页/仪表盘/设置页…）。不要手工逐个 place 一整页——手工定位必然叠出重叠；',
+      '请严格按设计文档的**页面清单**建出完整可交互原型。**执行方式（必须遵守）**：',
+      '1) 设计文档里每一页用一次 `generate <意图> as <页面id>` 生成（意图取模板语义：登录页/首页 列表/个人主页/仪表盘/设置页…）。不要手工逐个 place 一整页——手工定位必然叠出重叠；',
       '2) 多页可在一次调用里用 "+" 组合：`generate "登录+注册+首页 列表"`，引擎会自动连相邻页的导航；',
       '3) 读回信封的 score/missing，用 `autofill <artboard>` 补缺、`critique <artboard>` 复核；',
-      '4) PRD 要求的文案/字段与生成结果有差异时，用 `update` 精修；PRD 要求的额外元素用 `place` 补；',
-      '5) 最后用 `flow` 补齐 PRD「核心流程」一节要求的全部跳转（返回链路自动生效，不必手建）。',
+      '4) 设计文档要求的文案/字段与生成结果有差异时，用 `update` 精修；PRD 要求的额外元素用 `place` 补；',
+      '5) 最后用 `flow` 补齐设计文档「核心流程」一节要求的全部跳转（返回链路自动生效，不必手建）。',
     ].join('\n'));
-    traceOpen(runId,'🏗 按 PRD 生成可交互原型',false);
-    setStatus('agent','按 PRD 生成原型…',true,'需求文档');
+    traceOpen(runId,'🏗 按设计文档生成可交互原型',false);
+    setStatus('agent','按设计文档生成原型…',true,'设计文档');
     const r=await askFxSdk(parts.join('\n\n'),runId);
     if(!r.ops||!r.ops.length){
       if(r.text&&r.text.trim()){toast('Agent 需要澄清：'+String(r.text).slice(0,80));}
