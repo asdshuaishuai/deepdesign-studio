@@ -873,6 +873,9 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
   </div>
   <span class="spacer" style="flex:1" data-tauri-drag-region></span>
   <div class="mode-seg">
+      <button class="mode-btn" id="mode-doc" onclick="setMode('doc')" title="设计文档（需求设计文档 / UI 说明 / 设计规范）">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>设计文档
+      </button>
     <button class="mode-btn on" id="mode-wireframe" onclick="setMode('wireframe')">
       <svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M8 4v16M16 4v16M4 9h16M4 15h16"/></svg>线框图
     </button>
@@ -881,9 +884,6 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     </button>
       <button class="mode-btn" id="mode-decl" onclick="setMode('decl')">
         <svg class="ic" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>MBT 源码
-      </button>
-      <button class="mode-btn" id="mode-doc" onclick="setMode('doc')" title="设计文档（需求设计文档 / UI 说明 / 设计规范）">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>设计文档
       </button>
   </div>
   <span class="spacer" style="flex:1" data-tauri-drag-region></span>
