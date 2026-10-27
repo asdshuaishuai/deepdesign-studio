@@ -294,21 +294,74 @@ Use tables over prose for anything enumerable — the implementing step reads th
 literally, so ambiguity costs accuracy.
 Write in the user's language."#;
 
+/// 文档阶段收尾判定：该模式下期望的文档是否已齐（both 需 prd+ui 两份齐）。
+fn doc_satisfied(mode: Option<&str>, written_docs: &serde_json::Map<String, Value>) -> bool {
+    match mode {
+        Some("both") => written_docs.contains_key("prd") && written_docs.contains_key("ui"),
+        Some("prd") => written_docs.contains_key("prd"),
+        Some("ui") => written_docs.contains_key("ui"),
+        _ => true,
+    }
+}
+
 /// 按阶段选择系统提示词。`mode` 来自 payload：
 /// - `None`/其它 → 默认的建画布 agent（保持既有行为）
 /// - `Some("prd")` → 只产出 PRD
 /// - `Some("ui")` → 只产出 UI 设计文档
+/// - `Some("both")` → PRD + UI 设计文档一次同步产出（2026-10-27 用户要求：
+///   建画布阶段同时拿到功能范围与逐页设计约束，线稿更完整规范）
 fn instructions_for(mode: Option<&str>) -> String {
     match mode {
         Some("prd") => PRD_INSTRUCTIONS.to_string(),
         Some("ui") => UI_DOC_INSTRUCTIONS.to_string(),
+        Some("both") => BOTH_DOC_INSTRUCTIONS.to_string(),
         _ => instructions(),
     }
 }
 
-/// 文档阶段（prd/ui）只暴露 write_doc + 只读工具——不给任何变更 op 机会。
+/// 一句话同步产出两份文档（2026-10-27 用户要求）：PRD + UI 设计文档一次生成。
+const BOTH_DOC_INSTRUCTIONS: &str = r#"You are the embedded product analyst AND UI designer of deepDesign Studio.
+Turn the user's one-line idea into TWO documents this turn. You must NOT create or modify any artboard.
+
+## Output contract
+Call the `write_doc` tool exactly TWICE, both in the same round, in this order:
+1. kind: "prd" — the Product Requirements Document (zh-CN unless the user writes otherwise)
+2. kind: "ui" — the UI Design Document derived from your own PRD
+
+Do not call moonviz_op. Do not answer with plain text instead of the tool calls —
+the documents are delivered through the tool.
+
+## PRD structure (tight — a working document, not a novel)
+# <产品名>
+## 1. 一句话定位
+## 2. 目标用户与核心场景
+## 3. 页面清单与职责（表格：页面 | 职责 | 关键内容 | 入口来源）
+## 4. 核心流程（从入口到完成的步骤链，用编号列表）
+## 5. 关键交互与状态（需要哪些可点击行为、空态/加载态/错误态）
+## 6. 视觉与品牌方向（一句话描述调性、主色倾向、密度偏好）
+## 7. 范围边界（明确不做什么）
+
+## UI Design Document structure
+- 设计令牌：主色/辅助色/语义色（hex）、字体层级（h1/h2/body/caption 的 px）、间距网格、圆角档
+- 逐页布局：每个页面一节——区域结构（自上而下）、每个区域用什么组件（app_bar/list_item/card…）、关键文案原文
+- 组件与状态：按钮态、输入态、列表态（含空/加载/错误）
+- 导航与连线：页面间谁指向谁、返回链路
+Use tables over prose for anything enumerable — the implementing step reads this document
+literally, so ambiguity costs accuracy.
+
+## Rules
+- Derive the experience yourself: "露营装备租赁小程序" implies home/browse/detail/order/confirmation —
+  decide the screen list; this stage never asks questions.
+- Every statement must be concrete and checkable (real labels, real numbers, real flows).
+  Never write lorem ipsum, never write "待定".
+- Screen count: 3-6 for a focused prototype. Pages must connect: state explicitly which
+  page leads to which (PRD section 4, echoed in the UI document's navigation section).
+- The UI document must stay consistent with the PRD's section 6 (visual direction).
+- Write in the user's language."#;
+
+/// 文档阶段（prd/ui/both）只暴露 write_doc + 只读工具——不给任何变更 op 机会。
 fn doc_phase(mode: Option<&str>) -> bool {
-    matches!(mode, Some("prd") | Some("ui"))
+    matches!(mode, Some("prd") | Some("ui") | Some("both"))
 }
 
 /// LLM 线上协议。OpenAI Chat Completions 与 Anthropic Messages 两套请求/响应格式。
@@ -2087,7 +2140,8 @@ pub async fn run_with_mode(
             let mut text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
             // 文档阶段：模型选择用纯文本回答而没调 write_doc——如实失败，不伪装成"澄清"。
             // （澄清是建画布阶段的合法意图；文档阶段要的是一份交付物，缺失就是没完成。）
-            if doc_mode && written_docs.is_empty() {
+            // 已写出的部分（both 模式单份先到）随 docs 交回，前端 partialDocs 保留。
+            if doc_mode && !doc_satisfied(mode, &written_docs) {
                 emit("assistant_text", json!({"text": text}));
                 emit("failed", json!({"error": "doc_not_written", "ops": 0}));
                 return json!({
@@ -2095,6 +2149,7 @@ pub async fn run_with_mode(
                     "error": "doc_not_written",
                     "detail": "LLM replied with text instead of calling write_doc",
                     "mode": mode,
+                    "docs": Value::Object(written_docs.clone()),
                     "text": text,
                 });
             }
@@ -2227,36 +2282,28 @@ pub async fn run_with_mode(
         }
         // ── 文档阶段收尾：write_doc 成功即任务完成，不再进主循环 ──
         // 不等模型自己给总结（它没有再调工具的理由，多等一轮纯浪费 token）：
-        // 拿到期望的那份文档就返回；两份都要（组合请求）则等齐再退。
-        if doc_mode && !written_docs.is_empty() {
-            let want = match mode {
-                Some("prd") => "prd",
-                Some("ui") => "ui",
-                _ => "",
-            };
-            let satisfied = want.is_empty() || written_docs.contains_key(want);
-            if satisfied {
-                // msg 已在工具循环前 move 进 messages；这里用当时取出的 mid_text
-                let text = mid_text.to_string();
-                if !text.trim().is_empty() {
-                    emit("assistant_text", json!({"text": text}));
-                }
-                let docs = Value::Object(written_docs.clone());
-                let kind = want.to_string();
-                eprintln!("[agent] doc end: kind={kind} docs={}", written_docs.len());
-                emit(
-                    "done",
-                    json!({"stopReason": "done", "ops": 0, "docs": written_docs.len(), "kind": kind}),
-                );
-                return json!({
-                    "ok": true,
-                    "stopReason": "done",
-                    "mode": mode,
-                    "docs": docs,
-                    "ops": [],
-                    "text": text,
-                });
+        // 拿到期望的那份文档就返回；both（组合请求）则两份齐再退。
+        if doc_mode && doc_satisfied(mode, &written_docs) {
+            // msg 已在工具循环前 move 进 messages；这里用当时取出的 mid_text
+            let text = mid_text.to_string();
+            if !text.trim().is_empty() {
+                emit("assistant_text", json!({"text": text}));
             }
+            let docs = Value::Object(written_docs.clone());
+            let kind = mode.unwrap_or("").to_string();
+            eprintln!("[agent] doc end: kind={kind} docs={}", written_docs.len());
+            emit(
+                "done",
+                json!({"stopReason": "done", "ops": 0, "docs": written_docs.len(), "kind": kind}),
+            );
+            return json!({
+                "ok": true,
+                "stopReason": "done",
+                "mode": mode,
+                "docs": docs,
+                "ops": [],
+                "text": text,
+            });
         }
     }
 
@@ -2268,6 +2315,7 @@ pub async fn run_with_mode(
         let want = match mode {
             Some("prd") => "prd",
             Some("ui") => "ui",
+            Some("both") => "both",
             _ => "",
         };
         emit(
@@ -3311,6 +3359,69 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
     /// 拼接后与完整内容逐字一致——尤其 markdown 的 JSON 转义在**转义序列
     /// 中间**被切片切断时（`# 标题\` | `n...`），提取器必须停住等下一片，
     /// 不能把半个转义当正文漏出去。响应重组装形状与非流式一致（主循环零改动）。
+    /// both 模式（2026-10-27 用户要求）：同轮两次 write_doc（prd+ui）齐了才收工，
+    /// 信封带回两份；只交一份不满足——继续等，文本收尾则 doc_not_written 且
+    /// 已写出的部分随 docs 交回（前端 partialDocs 保留路径）。
+    #[tokio::test]
+    async fn doc_phase_both_mode_requires_both_docs() {
+        let args = |kind: &str, md: &str| {
+            format!("{{\"kind\": \"{}\", \"markdown\": \"{}\"}}", kind, md)
+        };
+        let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null,
+                "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "write_doc",
+                     "arguments": args("prd", "# 测试 PRD\\n\\n页面清单齐备。")}},
+                    {"id": "c2", "type": "function", "function": {"name": "write_doc",
+                     "arguments": args("ui", "# UI 设计文档\\n\\n令牌与逐页布局齐备。")}},
+                ]}}]
+        })]).await;
+        let out = run_with_mode(
+            &ENGINE, "写 PRD 和 UI 文档", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port}"), "auto", None, 30, Some("both"),
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(
+            out.pointer("/docs/prd").and_then(|v| v.as_str()),
+            Some("# 测试 PRD\n\n页面清单齐备。"),
+            "prd 必须在信封: {out}"
+        );
+        assert_eq!(
+            out.pointer("/docs/ui").and_then(|v| v.as_str()),
+            Some("# UI 设计文档\n\n令牌与逐页布局齐备。"),
+            "ui 必须在信封: {out}"
+        );
+        // 只交一份：不满足 → 文本收尾时 doc_not_written，部分随 docs 交回
+        let (port2, mock2, _bodies2) = spawn_mock_llm(vec![
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null,
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "write_doc",
+                     "arguments": args("prd", "# 只有 PRD")}}]}}]
+            }),
+            serde_json::json!({"choices": [{"message": {"role": "assistant", "content": "写完了。"}}]}),
+        ])
+        .await;
+        let out2 = run_with_mode(
+            &ENGINE, "写两份文档", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port2}"), "auto", None, 30, Some("both"),
+        )
+        .await;
+        mock2.abort();
+        assert_eq!(out2["ok"], json!(false), "{out2}");
+        assert_eq!(out2["error"], json!("doc_not_written"), "{out2}");
+        assert_eq!(
+            out2.pointer("/docs/prd").and_then(|v| v.as_str()),
+            Some("# 只有 PRD"),
+            "部分产出的 prd 必须随失败信封交回: {out2}"
+        );
+        assert!(
+            out2.pointer("/docs/ui").is_none(),
+            "未写出的 ui 不得凭空出现: {out2}"
+        );
+    }
+
     #[tokio::test]
     async fn doc_phase_streams_thinking_and_doc_deltas() {
         // 完整 markdown（JSON 转义后）：# 标题\n\n第二段落

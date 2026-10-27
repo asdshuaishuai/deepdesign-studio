@@ -3013,6 +3013,18 @@ function scrollTraceFollow(box){
   const sc=box.closest('.rpanel')||box.parentElement;
   if(sc&&sc.scrollHeight-sc.scrollTop-sc.clientHeight<120)sc.scrollTop=sc.scrollHeight;
 }
+/* 文档直播渲染：rAF 合帧的 renderDocStage（渲染视图 innerHTML + 目录实时长）。
+ * 流式期间面板恒滚到底部——用户就是在看它写。 */
+let liveRenderRaf=0;
+function scheduleLiveRender(){
+  if(liveRenderRaf)return;
+  liveRenderRaf=requestAnimationFrame(()=>{
+    liveRenderRaf=0;
+    renderDocStage();
+    const pane=$('doc-pane-prd');
+    if(pane&&liveDocRun)pane.scrollTop=pane.scrollHeight;
+  });
+}
 function traceOpen(runId,label,continuation){
   const body=$('tl-body');if(!body)return;
   // 长文本折叠：默认显示前 limit 字符，点击展开全文（用户要求全文保留但收缩）
@@ -3080,15 +3092,26 @@ function ensureTraceListener(){
       scrollTraceFollow(box);
       return;
     }
-    // 文档正文增量：轨迹直播行 + 编辑器实时落字（用户看着文档写出来）
+    // 文档正文增量：轨迹直播行 + **实时渲染**（markdown 对用户不可见——
+    // 流式期间自动切到渲染视图，文档边生成边排版，目录实时跟着长；
+    // 想看原文点「编辑」，2026-10-27 用户要求）
     if(p.type==='doc_delta'){
       const full=traceLiveLine(box,'tl-doc-live-'+p.run,'📝 '+L('撰写中…'));
       full.textContent+=p.text;
       scrollTraceFollow(box);
       if(liveDocRun===p.run){
         studioDocs.prd=(studioDocs.prd||'')+p.text;
-        const ta=$('doc-prd-text');
-        if(PRD_EDITING&&ta){ta.value=studioDocs.prd;ta.scrollTop=ta.scrollHeight;}
+        if(PRD_EDITING){
+          PRD_EDITING=false;
+          const pane=$('doc-pane-prd'),btn=$('doc-prd-preview'),ta=$('doc-prd-text');
+          if(pane)pane.classList.add('doc-preview');
+          if(ta)ta.style.display='none';
+          if(pane)pane.querySelectorAll(':scope > .doc-rendered, :scope > .doc-fmt-tag').forEach(n=>n.remove());
+          const rbox=document.createElement('div');rbox.className='doc-rendered';
+          if(pane)pane.appendChild(rbox);
+          if(btn)btn.textContent='编辑';
+        }
+        scheduleLiveRender();
         projectDirty=true;syncFileLabel();
       }
       return;
@@ -3144,16 +3167,18 @@ function traceFailCard(runId,msg){
  * 收尾路径（done 非 clarify / max_turns / failed）都必须落一张卡——轨迹要显式回答
  * 「运行结束了没有、正常与否」（2026-10-11 用户要求，此前 max_turns 路径静默）。
  * tx 的文本成分在此统一 escHtml——调用方传原始文本，勿自行转义（与 appendTraceLine 同约） */
+/* 终态卡与普通行走**同一条 RAF 队列**——此前卡片同步插队、行延迟刷新，
+ * 事件顺序在界面上颠倒（运行完成卡出现在撰写行中间，2026-10-27 用户实测）。
+ * 队列内按事件到达序渲染，卡片自然落在流程末尾。 */
 function traceFinalCard(box,ok,tx){
-  const fin=document.createElement('div');
-  fin.className='tl-final'+(ok?'':' abnormal');
-  fin.innerHTML=`<span class="tl-final-ic">${ok?'✔':'✗'}</span><span class="tl-final-tx">${escHtml(String(tx))}</span>`;
-  box.appendChild(fin);
-  const sc=box.closest('.rpanel')||box.parentElement;
-  if(sc)sc.scrollTop=sc.scrollHeight;
+  tracePending.push({box,final:{ok:!!ok,tx:String(tx)}});
+  scheduleTraceFlush();
 }
 function appendTraceLine(box,text,cls,id,title){
   tracePending.push({box,text,cls,id,title:title||''});
+  scheduleTraceFlush();
+}
+function scheduleTraceFlush(){
   if(traceFlushRaf)return;
   traceFlushRaf=requestAnimationFrame(()=>{
     traceFlushRaf=0;
@@ -3162,7 +3187,15 @@ function appendTraceLine(box,text,cls,id,title){
     batch.forEach(({box})=>{
       if(!near.has(box)){const sc=box.closest('.rpanel')||box.parentElement;near.set(box,{sc,follow:!!(sc&&sc.scrollHeight-sc.scrollTop-sc.clientHeight<80)});}
     });
-    batch.forEach(({box,text,cls,id,title})=>{
+    batch.forEach(e=>{
+      if(e.final){
+        const fin=document.createElement('div');
+        fin.className='tl-final'+(e.final.ok?'':' abnormal');
+        fin.innerHTML=`<span class="tl-final-ic">${e.final.ok?'✔':'✗'}</span><span class="tl-final-tx">${escHtml(e.final.tx)}</span>`;
+        e.box.appendChild(fin);
+        return;
+      }
+      const {box,text,cls,id,title}=e;
       const d=document.createElement('div');d.className='tl-line '+(cls||'');if(id)d.id=id;
       if(title)d.title=title;
       d.innerHTML=text.length>150?`<details class="tl-fold"><summary>${escHtml(text.slice(0,120))}…</summary><div class="tl-full">${escHtml(text)}</div></details>`:escHtml(text);
@@ -3667,23 +3700,26 @@ async function runStudioPrompt(){
       try{designSpec=await designFromEngine(active||Object.keys(sessions)[0]);}catch(_){}
     }
     const brief=designBrief();
-    const prdInstr=`产品想法：${idea}\n\n${brief?('【设计规范基线（只约束视觉，不决定页面内容）】\n'+brief+'\n\n'):''}请产出 PRD。`;
+    const prdInstr=`产品想法：${idea}\n\n${brief?('【设计规范基线（只约束视觉，不决定页面内容）】\n'+brief+'\n\n'):''}请产出 PRD 与 UI 设计文档。`;
     traceOpen(run1,'📄 生成设计文档',false);
     // 轨迹面板里先落一条“进行中”，让用户知道已经开始等模型（而不是界面卡死）
     const tb=document.getElementById('tl-run-'+run1);
     if(tb)appendTraceLine(tb,'⏳ 正在理解需求并撰写设计文档…','tl-tool pending');
     setStatus('agent','生成设计文档…',true,'设计文档');
     liveDocRun=run1; // 流式回合的 doc_delta 落编辑器（doc_written/失败时清零）
-    const r1=await askFxSdkMode(prdInstr,run1,'prd');
+    // both 模式：PRD + UI 说明一次同步产出（2026-10-27 用户要求——建画布时
+    // 同时拿到功能范围与逐页设计约束，线稿更完整规范）
+    const r1=await askFxSdkMode(prdInstr,run1,'both');
     liveDocRun=0;
     const prd=r1.docs&&r1.docs.prd?String(r1.docs.prd):'';
     if(!prd)throw Error('未产出设计文档');
     studioDocs.prd=prd;
+    if(r1.docs&&r1.docs.ui)studioDocs.ui=String(r1.docs.ui);
     persistDesign();
     renderDocStage();
     switchDocTab('prd');
     setStatus('', '', true, '');
-    toast('设计文档已生成 — 可直接「生成原型」，或先修改');
+    toast(studioDocs.ui?'设计文档 + UI 说明已生成 — 可直接「生成原型」':'设计文档已生成 — 可直接「生成原型」，或先修改');
   }catch(err){
     const msg=String(err&&err.message||err);
     liveDocRun=0; // 流式中断：直播落字停止（已落字部分已入 studioDocs）
@@ -3693,6 +3729,7 @@ async function runStudioPrompt(){
     const partial=err&&err.partialDocs;
     if(partial&&partial.prd){
       studioDocs.prd=String(partial.prd);
+      if(partial.ui)studioDocs.ui=String(partial.ui);
       persistDesign();renderDocStage();switchDocTab('prd');
       toast('设计文档生成未完成，但已保留模型写出的部分内容（请检查后使用）','err');
     }else{
@@ -3752,6 +3789,15 @@ async function buildFromDocs(){
     // 攒出视觉债（典型是逐 place 造成兄弟重叠）。这里不静默——
     // 用户要么看到"已通过自检"，要么看到具体页面与偏差数，自己决定要不要修。
     const issues=await auditBuiltBoards();
+    // 设计规范同步（2026-10-27 用户要求「设计规范 ui 说明同步生成」）：画布已就绪，
+    // 从引擎抽取实际产出的设计基线落 DESIGN.md（用户手写过的规范不覆盖）——
+    // 后续对原型的一切迭代都带着这套规范走。
+    if(!designSpec){
+      try{
+        designSpec=await designFromEngine(active||Object.keys(sessions)[0]);
+        persistDesign();
+      }catch(_){ }
+    }
     if(issues.total>0){
       toast(`已生成 ${r.ops.length} 条操作 · 自检发现 ${issues.total} 处偏差（${issues.boards.join('、')}）——可点「AI 修复」清偿`);
     }else{

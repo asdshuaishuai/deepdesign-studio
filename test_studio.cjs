@@ -286,8 +286,8 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'agent.rs 步数耗尽路径未发 done 终态事件——轨迹静默回归，请同步检查 Q');
   assert(agentRs.includes('"error": e, "ops": state.ops.len()'),
     'failed 事件未携带 ops——前端无法区分「已保留部分」与「零提交」，请同步检查 Q');
-  assert(/function traceFinalCard\(box,ok,tx\)/.test(script)&&/escHtml\(String\(tx\)\)/.test(script),
-    '轨迹终态卡助手 traceFinalCard 缺失或未在内部统一转义（innerHTML 注入点）——请同步检查 Q');
+  assert(/function traceFinalCard\(box,ok,tx\)/.test(script)&&/escHtml\(e\.final\.tx\)/.test(script),
+    '轨迹终态卡助手 traceFinalCard 缺失或未在内部统一转义（innerHTML 注入点，终态卡走 tracePending 队列）——请同步检查 Q');
   assert(/p\.stopReason==='max_turns'\)\{[\s\S]{0,260}traceFinalCard\(box,false,/.test(script),
     'max_turns 未落异常终止红卡——请同步检查 Q');
   assert(/p\.type==='failed'\)\{[\s\S]{0,400}traceFinalCard\(box,false,/.test(script),
@@ -336,8 +336,9 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
   assert(/designRestore\(b64ToUtf8\(r\.mbt_b64\)\)/.test(script),
     '打开项目未恢复 DESIGN.md——请同步检查 S');
   // PRD 是第一步 C 位：一句话只是「产出 PRD 的一种入口」，不是必经的两阶段流水线。
-  assert(/function runStudioPrompt\(\)/.test(script)&&/askFxSdkMode\(prdInstr,run1,'prd'\)/.test(script),
-    '一句话生成 PRD 的入口缺失（mode=prd 未下发）——请同步检查 S');
+  // mode='both'（2026-10-27）：PRD + UI 说明一次同步产出，建画布同时拿两份约束。
+  assert(/function runStudioPrompt\(\)/.test(script)&&/askFxSdkMode\(prdInstr,run1,'both'\)/.test(script),
+    '一句话生成设计文档的入口缺失（mode=both 未下发）——请同步检查 S');
   assert(/function buildFromDocs\(\)/.test(script)&&/askFxSdk\(parts\.join\('\\n\\n'\),runId\)/.test(script),
     'PRD → 原型的生成入口缺失——请同步检查 S');
   // 建画布前必须先把编辑器内容收回真源，且以「非空白的设计文档」为门槛
@@ -406,7 +407,7 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '文档阶段工具面含 moonviz_op——文档阶段必须结构上无法改画布——请同步检查 S');
   assert(/if doc_mode \{\s*json!\(\{"ok": false, "error": "doc_phase_readonly/.test(agentRs),
     '文档阶段缺少 moonviz_op 兜底拦截（提示词禁令不足以防护）——请同步检查 S');
-  assert(/fn doc_phase\(mode: Option<&str>\) -> bool \{\s*matches!\(mode, Some\("prd"\) \| Some\("ui"\)\)/.test(agentRs),
+  assert(/fn doc_phase\(mode: Option<&str>\) -> bool \{\s*matches!\(mode, Some\("prd"\) \| Some\("ui"\) \| Some\("both"\)\)/.test(agentRs),
     'doc_phase 判定缺失或口径漂移——请同步检查 S');
 }
 

@@ -255,6 +255,17 @@ rules[] / notes` 与 `docs:{prd,ui}`（两份文档正文）。
 - `buildFromDocs` 开始即 `setMode('wireframe')`（2026-10-27 用户要求）：生成原型的主秀是画布——
   preview 帧边跑边把画板长出来，用户看着原型出现，而不是盯着文档覆盖层等跑完才见分晓。
   右侧追踪照常可见（右栏与模式无关）。
+- **both 模式 + 直播渲染 + 终态卡队列（2026-10-27 用户要求）**：① runStudioPrompt 走
+  `mode='both'`——PRD + UI 说明**一次同步产出**（引擎 `doc_satisfied`：both 需两份齐；
+  单份先到继续等，文本收尾走 doc_not_written 且部分随 docs 交回），建画布同时拿到
+  功能范围与逐页设计约束；buildFromDocs 成功后若无手写 DESIGN.md 则自动从引擎抽取
+  设计基线落盘（`designFromEngine`，不覆盖用户规范）。② doc_delta 直播改为**实时渲染**：
+  markdown 对用户默认不可见——流式期间自动切渲染视图（PRD_EDITING=false），
+  `scheduleLiveRender` rAF 合帧刷渲染与目录，面板恒滚底；「编辑」按钮随时可看原文。
+  ③ `traceFinalCard` 与普通行走**同一条 tracePending RAF 队列**（此前卡片同步插队、
+  行延迟刷新，运行完成卡出现在撰写行中间）；队列按事件到达序渲染，卡自然落在
+  流程末尾。test_studio 检查 Q/S 锚点已随新形态同步（escHtml(e.final.tx)、
+  mode='both'、doc_phase 三模式）。
 
 **DESIGN.md（第三栏「设计规范」）只是视觉规范，不是设计文档**——它约束配色/字号/间距/
 圆角/引擎规范，不描述页面内容（内容由第一栏的设计文档决定）。措辞上不要把它叫成"设计文档"。
