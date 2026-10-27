@@ -371,6 +371,12 @@
   "This document has unsaved changes (including source draft). Quit anyway?",
   "Ce document a des modifications non enregistrées (brouillon source inclus). Quitter ?"
  ],
+ "思考中…": [
+  "思考中…",
+  "생각 중…",
+  "Thinking…",
+  "Réflexion…"
+ ],
  "手机原型": [
   "モバイル",
   "모바일",
@@ -388,6 +394,12 @@
   "보드 {ab}의 디자인 시스템 추출",
   "Extracting design system of board {ab}",
   "Extraction du design system de la planche {ab}"
+ ],
+ "撰写中…": [
+  "作成中…",
+  "작성 중…",
+  "Writing…",
+  "Rédaction…"
  ],
  "撰写文档": [
   "ドキュメントを作成",
@@ -695,17 +707,11 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
- "思考中…": [
-  "思考中…",
-  "생각 중…",
-  "Thinking…",
-  "Réflexion…"
- ],
- "撰写中…": [
-  "作成中…",
-  "작성 중…",
-  "Writing…",
-  "Rédaction…"
+ "思考": [
+  "思考",
+  "생각",
+  "Thinking",
+  "Réflexion"
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",

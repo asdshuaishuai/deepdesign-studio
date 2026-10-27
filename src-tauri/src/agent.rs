@@ -2056,9 +2056,10 @@ pub async fn run_with_mode(
         }
         // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
         // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够。
-        // 文档阶段 + OpenAI 协议走流式（thinking_delta/doc_delta 增量直播）；
-        // Anthropic 协议端点回退非流式（形状另行接入）。
-        let streamed_thinking = doc_mode && protocol_for(&base) == Protocol::OpenAi;
+        // OpenAI 协议一律走流式（thinking_delta 直播）——建画布 agent 的轨迹
+        // 同样要显示思考逻辑与完整输出流程（2026-10-27 用户要求，覆盖此前
+        // 「原型阶段保持现状」的决定）；Anthropic 协议端点回退非流式。
+        let streamed_thinking = protocol_for(&base) == Protocol::OpenAi;
         let resp = if streamed_thinking {
             // 流式事件自带 type 字段，直接走底层 progress（emit 的双参包装不适用）
             match progress {
@@ -2098,11 +2099,11 @@ pub async fn run_with_mode(
         // 中间轮的 assistant 文本（计划/说明）进轨迹。
         // 取 String 而非 &str：msg 随后会被 move 进 messages，文档阶段收尾还要用这段文本。
         let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        // 文档阶段的思考过程进轨迹（reasoning_content=OpenAI 侧非标字段；reasoning=
+        // 思考过程进轨迹（reasoning_content=OpenAI 侧非标字段；reasoning=
         // OpenRouter 形状；Anthropic 侧已在 normalize 时归一为 reasoning_content）。
-        // 流式回合（thinking_delta 已直播）不再整段重发。建画布阶段刻意不发射：
-        // 一步一思考会把 op 流淹没。
-        if doc_mode && !streamed_thinking {
+        // 流式回合（thinking_delta 已直播）不再整段重发。**所有模式都发**——
+        // 建画布 agent 的轨迹同样要显示思考逻辑（2026-10-27 用户要求）。
+        if !streamed_thinking {
             let think = msg
                 .get("reasoning_content")
                 .and_then(|v| v.as_str())
@@ -3665,10 +3666,10 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         );
     }
 
-    /// 文档阶段轨迹可读性（2026-10-26 用户要求）：doc 模式下模型的思考
+    /// 思考轨迹契约（2026-10-26 起文档阶段、2026-10-27 起全模式）：模型的思考
     /// （reasoning_content；Anthropic 侧经 normalize 的 thinking 块同理）必须以
     /// assistant_thinking 事件**完整**下发——轨迹面板要能读到全量思考。
-    /// 建画布阶段同响应**不**发射（一步一思考会淹没 op 流）。
+    /// 流式端点则走 thinking_delta 增量（另一个测试覆盖）。
     #[tokio::test]
     async fn doc_phase_emits_assistant_thinking_events() {
         // ── doc 模式：write_doc 不碰 wasm，无需引擎就绪 ──
@@ -3699,13 +3700,15 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             "doc 模式必须完整下发思考事件: {evs:?}"
         );
         drop(evs);
-        // ── 画布模式：同形状的响应不得发射 assistant_thinking ──
+        // ── 画布模式：思考**同样进轨迹**（2026-10-27 用户要求——建画布 agent 的
+        // 轨迹也要显示思考逻辑与完整输出流程；非流式 mock 走整段 assistant_thinking，
+        // 流式端点走 thinking_delta 增量）──
         engine_ready().await;
         let _engine_gate = engine_test_gate();
         let (port2, mock2, _bodies2) = spawn_mock_llm(vec![
             serde_json::json!({
                 "choices": [{"message": {"role": "assistant", "content": null,
-                    "reasoning_content": "画布阶段的思考不该进轨迹。",
+                    "reasoning_content": "画布阶段的思考同样进轨迹。",
                     "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "moonviz_op",
                      "arguments": "{\"op\": \"template login wl\"}"}}]}}]
             }),
@@ -3721,9 +3724,14 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         mock2.abort();
         assert_eq!(out2["ok"], json!(true), "{out2}");
         let evs2 = events2.lock().unwrap();
-        assert!(
-            !evs2.iter().any(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking")),
-            "画布模式不得发射思考事件（会淹没 op 流）: {evs2:?}"
+        let thinks2: Vec<&str> = evs2.iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(
+            thinks2,
+            vec!["画布阶段的思考同样进轨迹。"],
+            "画布模式的思考必须进轨迹: {evs2:?}"
         );
     }
 
