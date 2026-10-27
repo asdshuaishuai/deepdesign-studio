@@ -3025,6 +3025,33 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         // 独立 name op 仅存在于 CLI 直连面，apply 路径返回 mbt_operation_unsupported，
         // 提示词必须点名其替代用法；constrain 自 0.1.6-fix/#19 起经 session 路由
         // **可达**，提示词必须作为变更 op 教（含意图词表锚点——漏一个模型就永远不用）。
+        // genUI 第一层契约（2026-10-27 审查）：generate 必须是建页默认路径——
+        // 提示词丢了这一节，模型会退回手工 place 整页（重叠债的根源）。
+        assert!(
+            INSTRUCTIONS.contains("## Build loop — GENERATE FIRST (this is the default path)"),
+            "提示词必须保留 GENERATE FIRST 建页策略（genUI 第一层）"
+        );
+        // 工具面：moonviz_op 的 description 必须把 generate 标注为整页首选（PREFERRED）
+        let tools_json = serde_json::to_value(tools_typed()).expect("tools 序列化不可失败");
+        let mv_desc = tools_json
+            .as_array()
+            .and_then(|a| {
+                a.iter().find(|t| {
+                    t.pointer("/function/name").and_then(|v| v.as_str()) == Some("moonviz_op")
+                })
+            })
+            .and_then(|t| t.pointer("/function/description").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        assert!(
+            mv_desc.contains("generate (PREFERRED for whole pages"),
+            "工具面必须把 generate 标注为整页首选（PREFERRED）"
+        );
+        for token in ["autofill <artboard>", "skipped[]"] {
+            assert!(
+                INSTRUCTIONS.contains(token),
+                "generate 信封消费指引缺失：{token}——模型不知道要读信封补缺/救丢段"
+            );
+        }
         assert!(
             INSTRUCTIONS.contains("mbt_operation_unsupported"),
             "提示词必须告知 Agent 存在被引擎拒绝的 op"
