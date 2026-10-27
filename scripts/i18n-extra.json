@@ -143,6 +143,12 @@
   "About",
   "À propos"
  ],
+ "切换状态": [
+  "状態を切替",
+  "상태 전환",
+  "Toggle state",
+  "Basculer l'état"
+ ],
  "切换节点 {node} 的状态": [
   "ノード {node} の状態を切り替え",
   "노드 {node}의 상태 전환",
@@ -401,6 +407,12 @@
   "Extracting design system of board {ab}",
   "Extraction du design system de la planche {ab}"
  ],
+ "提示": [
+  "通知",
+  "알림",
+  "Toast",
+  "Notification"
+ ],
  "撰写中…": [
   "作成中…",
   "작성 중…",
@@ -563,6 +575,12 @@
   "Listing boards",
   "Liste des planches"
  ],
+ "演示未播放「{node}」的 {act}——演示支持：跳转/返回/提示/改文字/切状态": [
+  "「{node}」の {act} はデモ再生されません——デモ対応：遷移/戻る/通知/文字変更/状態切替",
+  "데모에서 {node}의 {act}은(는) 재생되지 않습니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환",
+  "Demo does not play {node}'s {act} — demo supports: navigate/back/toast/set text/toggle state",
+  "La démo ne lit pas {act} de {node} — démo gère : navigation/retour/toast/texte/bascule"
+ ],
  "演示模式与 Neu 主题修复": [
   "デモモードと Neu テーマの修正",
   "데모 모드 및 Neu 테마 수정",
@@ -683,6 +701,12 @@
   "Resizing board {ab}",
   "Redimensionnement de la planche {ab}"
  ],
+ "跳转": [
+  "遷移",
+  "이동",
+  "Navigate",
+  "Naviguer"
+ ],
  "进程内 WASM 引擎宿主": [
   "インプロセス WASM エンジンホスト",
   "인프로세스 WASM 엔진 호스트",
@@ -713,35 +737,11 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
- "演示未播放「{node}」的 {act}——演示支持：跳转/返回/提示/改文字/切状态": [
-  "「{node}」の {act} はデモ再生されません——デモ対応：遷移/戻る/通知/文字変更/状態切替",
-  "데모에서 {node}의 {act}은(는) 재생되지 않습니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환",
-  "Demo does not play {node}'s {act} — demo supports: navigate/back/toast/set text/toggle state",
-  "La démo ne lit pas {act} de {node} — démo gère : navigation/retour/toast/texte/bascule"
- ],
- "切换状态": [
-  "状態を切替",
-  "상태 전환",
-  "Toggle state",
-  "Basculer l'état"
- ],
- "改文字": [
-  "文字変更",
-  "텍스트 변경",
-  "Set text",
-  "Modifier le texte"
- ],
- "跳转": [
-  "遷移",
-  "이동",
-  "Navigate",
-  "Naviguer"
- ],
- "提示": [
-  "通知",
-  "알림",
-  "Toast",
-  "Notification"
+ "「{node}」是未实现交互——演示支持：跳转/返回/提示/改文字/切状态": [
+  "「{node}」は未実装のインタラクションです——デモ対応：遷移/戻る/通知/文字変更/状態切替",
+  "「{node}」은(는) 미구현 인터랙션입니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환",
+  "{node} has an unimplemented interaction — demo supports: navigate/back/toast/set text/toggle state",
+  "{node} a une interaction non implémentée — démo gère : navigation/retour/toast/texte/bascule"
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",

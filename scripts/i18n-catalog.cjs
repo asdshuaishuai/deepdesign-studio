@@ -12,12 +12,8 @@ const py=fs.readFileSync(path.join(ROOT,'scripts','gen-i18n.py'),'utf8');
 
 /* ── 新增 UI 键（本次修复引入：确认框/文件过滤器/删除画板/相对时间/模板分组）── */
 const NEW_ENTRIES={
-  /* ── 演示模式动作人性化 ── */
-  '演示未播放「{node}」的 {act}——演示支持：跳转/返回/提示/改文字/切状态':['「{node}」の {act} はデモ再生されません——デモ対応：遷移/戻る/通知/文字変更/状態切替','데모에서 {node}의 {act}은(는) 재생되지 않습니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환','Demo does not play {node}\'s {act} — demo supports: navigate/back/toast/set text/toggle state','La démo ne lit pas {act} de {node} — démo gère : navigation/retour/toast/texte/bascule'],
-  '切换状态':['状態を切替','상태 전환','Toggle state','Basculer l\'état'],
-  '改文字':['文字変更','텍스트 변경','Set text','Modifier le texte'],
-  '跳转':['遷移','이동','Navigate','Naviguer'],
-  '提示':['通知','알림','Toast','Notification'],
+  /* ── 演示模式：未实现交互统一口径（2026-10-27 用户定名）── */
+  '「{node}」是未实现交互——演示支持：跳转/返回/提示/改文字/切状态':['「{node}」は未実装のインタラクションです——デモ対応：遷移/戻る/通知/文字変更/状態切替','「{node}」은(는) 미구현 인터랙션입니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환','{node} has an unimplemented interaction — demo supports: navigate/back/toast/set text/toggle state','{node} a une interaction non implémentée — démo gère : navigation/retour/toast/texte/bascule'],
   /* ── 文档阶段流式直播 ── */
   '思考中…':['思考中…','생각 중…','Thinking…','Réflexion…'],
   '思考':['思考','생각','Thinking','Réflexion'],
