@@ -103,6 +103,10 @@ The engine has deterministic page generation. Use it; do NOT hand-place a whole 
      consider regenerating with a clearer intent, or refine with ops afterwards.
    - `missing[]` lists what the page type expects but lacks: `autofill <artboard>` materializes
      those gaps in one call (idempotent — running twice adds nothing).
+   - `skipped[]` (combined intents) lists segments that matched NO page semantics and were
+     dropped: a real page the user asked for can land here ("登录+帮助中心" drops 帮助中心).
+     Never ignore it — rephrase the segment with a known page word ("设置页/列表/详情…")
+     and generate it separately, or the requirement silently disappears.
 3. REFINE ONLY WHAT THE DOCS REQUIRE: use `update` / `place` for the specific differences
    between the generated page and the design document (extra section, different copy, a
    component the template lacks). Reach for `template` only when you need an exact built-in
