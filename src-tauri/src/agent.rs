@@ -1388,6 +1388,333 @@ fn is_transient_llm_error(e: &str) -> bool {
         || e.contains("overloaded")
 }
 
+/// write_doc 参数增量提取器：SSE 下 tool_calls 的 arguments 是 JSON 字符串
+/// 的碎片流，文档正文要从 `"markdown":"` 之后的转义串里**边到边解**。
+/// 返回当前可解出的完整前缀（未转义后）；转义序列不完整（如尾部孤 `\
+/// 或 `\u00`）时停在该转义前，等下一片补齐。找不到 markdown 键（kind
+/// 还在到货）返回 None。
+fn extract_markdown_prefix(args: &str) -> Option<String> {
+    const KEY: &str = "\"markdown\"";
+    let key_pos = args.find(KEY)?;
+    let rest = &args[key_pos + KEY.len()..];
+    // 跳过空白与冒号，定位值的开引号
+    let v = rest.trim_start().strip_prefix(':')?.trim_start();
+    if !v.starts_with('"') {
+        return None;
+    }
+    let mut out = String::new();
+    let chars: Vec<char> = v.chars().collect();
+    let mut j = 1; // 跳过开引号
+    while j < chars.len() {
+        let c = chars[j];
+        if c == '"' {
+            break; // 值结束（write_doc 的 markdown 后不再有内容，直接停）
+        }
+        if c != '\\' {
+            out.push(c);
+            j += 1;
+            continue;
+        }
+        // 转义序列：需要至少 2 个字符；不完整就停（等下一片）
+        if j + 1 >= chars.len() {
+            break;
+        }
+        match chars[j + 1] {
+            'n' => out.push('\n'),
+            't' => out.push('\t'),
+            'r' => out.push('\r'),
+            'b' => out.push('\u{8}'),
+            'f' => out.push('\u{c}'),
+            '"' => out.push('"'),
+            '\\' => out.push('\\'),
+            '/' => out.push('/'),
+            'u' => {
+                // \uXXXX 需要 4 个十六进制位；不足则停
+                if j + 5 >= chars.len() {
+                    break;
+                }
+                let hex: String = chars[j + 2..j + 6].iter().collect();
+                if let Some(uc) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    out.push(uc);
+                }
+                j += 6;
+                continue;
+            }
+            _ => out.push(chars[j + 1]),
+        }
+        j += 2;
+    }
+    Some(out)
+}
+
+/// SSE 流式聚合状态（chat_once_stream_mode 专用）：一条 data 载荷经
+/// apply_sse_chunk 归并进这里；流结束后由此组装非流式形状的响应。
+struct StreamAcc {
+    content: String,
+    reasoning: String,
+    reasoning_pending: String,
+    finish_reason: String,
+    tc_ids: Vec<String>,
+    tc_names: Vec<String>,
+    tc_args: Vec<String>,
+    doc_emitted_chars: usize,
+}
+
+/// 归并一条 SSE data 载荷（delta 形状）进聚合状态；write_doc 的 markdown
+/// 增量在此推进 doc_delta 事件。思考按 ≥32 字节批量、文档按到达即推。
+fn apply_sse_chunk(v: Value, acc: &mut StreamAcc, progress: &(dyn Fn(Value) + Send + Sync)) {
+    let Some(d) = v.pointer("/choices/0/delta") else {
+        if let Some(fr) = v.pointer("/choices/0/finish_reason").and_then(|x| x.as_str()) {
+            if !fr.is_empty() {
+                acc.finish_reason = fr.to_string();
+            }
+        }
+        return;
+    };
+    if let Some(r) = d.get("reasoning_content").and_then(|x| x.as_str()) {
+        acc.reasoning.push_str(r);
+        acc.reasoning_pending.push_str(r);
+        if acc.reasoning_pending.chars().count() >= 32 {
+            progress(json!({"type": "thinking_delta", "text": acc.reasoning_pending.clone()}));
+            acc.reasoning_pending.clear();
+        }
+    }
+    if let Some(c) = d.get("content").and_then(|x| x.as_str()) {
+        acc.content.push_str(c);
+    }
+    if let Some(tcs) = d.get("tool_calls").and_then(|x| x.as_array()) {
+        for tc in tcs {
+            let idx = tc.get("index").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+            while acc.tc_args.len() <= idx {
+                acc.tc_ids.push(String::new());
+                acc.tc_names.push(String::new());
+                acc.tc_args.push(String::new());
+            }
+            if let Some(id) = tc.get("id").and_then(|x| x.as_str()) {
+                acc.tc_ids[idx].push_str(id);
+            }
+            if let Some(f) = tc.get("function") {
+                if let Some(n) = f.get("name").and_then(|x| x.as_str()) {
+                    acc.tc_names[idx].push_str(n);
+                }
+                if let Some(a) = f.get("arguments").and_then(|x| x.as_str()) {
+                    acc.tc_args[idx].push_str(a);
+                    // write_doc 的正文增量：解出前缀并推进 doc_delta
+                    if acc.tc_names[idx] == "write_doc" {
+                        if let Some(md) = extract_markdown_prefix(&acc.tc_args[idx]) {
+                            let n_chars = md.chars().count();
+                            if n_chars > acc.doc_emitted_chars {
+                                let tail: String =
+                                    md.chars().skip(acc.doc_emitted_chars).collect();
+                                progress(json!({"type": "doc_delta", "text": tail}));
+                                acc.doc_emitted_chars = n_chars;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(fr) = v.pointer("/choices/0/finish_reason").and_then(|x| x.as_str()) {
+        if !fr.is_empty() {
+            acc.finish_reason = fr.to_string();
+        }
+    }
+}
+
+/// 文档阶段流式传输（OpenAI 协议 SSE）：思考增量与 write_doc 的文档正文
+/// 在生成时就推进给前端（progress → agent-event → 轨迹/编辑器）——用户看着
+/// 文档「写出来」而不是 30-60s 后一次性掉出来。返回与非流式同形状的响应
+/// （choices[0].message），主循环零改动。
+/// Anthropic 协议端点暂不流式（调用方回退非流式，功能不受影响只是没有
+/// 直播）——content_block_delta/input_json_delta 形状另行接入时再开。
+/// 发出的事件：thinking_delta{text}（reasoning_content 增量，≥32 字节批量）、
+/// doc_delta{text}（markdown 未转义增量，≥16 字节批量；结尾余量在流结束时冲掉）。
+async fn chat_once_stream_mode(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    thinking: &str,
+    messages: &[Value],
+    mode: Option<&str>,
+    progress: &(dyn Fn(Value) + Send + Sync),
+) -> Result<Value, String> {
+    let mut body = openai_request_body_for(model, thinking, messages, mode);
+    body["stream"] = json!(true);
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| redact_userinfo(format!("llm_request_failed:{e}")))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        // 部分网关不支持流式（400 指名 stream）——退回非流式重发一次
+        if status.as_u16() == 400 && text.to_lowercase().contains("stream") {
+            return chat_once_mode(client, base_url, api_key, model, thinking, messages, mode).await;
+        }
+        return Err(format!(
+            "llm_http_{}:{}",
+            status.as_u16(),
+            text.chars().take(200).collect::<String>()
+        ));
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut sse_buf: Vec<u8> = Vec::new();
+    let mut acc = StreamAcc {
+        content: String::new(),
+        reasoning: String::new(),
+        reasoning_pending: String::new(),
+        finish_reason: String::new(),
+        tc_ids: Vec::new(),
+        tc_names: Vec::new(),
+        tc_args: Vec::new(),
+        doc_emitted_chars: 0,
+    };
+    let mut saw_done = false;
+    // 非流式透传兜底：部分网关忽略 stream:true 直接回整份 JSON。没见过任何
+    // data: 行时按普通响应处理（原样解析返回），否则文档阶段会拿到空回合。
+    let mut saw_sse_data = false;
+    let mut raw_body: Vec<u8> = Vec::new();
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = match chunk {
+            Ok(b) => b,
+            Err(e) => {
+                return Err(redact_userinfo(format!("llm_read_failed:{e}")));
+            }
+        };
+        sse_buf.extend_from_slice(&bytes);
+        // SSE 事件以换行分帧；余行留待下一块
+        while let Some(pos) = sse_buf.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = sse_buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line_bytes);
+            let line = line.trim_end_matches(['\n', '\r']);
+            raw_body.extend_from_slice(line.as_bytes());
+            raw_body.push(b'\n');
+            let payload = if let Some(p) = line.strip_prefix("data:") {
+                saw_sse_data = true;
+                p.trim()
+            } else {
+                continue; // event:/id:/注释行/空行都不携带增量
+            };
+            if payload == "[DONE]" {
+                saw_done = true;
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<Value>(payload) else {
+                continue;
+            };
+            // 错误载荷（部分网关 200 + {"error":...}）
+            if v.get("error").is_some() {
+                let msg = v
+                    .pointer("/error/message")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("unknown");
+                return Err(format!("llm_api_error:stream:{msg}"));
+            }
+            apply_sse_chunk(v, &mut acc, progress);
+        }
+    }
+    // 余行冲刷：非流式 JSON body（无尾换行）整体滞在 sse_buf——按最后一行处理
+    if !sse_buf.is_empty() {
+        let line = String::from_utf8_lossy(&sse_buf);
+        let line = line.trim_end_matches(['\n', '\r']);
+        raw_body.extend_from_slice(line.as_bytes());
+        if let Some(p) = line.strip_prefix("data:") {
+            saw_sse_data = true;
+            let payload = p.trim();
+            if payload != "[DONE]" {
+                if let Ok(v) = serde_json::from_str::<Value>(payload) {
+                    if v.get("error").is_some() {
+                        let msg = v
+                            .pointer("/error/message")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("unknown");
+                        return Err(format!("llm_api_error:stream:{msg}"));
+                    }
+                    apply_sse_chunk(v, &mut acc, progress);
+                }
+            }
+        }
+    }
+    sse_buf.clear();
+    let _ = saw_done; // 部分网关不发 [DONE]，有内容即视为成功
+
+    // 余量冲刷：思考与文档尾部（流结束时的不足批量部分）
+    if !acc.reasoning_pending.is_empty() {
+        progress(json!({"type": "thinking_delta", "text": acc.reasoning_pending.clone()}));
+        acc.reasoning_pending.clear();
+    }
+    if let Some(i) = acc.tc_names.iter().position(|n| n == "write_doc") {
+        if let Some(md) = extract_markdown_prefix(&acc.tc_args[i]) {
+            let n_chars = md.chars().count();
+            if n_chars > acc.doc_emitted_chars {
+                let tail: String = md.chars().skip(acc.doc_emitted_chars).collect();
+                progress(json!({"type": "doc_delta", "text": tail}));
+            }
+        }
+    }
+
+    // 非流式透传兜底：整个响应体没有一条 data: 行 → 网关忽略 stream:true，
+    // body 就是普通 chat.completion JSON，原样返回（错误信封同形处理）。
+    // 思考按旧契约整段补发 assistant_thinking（本路径没有 delta 发出，
+    // 主循环流式分支又跳过了整段发射——不补则思考丢失）
+    if !saw_sse_data {
+        let text = String::from_utf8_lossy(&raw_body);
+        let parsed: Value = serde_json::from_str(text.trim())
+            .map_err(|e| format!("llm_response_invalid:{e}"))?;
+        if parsed.get("error").is_some() {
+            let msg = parsed
+                .pointer("/error/message")
+                .and_then(|x| x.as_str())
+                .unwrap_or("unknown");
+            return Err(format!("llm_api_error:stream:{msg}"));
+        }
+        if let Some(r) = parsed
+            .pointer("/choices/0/message/reasoning_content")
+            .and_then(|x| x.as_str())
+        {
+            if !r.trim().is_empty() {
+                progress(json!({"type": "assistant_thinking", "text": r}));
+            }
+        }
+        return Ok(parsed);
+    }
+
+    let tool_calls: Vec<Value> = acc
+        .tc_names
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| !n.is_empty())
+        .map(|(i, n)| {
+            json!({
+                "id": acc.tc_ids[i],
+                "type": "function",
+                "function": {"name": n, "arguments": acc.tc_args[i]},
+            })
+        })
+        .collect();
+    Ok(json!({
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": acc.content,
+                "reasoning_content": acc.reasoning,
+                "tool_calls": tool_calls,
+            },
+            "finish_reason": if acc.finish_reason.is_empty() { "stop" } else { &acc.finish_reason },
+        }]
+    }))
+}
+
+
 /// LLM 调用 + 瞬时错误指数退避重试（6 发：1s/3s/8s/20s/45s）——
 /// 本机网络对部分端点存在间歇性 TLS/连接阻断，单发失败不代表性故障。
 /// 旧序列 [0,0.8s,2.5s,5s] 总跨度 ~8s，实测覆盖不了十几秒的抖动
@@ -1413,6 +1740,37 @@ async fn chat_once_with_retry_mode(
                 last = e;
                 if !is_transient_llm_error(&last) {
                     return Err(last); // 4xx 语义错误不重试
+                }
+            }
+        }
+    }
+    Err(last)
+}
+
+/// 流式版重试包装：与 chat_once_with_retry_mode 同序列，透传 progress
+/// 给 SSE 增量发射。已发出的增量在重试时会重复——前端按「直播行」处理，
+/// 重试后重新落行可接受（语义：上一轮中断，本轮重来）。
+async fn chat_once_with_retry_stream(
+    client: &reqwest::Client,
+    base: &str,
+    api_key: &str,
+    model: &str,
+    thinking: &str,
+    messages: &[Value],
+    mode: Option<&str>,
+    progress: &(dyn Fn(Value) + Send + Sync),
+) -> Result<Value, String> {
+    let mut last = String::new();
+    for wait in [0u64, 1000, 3000, 8000, 20000, 45000] {
+        if wait > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+        }
+        match chat_once_stream_mode(client, base, api_key, model, thinking, messages, mode, progress).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                last = e;
+                if !is_transient_llm_error(&last) {
+                    return Err(last);
                 }
             }
         }
@@ -1644,8 +2002,19 @@ pub async fn run_with_mode(
             }
         }
         // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
-        // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够
-        let resp = chat_once_with_retry_mode(&client, &base, api_key, model, thinking, &request_messages, mode).await;
+        // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够。
+        // 文档阶段 + OpenAI 协议走流式（thinking_delta/doc_delta 增量直播）；
+        // Anthropic 协议端点回退非流式（形状另行接入）。
+        let streamed_thinking = doc_mode && protocol_for(&base) == Protocol::OpenAi;
+        let resp = if streamed_thinking {
+            // 流式事件自带 type 字段，直接走底层 progress（emit 的双参包装不适用）
+            match progress {
+                Some(f) => chat_once_with_retry_stream(&client, &base, api_key, model, thinking, &request_messages, mode, f).await,
+                None => chat_once_with_retry_mode(&client, &base, api_key, model, thinking, &request_messages, mode).await,
+            }
+        } else {
+            chat_once_with_retry_mode(&client, &base, api_key, model, thinking, &request_messages, mode).await
+        };
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
@@ -1678,9 +2047,9 @@ pub async fn run_with_mode(
         let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
         // 文档阶段的思考过程进轨迹（reasoning_content=OpenAI 侧非标字段；reasoning=
         // OpenRouter 形状；Anthropic 侧已在 normalize 时归一为 reasoning_content）。
-        // 文档阶段是用户「阅读」的产物——思考与文字都要完整可见（2026-10-26 用户要求）。
-        // 建画布阶段刻意不发射：一步一思考会把 op 流淹没。
-        if doc_mode {
+        // 流式回合（thinking_delta 已直播）不再整段重发。建画布阶段刻意不发射：
+        // 一步一思考会把 op 流淹没。
+        if doc_mode && !streamed_thinking {
             let think = msg
                 .get("reasoning_content")
                 .and_then(|v| v.as_str())
@@ -2896,6 +3265,112 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             }
         });
         (port, handle, bodies)
+    }
+
+    /// SSE 流式 mock：每个 round 是**SSE data 载荷字符串数组**（原样包装成
+    /// `data: <行>\n\n` + 结尾 [DONE]），供流式传输测试精确控制增量切片
+    /// （包括转义序列中间切断）。
+    async fn spawn_mock_llm_sse(rounds: Vec<Vec<String>>) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut rounds = rounds.into_iter();
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else { break };
+                let mut raw = Vec::new();
+                let mut chunk = [0u8; 16384];
+                loop {
+                    match sock.read(&mut chunk).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            raw.extend_from_slice(&chunk[..n]);
+                            let s = String::from_utf8_lossy(&raw).into_owned();
+                            if s.contains("\r\n\r\n") {
+                                break; // POST：头读齐即应答（不校验 content-length）
+                            }
+                        }
+                    }
+                }
+                let payloads = rounds.next().unwrap_or_default();
+                let mut body = String::new();
+                for p in payloads {
+                    body.push_str(&format!("data: {p}\n\n"));
+                }
+                body.push_str("data: [DONE]\n\n");
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{body}"
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+        (port, handle)
+    }
+
+    /// 文档阶段流式端到端：thinking_delta / doc_delta 增量事件必须发出且
+    /// 拼接后与完整内容逐字一致——尤其 markdown 的 JSON 转义在**转义序列
+    /// 中间**被切片切断时（`# 标题\` | `n...`），提取器必须停住等下一片，
+    /// 不能把半个转义当正文漏出去。响应重组装形状与非流式一致（主循环零改动）。
+    #[tokio::test]
+    async fn doc_phase_streams_thinking_and_doc_deltas() {
+        // 完整 markdown（JSON 转义后）：# 标题\n\n第二段落
+        let md_plain = "# 标题\n\n第二段落";
+        // args 全串：{"kind": "prd", "markdown": "# 标题\n\n第二段落"}
+        // 切片 A 止于孤反斜杠（转义 \n 的前半），B 从 'n' 续——中途断escape
+        let frag_a = "{\"kind\": \"prd\", \"markdown\": \"# 标题\\";
+        let frag_b = "n\\n第二段落\"}";
+        let (port, mock) = spawn_mock_llm_sse(vec![vec![
+            serde_json::json!({"choices":[{"delta":{"role":"assistant"}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"reasoning_content":"先想五页结构。"}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"reasoning_content":"再写正文。"}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"tool_calls":[
+                {"index":0,"id":"c1","function":{"name":"write_doc","arguments":frag_a}}]}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"tool_calls":[
+                {"index":0,"function":{"arguments":frag_b}}]}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}).to_string(),
+        ]])
+        .await;
+        let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let ev2 = events.clone();
+        let progress = move |v: Value| ev2.lock().unwrap().push(v);
+        let out = run_with_mode(
+            &ENGINE, "写一份 PRD", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port}"), "auto", Some(&progress), 30, Some("prd"),
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(out["stopReason"], json!("done"));
+        assert_eq!(
+            out.pointer("/docs/prd").and_then(|v| v.as_str()),
+            Some(md_plain),
+            "重组装后的文档必须与非流式逐字一致: {out}"
+        );
+        let evs = events.lock().unwrap();
+        // 思考增量拼接 == 完整思考（且没有整段 assistant_thinking 重发）
+        let think: String = evs
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("thinking_delta"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(think, "先想五页结构。再写正文。", "{evs:?}");
+        assert!(
+            !evs.iter().any(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking")),
+            "流式回合不得再整段重发思考: {evs:?}"
+        );
+        // 文档增量拼接 == 完整 markdown（转义跨片不得漏半截）
+        let doc: String = evs
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("doc_delta"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(doc, md_plain, "doc_delta 拼接必须逐字一致: {evs:?}");
+        // doc_written 终态照发（前端以它收口）
+        assert!(
+            evs.iter().any(|v| v.get("type").and_then(|t| t.as_str()) == Some("doc_written")),
+            "doc_written 必须照发: {evs:?}"
+        );
+        drop(evs);
     }
 
     /// Anthropic 协议端到端（多轮 + 线上形态断言）：mock 返回 Messages 形态的

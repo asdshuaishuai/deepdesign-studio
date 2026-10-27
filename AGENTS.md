@@ -252,6 +252,9 @@ rules[] / notes` 与 `docs:{prd,ui}`（两份文档正文）。
   （澄清是建画布阶段的合法意图，文档阶段要的是交付物）。
 - `buildFromDocs` 前置必须 `syncPrdFromEditor()` 先把编辑器内容收回真源——用户改完 PRD
   直接点「生成原型」时，不收回就会用旧的 `studioDocs.prd`。
+- `buildFromDocs` 开始即 `setMode('wireframe')`（2026-10-27 用户要求）：生成原型的主秀是画布——
+  preview 帧边跑边把画板长出来，用户看着原型出现，而不是盯着文档覆盖层等跑完才见分晓。
+  右侧追踪照常可见（右栏与模式无关）。
 
 **DESIGN.md（第三栏「设计规范」）只是视觉规范，不是设计文档**——它约束配色/字号/间距/
 圆角/引擎规范，不描述页面内容（内容由第一栏的设计文档决定）。措辞上不要把它叫成"设计文档"。
@@ -308,7 +311,15 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
   → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`assistant_thinking`
   （**仅 doc 模式**发射的思考过程 reasoning_content/reasoning；Anthropic thinking 块在 normalize 时
   归一为 reasoning_content——建画布阶段刻意不发，一步一思考会淹没 op 流，mock 测试
-  `doc_phase_emits_assistant_thinking_events` 锚定双向）、`tool_start`/`tool_end`
+  `doc_phase_emits_assistant_thinking_events` 锚定双向）、**`thinking_delta`/`doc_delta`（仅 doc 模式
+  + OpenAI 协议的 SSE 流式增量，2026-10-27）**：文档阶段的思考与 write_doc 正文**边生成边推进**，
+  前端以直播行（`tl-think-live-<run>`/`tl-doc-live-<run>`，`traceLiveLine` 幂等创建）实时追加、
+  doc_delta 同时往 `studioDocs.prd` + PRD 编辑器实时落字（`liveDocRun` 归属门，doc_written/失败清零）；
+  传输层 `chat_once_stream_mode` 带三层兜底：网关 400 指名 stream → 退回非流式；响应体无任何
+  `data:` 行（网关忽略 stream:true）→ 整份 JSON 透传 + 按旧契约整段补发 assistant_thinking；
+  markdown 增量提取器遇不完整转义序列（跨片切断的 `\n`/`\uXXXX`）停住等下一片，
+  `doc_phase_streams_thinking_and_doc_deltas` 用转义中间切断的 SSE mock 锚定逐字一致性）、
+  `tool_start`/`tool_end`
   （op、✓/✗、耗时、门拒绝详情；write_doc 的 op 是整段 JSON，humanize 为「撰写文档」且 op 不进
   title 防 ✓ 行回显 JSON）、`doc_written`（kind/chars/md——md 全文以折叠行进轨迹，右侧时间线
   要能完整读到模型写出的每一句）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。

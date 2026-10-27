@@ -12,6 +12,9 @@ const py=fs.readFileSync(path.join(ROOT,'scripts','gen-i18n.py'),'utf8');
 
 /* ── 新增 UI 键（本次修复引入：确认框/文件过滤器/删除画板/相对时间/模板分组）── */
 const NEW_ENTRIES={
+  /* ── 文档阶段流式直播 ── */
+  '思考中…':['思考中…','생각 중…','Thinking…','Réflexion…'],
+  '撰写中…':['作成中…','작성 중…','Writing…','Rédaction…'],
   /* ── 文档阶段轨迹增强 ── */
   '撰写文档':['ドキュメントを作成','문서 작성','Write document','Rédiger le document'],
   /* ── 文档目录（doc 模式左栏）── */
