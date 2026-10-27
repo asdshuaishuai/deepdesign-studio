@@ -371,6 +371,12 @@
   "This document has unsaved changes (including source draft). Quit anyway?",
   "Ce document a des modifications non enregistrées (brouillon source inclus). Quitter ?"
  ],
+ "思考": [
+  "思考",
+  "생각",
+  "Thinking",
+  "Réflexion"
+ ],
  "思考中…": [
   "思考中…",
   "생각 중…",
@@ -707,11 +713,35 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
- "思考": [
-  "思考",
-  "생각",
-  "Thinking",
-  "Réflexion"
+ "演示未播放「{node}」的 {act}——演示支持：跳转/返回/提示/改文字/切状态": [
+  "「{node}」の {act} はデモ再生されません——デモ対応：遷移/戻る/通知/文字変更/状態切替",
+  "데모에서 {node}의 {act}은(는) 재생되지 않습니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환",
+  "Demo does not play {node}'s {act} — demo supports: navigate/back/toast/set text/toggle state",
+  "La démo ne lit pas {act} de {node} — démo gère : navigation/retour/toast/texte/bascule"
+ ],
+ "切换状态": [
+  "状態を切替",
+  "상태 전환",
+  "Toggle state",
+  "Basculer l'état"
+ ],
+ "改文字": [
+  "文字変更",
+  "텍스트 변경",
+  "Set text",
+  "Modifier le texte"
+ ],
+ "跳转": [
+  "遷移",
+  "이동",
+  "Navigate",
+  "Naviguer"
+ ],
+ "提示": [
+  "通知",
+  "알림",
+  "Toast",
+  "Notification"
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",
