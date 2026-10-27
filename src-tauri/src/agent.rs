@@ -1388,8 +1388,11 @@ fn is_transient_llm_error(e: &str) -> bool {
         || e.contains("overloaded")
 }
 
-/// LLM 调用 + 瞬时错误指数退避重试（3 次：0.8s/2.5s/5s）——
-/// 本机网络对部分端点存在间歇性 TLS/连接阻断，单发失败不代表性故障
+/// LLM 调用 + 瞬时错误指数退避重试（6 发：1s/3s/8s/20s/45s）——
+/// 本机网络对部分端点存在间歇性 TLS/连接阻断，单发失败不代表性故障。
+/// 旧序列 [0,0.8s,2.5s,5s] 总跨度 ~8s，实测覆盖不了十几秒的抖动
+/// （studio_e2e 阶段2 四发全落坑，端点本身 50ms 可达）；指数拉长后
+/// 兜住分钟级抖动，对长生成（每发 180s 超时）总代价不变。
 async fn chat_once_with_retry_mode(
     client: &reqwest::Client,
     base: &str,
@@ -1400,7 +1403,7 @@ async fn chat_once_with_retry_mode(
     mode: Option<&str>,
 ) -> Result<Value, String> {
     let mut last = String::new();
-    for wait in [0u64, 800, 2500, 5000] {
+    for wait in [0u64, 1000, 3000, 8000, 20000, 45000] {
         if wait > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
         }
