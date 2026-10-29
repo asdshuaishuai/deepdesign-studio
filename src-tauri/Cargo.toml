@@ -1,7 +1,10 @@
 [package]
 name = "deepdesign-studio"
-version = "0.4.2-fix"
+version = "0.5.0"
 edition = "2021"
+license = "MIT"
+description = "AI-native prototype design studio desktop client (Tauri 2), powered by the MoonViz engine"
+repository = "https://github.com/asdshuaishuai/deepdesign-studio"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
@@ -23,7 +26,9 @@ zeroize = "1.8"
 # 家族等非标字段再发送；响应侧保持 raw Value（SDK 自家 issue #498/#503：严格响应枚举
 # 在兼容网关上会碎，reasoning_content 等非标字段过 typed 往返会丢）。byot/full-client
 # 路线已评估并拒绝：byot 只是把任意 Value 发出去（零类型收益）且引入 SDK 的 HTTP 栈。
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+# 文档阶段 SSE 流式（增量推送思考/文档正文）只用 StreamExt；关 default features 避免重复运行时栈
+futures-util = { version = "0.3", default-features = false }
 tokio = { version = "1", features = ["time", "net", "sync"] }
 wasmtime = "49.0.0"
 async-openai = { version = "0.42.0", default-features = false, features = ["chat-completion-types"] }

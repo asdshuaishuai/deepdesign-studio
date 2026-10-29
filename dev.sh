@@ -29,12 +29,16 @@ fi
 echo "→ 引擎产物：frontend/vendor/moonviz.wasm（WebView 内进程执行）"
 
 # --fresh 或检测到旧进程：清理
+# 注意区分「缓存」与「用户数据」：WKWebView 的 HTTP 缓存可以安全清掉，
+# 但 localStorage（AI 端点与 API Key、最近项目、语言/主题偏好）在同一个
+# WebKit 数据目录下——整目录 rm -rf 会把用户配置一起抹掉（2026-10-26 实测踩到）。
+# 因此这里只清 Caches（真缓存），WebKit 目录交给窗口内的 ?v= 时间戳重载兜底：
+# lib.rs 已对前端 URL 拼 ?v=<timestamp>，强制绕过 WKWebView 的 HTML 缓存。
 if [ "${1:-}" = "--fresh" ] || pgrep -f "deepDesign Studio" >/dev/null 2>&1 || pgrep -f "tauri dev" >/dev/null 2>&1; then
-  echo "→ 清理旧进程与 WebView 缓存…"
+  echo "→ 清理旧进程与缓存（保留 localStorage：AI 配置/最近项目）…"
   pkill -f "deepDesign Studio" 2>/dev/null || true
   pkill -f "tauri dev" >/dev/null 2>&1 || true
   sleep 0.5
-  rm -rf "$HOME/Library/WebKit/com.deepcode.deepdesign" 2>/dev/null || true
   rm -rf "$HOME/Library/Caches/com.deepcode.deepdesign" 2>/dev/null || true
 fi
 

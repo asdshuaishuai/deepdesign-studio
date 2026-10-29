@@ -12,6 +12,25 @@ const py=fs.readFileSync(path.join(ROOT,'scripts','gen-i18n.py'),'utf8');
 
 /* ── 新增 UI 键（本次修复引入：确认框/文件过滤器/删除画板/相对时间/模板分组）── */
 const NEW_ENTRIES={
+  /* ── v0.5.0 更新日志（关于页；条目经 L() 出生即译）── */
+  '设计文档流式生成：思考与正文边生成边排版，目录实时生长，Markdown 源码默认隐藏':['設計ドキュメントのストリーミング生成：思考と本文が即時排版され、目次もリアルタイム成長、Markdown ソースは既定で非表示','설계 문서 스트리밍 생성: 생각과 본문이 실시간 조판, 목차 실시간 성장, Markdown 소스 기본 숨김','Streaming design-doc generation: thinking and body render as they arrive, outline grows live, markdown hidden by default',"Génération en flux du document : pensée et corps mis en page en direct, plan en croissance, source Markdown masquée"],
+  '一句话同步产出设计文档 + UI 说明；生成原型后自动抽取设计规范（DESIGN.md）':['一句话で設計ドキュメント+UI仕様を同時生成；プロトタイプ生成後にデザイン仕様（DESIGN.md）を自動抽出','한 문장으로 설계 문서+UI 명세 동시 생성; 프로토타입 생성 후 디자인 사양(DESIGN.md) 자동 추출','One line yields design doc + UI spec together; DESIGN.md auto-extracted after prototyping',"Une phrase produit document + spécification UI ; DESIGN.md extrait après prototypage"],
+  '文档模式左栏改为文档目录（点击定位、滚动高亮）；生成原型时画布实时同步':['ドキュメントモードの左パネルが目次に（クリック移動・スクロール連動ハイライト）；プロトタイプ生成中はキャンバスがリアルタイム同期','문서 모드 왼쪽 패널이 목차로(클릭 이동, 스크롤 하이라이트); 프로토타입 생성 중 캔버스 실시간 동기화','Doc mode left rail becomes a document outline (click-to-scroll, scrollspy); canvas syncs live during builds','Le panneau gauche devient un plan du document (clic-scroll, surlignage) ; canevas synchronisé en direct'],
+  'Agent 轨迹全量直播：全模式思考流式展示、完成后自动收缩；终态卡时序修复':['Agent 軌跡の完全ライブ配信：全モードで思考をストリーミング表示、完了後に自動収縮；終端カードの順序を修正','Agent轨迹 전체 라이브: 모든 모드에서思考 스트리밍, 완료 후 자동 축소; 종료 카드 순서 수정','Full live agent trace: streaming thinking in all modes, auto-collapsed when done; final-card ordering fixed',"Trace agent en direct : réflexion en flux dans tous les modes, repliée après ; ordre des cartes corrigé"],
+  '引擎升级 0.1.10：genUI 建页第一层锚定，组合意图丢段可见（skipped）、变体错误即文档':['エンジン 0.1.10：genUI 第一層を固定、結合意図の欠落セグメント可視化（skipped）、バリアントエラーが文書化','엔진 0.1.10: genUI 1계층 고정, 복합 의도 누락 세그먼트 가시화(skipped), 변형 오류 문서화','Engine 0.1.10: genUI first-tier pinned, dropped combined-intent segments visible (skipped), variant errors as documentation','Moteur 0.1.10 : genUI premier niveau épinglé, segments perdus visibles (skipped), erreurs de variante documentées'],
+  /* ── 演示模式：未实现交互统一口径（2026-10-27 用户定名）── */
+  '「{node}」是未实现交互——演示支持：跳转/返回/提示/改文字/切状态':['「{node}」は未実装のインタラクションです——デモ対応：遷移/戻る/通知/文字変更/状態切替','「{node}」은(는) 미구현 인터랙션입니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환','{node} has an unimplemented interaction — demo supports: navigate/back/toast/set text/toggle state','{node} a une interaction non implémentée — démo gère : navigation/retour/toast/texte/bascule'],
+  /* ── 文档阶段流式直播 ── */
+  '思考中…':['思考中…','생각 중…','Thinking…','Réflexion…'],
+  '思考':['思考','생각','Thinking','Réflexion'],
+  '撰写中…':['作成中…','작성 중…','Writing…','Rédaction…'],
+  /* ── 文档阶段轨迹增强 ── */
+  '撰写文档':['ドキュメントを作成','문서 작성','Write document','Rédiger le document'],
+  /* ── 文档目录（doc 模式左栏）── */
+  '文档目录':['文書目次','문서 목차','Document Outline','Plan du document'],
+  '设计文档为空——写入内容后，这里会显示章节目录':['設計ドキュメントが空です。内容を書くとここに目次が表示されます','설계 문서가 비어 있습니다. 내용을 작성하면 여기에 목차가 표시됩니다','The design document is empty — write something and its outline will appear here',"Le document de conception est vide — écrivez du contenu et son plan apparaîtra ici"],
+  '本文档没有 Markdown 标题（#/##/###），无法生成目录':['Markdown 見出し（#/##/###）がないため目次を生成できません','Markdown 제목(#/##/###)이 없어 목차를 만들 수 없습니다','No Markdown headings (#/##/###) in this document — no outline available','Aucun titre Markdown (#/##/###) dans ce document — plan indisponible'],
+  '设计规范暂无内容——保存或「从引擎抽取」后按顶层键导航':['デザイン仕様はまだ空です。保存または抽出するとトップレベルキーで移動できます','디자인 사양이 비어 있습니다. 저장 또는 추출 후 최상위 키로 이동합니다','Design spec is empty — save or extract to navigate by top-level keys',"La spécification de design est vide — enregistrez ou extrayez pour naviguer par clés de premier niveau"],
   '未保存的更改':['変更未保存','저장되지 않은 변경','Unsaved Changes','Modifications non enregistrées'],
   '当前文档有未保存的更改（含源码草稿），确定退出吗？':['未保存の変更（ソース草案を含む）があります。終了しますか？','저장되지 않은 변경(소스 초안 포함)이 있습니다. 종료할까요?','This document has unsaved changes (including source draft). Quit anyway?','Ce document a des modifications non enregistrées (brouillon source inclus). Quitter ?'],
   '当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。':['未保存の変更（ソース草案を含む）があります。新しいファイルを開くと破棄されます。','저장되지 않은 변경(소스 초안 포함)이 있습니다. 새 파일을 열면 버려집니다.','This document has unsaved changes (including source draft). Opening a new file will discard them.','Ce document a des modifications non enregistrées (brouillon source inclus). Ouvrir un autre fichier les ignorera.'],

@@ -85,6 +85,20 @@ const ARITY = {
 const SESSION_WHOLE_ARG = new Set([
   'session_apply_agent', 'session_apply_human', 'session_component_compile_b64',
 ]);
+// session_generate 特例：wasm 导出签名是 (handle, intent, name)。宿主收到的 op
+// 与生产宿主（wasmtime_host.rs）同形——带动词前缀 `<generate> <intent> [as <name>]`，
+// 必须同样剥动词 + rsplit(" as ")，否则 "generate" 会被当意图、"登录页" 被当名字
+// （调试工具给出与生产不同的答案：意图无关键词命中 → 永远兜底 empty_state）。
+function generateArgs(op) {
+  let rest = String(op ?? '').trim();
+  if (rest === 'generate' || rest.startsWith('generate ')) rest = rest.slice('generate'.length).trim();
+  const i = rest.lastIndexOf(' as ');
+  if (i > 0) {
+    const name = rest.slice(i + 4).trim();
+    if (name && !name.includes(' ')) return [writeStr(rest.slice(0, i).trim()), writeStr(name)];
+  }
+  return [writeStr(rest), writeStr('')];
+}
 // 变更类导出（信封回传 canonical）：成功后缓存键前移到新 canonical
 // 变更类导出（成功信封回传 canonical：缓存键前移）。0.1.6-fix/#19 起**全部**
 // 改文档面（apply 双门/auto_fix/constrain/tap/generate_responsive/component_compile）
@@ -93,6 +107,8 @@ const SESSION_MUTATING = new Set([
   'session_apply_agent', 'session_apply_human', 'session_auto_fix',
   'session_constrain', 'session_tap', 'session_generate_responsive',
   'session_component_compile_b64',
+  // 生成式 UI：意图 → 模板实例化 → 自愈，必然改文档（漏了会让缓存键停在旧 canonical）
+  'session_generate',
 ]);
 // （SESSION_EVICT 已随 0.1.6-fix/#19 移除：此前 auto_fix/constrain 改文档但信封
 // 不回传 canonical，只能弃缓存防脏键；信封补齐后统一走上方键前移。）
@@ -185,6 +201,8 @@ function handle(req) {
       let args;
       if (fn === 'session_tap') {
         args = [writeStr(parts[0]), Number(parts[1]), Number(parts[2])];
+      } else if (fn === 'session_generate') {
+        args = generateArgs(op);
       } else {
         args = SESSION_WHOLE_ARG.has(fn)
           ? [writeStr(op)]

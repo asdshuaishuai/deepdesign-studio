@@ -30,10 +30,10 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dst = join(root, 'frontend', 'vendor');
 
 // —— 引擎版本锚点（升级 = 改这里 + 重跑本脚本 + cd src-tauri && cargo test）——
-const ENGINE_VERSION = '0.1.9';
+const ENGINE_VERSION = '0.1.10';
 const RELEASE_TAG = `engine-v${ENGINE_VERSION}`;
 // 资产名里的 wasm 版本（0.1.2 起与 release tag 同步；此前 tag 带后缀、资产沿用短版号）
-const WASM_ARTIFACT_VERSION = '0.1.9';
+const WASM_ARTIFACT_VERSION = '0.1.10';
 // 资产文件名（标准 classic wasm；变体叫 moonviz-wasm-gc-*，本仓库不用）
 const WASM_ASSET = `moonviz-wasm-classic-${WASM_ARTIFACT_VERSION}.wasm`;
 // 标准 wasm SDK：GitHub Releases 的 WasmGC 直链 .wasm（非 tarball）
@@ -42,7 +42,7 @@ const WASM_URL =
   `https://github.com/asdshuaishuai/moonviz/releases/download/${RELEASE_TAG}/${WASM_ASSET}`;
 // 下载的 .wasm 文件整体 sha512（npm 无此产物；校验值取自 release 资产）
 const WASM_SHA512 =
-  'sha512-7NuGA2AV2Rotj3QlZBeGeaax0N9uJSU2xBiH1OYflo6DVQIFqCZx77xQUBa3S10sSPc7bgoMHiMdq3wpl8tgRA==';
+  'sha512-+UodtKz+UPHzJVdJecSgmeGv+Tgk0e9NhhHMREQKV5sF9VvGJv5EKu50oBYQ91UJJmAJd1mGnlk8L733M6B21g==';
 
 const REQUIRED_EXPORTS = [
   'apply_human_op', 'apply_agent_op', 'render_mbt', 'validate_mbt',
@@ -62,13 +62,15 @@ const IN_FACE_EXPORTS = [
   'session_generate_responsive_in', 'session_infer_missing_in', 'session_infer_page_type_in',
   'session_interactions_in', 'session_lint_in', 'session_open_project_json_in',
   'session_query_nodes_in', 'session_spec_in', 'session_states_in', 'session_tap_in',
-  'session_history_in',
+  'session_history_in', 'session_generate_in',
 ];
 
-// session API（26 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
+// session API（28 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
 // 导出 SVG/交互运行时等）。agent.rs 的只读 op 路由依赖这组导出。
 // session_count（泄漏可测）与 session_open_project_json（save→open 回灌）
 // 是 engine-v0.1.1-session 新增（上游 issues #1/#4B）。
+// session_generate（生成式 UI：确定性意图→模板→自愈→评分）是引擎 dev 线新增，
+// 宿主经 op 串 `generate <intent>` 或直调导出两条路径都可达。
 const SESSION_EXPORTS = [
   'session_open', 'session_close', 'session_apply_agent', 'session_apply_human',
   'session_export_svg', 'session_lint', 'session_critique', 'session_auto_fix',
@@ -77,7 +79,7 @@ const SESSION_EXPORTS = [
   'session_infer_missing', 'session_extract_design_system', 'session_generate_responsive',
   'session_benchmark', 'session_save', 'session_component_compile_b64',
   'session_library_snapshot', 'session_tap', 'session_count', 'session_open_project_json',
-  'session_history',
+  'session_history', 'session_generate',
 ];
 
 // 组件描述词典（本地展示文案，前端面板 tooltip 与 agent list_components 共用）。

@@ -1,4 +1,14 @@
-# 1.0 规划：deepDesign Agent CLI + MCP 出口
+# 1.0 规划：deepDesign Agent CLI + MCP 出口（**已作废**）
+
+> ⚠️ **本规划已作废（2026-10-19 用户决策），仅作历史背景保留，勿据此施工。**
+>
+> 作废理由：引擎（MoonViz）已承担绝大多数核心设计能力，并把 **CLI（74 命令）/
+> MCP（55 工具）/ 标准 wasm / Node SDK** 四类出口全部收归自身——外部 Agent 直接走
+> 引擎出口即可驱动设计，不需要 deepDesign 再包一层专属出口。deepDesign 因此正式
+> **退役为壳**：只做桌面体验，不再单独拆分 `deepdesign-core`、不再自建 CLI/MCP。
+> 引擎路线图与出口清单见引擎仓库 `ROADMAP.md` / `SKILL.md`。
+>
+> 下文（含 core 拆分计划）为 2026-09-29 的历史方案，保留用于理解演进过程。
 
 > 状态：**仅规划，未实施**。目标版本：1.0（dev 分支跟进）。
 > 一句话：把 deepDesign 内部的 Agent 能力（agent.rs 循环 + 引擎双门 + DDP 容器）抽象成

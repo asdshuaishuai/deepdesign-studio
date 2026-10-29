@@ -1,0 +1,11 @@
+---
+name: 配置
+about: 配置 issue 模板选择器
+blank_issues_enabled: true
+contact_links:
+  - name: 引擎仓库（moonviz）
+    url: https://github.com/asdshuaishuai/moonviz/issues
+    about: 渲染/布局/规范/交互语义等引擎层问题请提到引擎仓库
+  - name: 安全漏洞（私下报告）
+    url: https://github.com/asdshuaishuai/deepdesign-studio/security/advisories/new
+    about: 请勿用公开 issue 报告安全漏洞，见 SECURITY.md

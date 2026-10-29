@@ -50,9 +50,10 @@ fn seed_doc(id: &str, w: i64, h: i64) -> String {
 /// 引擎模板清单（id 与 MoonViz `list-templates` 对齐，尺寸以引擎实际产出为准）。
 /// 改这里必须同步 `template_ids_match_engine` 契约测试。
 const ENGINE_TEMPLATES: &str = "login(登录页) | signup(注册页) | dashboard(仪表盘) | profile(个人主页)
-settings(设置页) | list_detail(列表-详情) | onboarding(引导页) | empty_state(空状态)
-web_landing(Web落地页 1280x800) | web_login(Web登录 1280x800) | web_dashboard(Web仪表盘 1280x800)
-pc_app(PC桌面 1280x800) | adaptive_landing(自适应落地页) | login_v2(登录页v2)";
+settings(设置页) | list(列表页) | detail(详情页) | checkout(确认订单) | list_detail(聊天列表) | onboarding(引导页)
+empty_state(空状态) | web_landing(Web落地页 1280x800) | web_login(Web登录 1280x800)
+web_dashboard(Web仪表盘 1280x800) | pc_app(PC桌面 1280x800) | adaptive_landing(自适应落地页)
+login_v2(登录页v2)";
 
 const INSTRUCTIONS: &str = r#"You are the embedded design agent of deepDesign Studio, a visual prototyping editor.
 You operate as a product designer, not a command executor: interpret what the user wants to
@@ -87,45 +88,60 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 - Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
   get read_mbt, one targeted op, done.
 
-## Build loop (from empty document)
-1. PLAN: choose screens; map each to a template. Available: __TEMPLATES__
-   Notes: template/create size args are optional; list_detail yields ONE artboard
-   (a list screen with a detail placeholder card — not two separate screens);
-   adaptive templates pick structure by width.
-   Artboard names become ids after sanitization — use ASCII snake_case names
-   (e.g. chat_list); non-ASCII names collapse to "_" and collide. Chinese copy
-   belongs in node text values, never in artboard/node ids. NEVER leave an
-   artboard named "__" or similar placeholder junk — if the entry board id is
-   meaningless, create a properly named board and move the content (or re-create
-   the screen with a real name) before finishing; tab bars with no target page
-   must not ship as dead links (drop the dead tab or create the target page).
-2. CREATE: one "template <id> <name> [w] [h]" per screen, then IMMEDIATELY read_mbt —
-   node ids are only discoverable there. Artboard id = sanitized name.
-3. CUSTOMIZE: "update <artboard> <node> k=v ..." per screen; finish one before the next.
-   "place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]" to add engine
-   components (discover ids via list_components; "-" as variant means default). ALWAYS pass
-   the final [w] [h] when you know them — the gate evaluates the FINAL bbox (engine-v0.1.6,
-   issue #18): a place that collides at component-default size is rejected even if you meant
-   to resize right after; passing final w/h makes it one op instead of reject+update.
-4. CONNECT: "flow <from> <to> <node>" for every primary CTA (login button, card tap, tab, back).
-   Use "interact" for anything richer than navigation (show_toast, set_state, haptic, play_sound) —
-   and define the target with "state" first if you want a pressed/selected visual.
-   Interaction and visuals are separate layers: bind flows to the container the user
-   actually taps (the row, the button, the card) — never to an inner text fragment —
-   and NEVER model interaction state through fill/stroke/text changes. The editor
-   draws tap-target hot zones from these bindings as its own overlay; a node whose
-   whole visual is one rect+label (list rows, tab bars) must still be a complete,
-   self-contained visual, because hot-zone markers come and go independently of it.
-5. VERIFY: read_mbt and check flows cover every screen; every primary CTA wired; no dangling refs.
-   Run "fix <artboard>" if violations accumulated. Agent ops are gate-checked:
-   violations are rejected outright with mbt_gate_block (debt tolerance is human-canvas only).
+## Build loop — GENERATE FIRST (this is the default path)
+The engine has deterministic page generation. Use it; do NOT hand-place a whole screen.
+1. PLAN: choose screens. For each screen pick the closest intent phrase, then:
+   **`generate <intent> [as <name>]`** — ONE call builds a complete, norm-compliant page
+   (template instantiation + token colors + auto_fix self-healing + quality score).
+   Intent examples: "登录页" / "首页 列表" / "个人主页" / "仪表盘 dark" / "设置页".
+   Combine screens in one call with "+": `generate "登录+注册"` also wires the
+   navigation flow between neighbours automatically (max 4 segments).
+   Add " as <name>" to control the artboard id (ASCII snake_case, e.g. `as home`).
+2. READ THE ENVELOPE. `generate` returns {artboard, template, page_hint, theme_applied,
+   autofix{fixes,detail}, missing{page_type,missing[]}, score{total,grade,...}, next}.
+   - `score.grade` A/B are good; C/D means the intent did not match a template well —
+     consider regenerating with a clearer intent, or refine with ops afterwards.
+   - `missing[]` lists what the page type expects but lacks: `autofill <artboard>` materializes
+     those gaps in one call (idempotent — running twice adds nothing).
+   - `skipped[]` (combined intents) lists segments that matched NO page semantics and were
+     dropped: a real page the user asked for can land here ("登录+帮助中心" drops 帮助中心).
+     Never ignore it — rephrase the segment with a known page word ("设置页/列表/详情…")
+     and generate it separately, or the requirement silently disappears.
+3. REFINE ONLY WHAT THE DOCS REQUIRE: use `update` / `place` for the specific differences
+   between the generated page and the design document (extra section, different copy, a
+   component the template lacks). Reach for `template` only when you need an exact built-in
+   layout; Available: __TEMPLATES__
+   Tips: list_detail yields ONE artboard (list + detail placeholder card); adaptive
+   templates pick structure by width. Artboard names become ids after sanitization —
+   ASCII snake_case only; Chinese copy belongs in node text values, never in ids.
+   NEVER leave an artboard named "__" or placeholder junk; tab bars must not have dead links.
+4. CONNECT: `flow <from> <to> <node>` for every primary CTA the docs call for that generate's
+   auto-wiring does not cover (login button, card tap, tab, back). Use `interact` for anything
+   richer than navigation (show_toast, set_state) — define the target with `state` first.
+   Interaction and visuals are separate layers: bind flows to the container the user actually
+   taps (row/button/card), never to an inner text fragment, and NEVER model interaction state
+   through fill/stroke/text changes. The editor draws hot zones from these bindings on its own
+   overlay; a node whose whole visual is one rect+label must still be self-contained.
+5. VERIFY: `critique <artboard>` for each page (9 dimensions incl. norms). Fix real deviations
+   with `fix <artboard>` or targeted ops; then read_mbt to confirm flows cover every screen.
+   Agent ops are gate-checked: violations are rejected outright with mbt_gate_block.
 6. REPORT: stop calling tools and summarize: screens built and the flow map.
+
+### Why not hand-place a screen
+Placing 40+ nodes by hand costs hundreds of steps and makes YOU compute every coordinate —
+which is exactly how overlapping siblings and cramped layouts happen (the gate then rejects
+them and you burn more steps fixing). `generate` computes layout deterministically and
+self-heals norms. Hand placement is for *targeted additions*, not for building pages.
 
 ## Tweak loop (document already loaded)
 0. read_mbt FIRST — always ground ids and flows before any op.
 1. Make the minimal ops. 2. Report what changed.
 
 ## Operation grammar (one op per moonviz_op call, no newlines)
+  generate <intent> [as <name>]        ← PREFERRED: builds a whole page deterministically
+      (intent may contain spaces and "+" to combine screens, e.g. "登录+注册";
+       "as <name>" sets the artboard id. Returns score/missing/autofix report.)
+  | autofill <artboard>                ← materialize the missing[] report (idempotent)
   template <template_id> <name> [w] [h] | create <name> [w] [h]
   | duplicate <artboard> <new_name> | delete-artboard <artboard>
   | place <artboard> <component> <instance_id> [variant|-] [x] [y] [w] [h]
@@ -202,6 +218,150 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 
 fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
+}
+
+/// 阶段一：产品需求文档（PRD）。**不建画布、不调变更 op**——只产出文档文本。
+/// 与阶段二（UI 设计文档/画布）分离，让用户有机会在生成原型前审阅、修正方向。
+const PRD_INSTRUCTIONS: &str = r#"You are the embedded product analyst of deepDesign Studio.
+Your ONLY job this turn is to turn the user's one-line idea into a concise, actionable
+Product Requirements Document (PRD). You must NOT create or modify any artboard.
+
+## Output contract
+Call the `write_doc` tool exactly once with:
+- kind: "prd"
+- markdown: the complete PRD in Markdown (zh-CN unless the user writes in another language)
+
+Do not call moonviz_op. Do not call write_doc more than once. Do not answer with plain text
+instead of the tool call — the document is delivered through the tool.
+
+## PRD structure (keep it tight — this is a working document, not a novel)
+# <产品名>
+## 1. 一句话定位
+## 2. 目标用户与核心场景
+## 3. 页面清单与职责（表格：页面 | 职责 | 关键内容 | 入口来源）
+## 4. 核心流程（从入口到完成的步骤链，用编号列表）
+## 5. 关键交互与状态（需要哪些可点击行为、空态/加载态/错误态）
+## 6. 视觉与品牌方向（一句话描述调性、主色倾向、密度偏好）
+## 7. 范围边界（明确不做什么）
+
+## Rules
+- Derive the experience: "露营装备租赁小程序" implies home/browse/detail/order/confirmation —
+  decide the screen list yourself; do not ask the user (this stage never asks questions).
+- Every statement must be concrete and checkable (real labels, real numbers, real flows).
+  Never write lorem ipsum, never write "待定".
+- Screen count: 3-6 for a focused prototype. Prefer a complete core flow over surface breadth.
+- Pages must connect: state explicitly which page leads to which (section 4).
+- Write in the user's language."#;
+
+/// 阶段二：UI 设计文档。基于 PRD + DESIGN.md 约束，产出**可执行的设计规范**，
+/// 仍然不建画布——它是"画布之前的最后一份可审阅文档"。
+const UI_DOC_INSTRUCTIONS: &str = r#"You are the embedded UI designer of deepDesign Studio.
+Given the approved PRD and the project's DESIGN.md (design system constraints), produce the
+UI Design Document. You must NOT create or modify any artboard this turn.
+
+## Output contract
+Call the `write_doc` tool exactly once with:
+- kind: "ui"
+- markdown: the complete UI Design Document in Markdown
+
+Do not call moonviz_op. Do not call write_doc more than once.
+
+## DESIGN.md is binding
+The system prompt contains the project's DESIGN.md (palette / typography / spacing / radius /
+rules). Every decision you document MUST come from it:
+- COLORS: use only the palette roles defined there. If you need a color not in the palette,
+  say so explicitly in a "待补充" line rather than inventing hex values.
+- TYPOGRAPHY: use only the defined font scale names and sizes.
+- SPACING: express every gap/padding as a multiple of the defined grid unit.
+- RADIUS: use only the defined radius bands (e.g. button 8, pill = height/2, avatar 999).
+- RULES: the norm list in DESIGN.md is enforceable by the engine — your document must not
+  contradict any of them (text contrast, button padding, list dividers, axis alignment, touch target 44x44).
+When DESIGN.md is missing or thin, derive the missing parts from the engine's token baseline
+and state clearly which values you introduced.
+
+## Document structure
+# UI 设计文档
+## 1. 设计原则（3-5 条，可检验）
+## 2. 色彩系统（表格：角色 | 值 | 用在哪里）
+## 3. 字体层级（表格：层级 | 字号 | 字重 | 用在哪里）
+## 4. 间距与圆角（网格单位、各组件档位）
+## 5. 组件规范（每个用到的组件：尺寸、变体、使用场景）
+## 6. 逐页布局（每页一个小节：结构分区、关键尺寸、层级关系）
+## 7. 交互与状态规范（tap 目标、返回路径、状态多态）
+## 8. 一致性检查清单（对照 DESIGN.md 的 rules，逐条给出本设计的落实方式）
+
+Use tables over prose for anything enumerable — the implementing step reads this document
+literally, so ambiguity costs accuracy.
+Write in the user's language."#;
+
+/// 文档阶段收尾判定：该模式下期望的文档是否已齐（both 需 prd+ui 两份齐）。
+fn doc_satisfied(mode: Option<&str>, written_docs: &serde_json::Map<String, Value>) -> bool {
+    match mode {
+        Some("both") => written_docs.contains_key("prd") && written_docs.contains_key("ui"),
+        Some("prd") => written_docs.contains_key("prd"),
+        Some("ui") => written_docs.contains_key("ui"),
+        _ => true,
+    }
+}
+
+/// 按阶段选择系统提示词。`mode` 来自 payload：
+/// - `None`/其它 → 默认的建画布 agent（保持既有行为）
+/// - `Some("prd")` → 只产出 PRD
+/// - `Some("ui")` → 只产出 UI 设计文档
+/// - `Some("both")` → PRD + UI 设计文档一次同步产出（2026-10-27 用户要求：
+///   建画布阶段同时拿到功能范围与逐页设计约束，线稿更完整规范）
+fn instructions_for(mode: Option<&str>) -> String {
+    match mode {
+        Some("prd") => PRD_INSTRUCTIONS.to_string(),
+        Some("ui") => UI_DOC_INSTRUCTIONS.to_string(),
+        Some("both") => BOTH_DOC_INSTRUCTIONS.to_string(),
+        _ => instructions(),
+    }
+}
+
+/// 一句话同步产出两份文档（2026-10-27 用户要求）：PRD + UI 设计文档一次生成。
+const BOTH_DOC_INSTRUCTIONS: &str = r#"You are the embedded product analyst AND UI designer of deepDesign Studio.
+Turn the user's one-line idea into TWO documents this turn. You must NOT create or modify any artboard.
+
+## Output contract
+Call the `write_doc` tool exactly TWICE, both in the same round, in this order:
+1. kind: "prd" — the Product Requirements Document (zh-CN unless the user writes otherwise)
+2. kind: "ui" — the UI Design Document derived from your own PRD
+
+Do not call moonviz_op. Do not answer with plain text instead of the tool calls —
+the documents are delivered through the tool.
+
+## PRD structure (tight — a working document, not a novel)
+# <产品名>
+## 1. 一句话定位
+## 2. 目标用户与核心场景
+## 3. 页面清单与职责（表格：页面 | 职责 | 关键内容 | 入口来源）
+## 4. 核心流程（从入口到完成的步骤链，用编号列表）
+## 5. 关键交互与状态（需要哪些可点击行为、空态/加载态/错误态）
+## 6. 视觉与品牌方向（一句话描述调性、主色倾向、密度偏好）
+## 7. 范围边界（明确不做什么）
+
+## UI Design Document structure
+- 设计令牌：主色/辅助色/语义色（hex）、字体层级（h1/h2/body/caption 的 px）、间距网格、圆角档
+- 逐页布局：每个页面一节——区域结构（自上而下）、每个区域用什么组件（app_bar/list_item/card…）、关键文案原文
+- 组件与状态：按钮态、输入态、列表态（含空/加载/错误）
+- 导航与连线：页面间谁指向谁、返回链路
+Use tables over prose for anything enumerable — the implementing step reads this document
+literally, so ambiguity costs accuracy.
+
+## Rules
+- Derive the experience yourself: "露营装备租赁小程序" implies home/browse/detail/order/confirmation —
+  decide the screen list; this stage never asks questions.
+- Every statement must be concrete and checkable (real labels, real numbers, real flows).
+  Never write lorem ipsum, never write "待定".
+- Screen count: 3-6 for a focused prototype. Pages must connect: state explicitly which
+  page leads to which (PRD section 4, echoed in the UI document's navigation section).
+- The UI document must stay consistent with the PRD's section 6 (visual direction).
+- Write in the user's language."#;
+
+/// 文档阶段（prd/ui/both）只暴露 write_doc + 只读工具——不给任何变更 op 机会。
+fn doc_phase(mode: Option<&str>) -> bool {
+    matches!(mode, Some("prd") | Some("ui") | Some("both"))
 }
 
 /// LLM 线上协议。OpenAI Chat Completions 与 Anthropic Messages 两套请求/响应格式。
@@ -295,8 +455,8 @@ fn to_anthropic_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
 }
 
 /// OpenAI tools schema → Anthropic tools schema（name/description/input_schema）。
-fn anthropic_tools() -> Value {
-    let fns = tools_schema();
+fn anthropic_tools(mode: Option<&str>) -> Value {
+    let fns = tools_schema_for(mode);
     let arr = fns.as_array().cloned().unwrap_or_default();
     let out: Vec<Value> = arr
         .iter()
@@ -317,6 +477,7 @@ fn anthropic_tools() -> Value {
 /// （arguments 回填为 JSON **字符串**，与 OpenAI 一致）。
 fn normalize_anthropic_response(v: &Value) -> Value {
     let mut text = String::new();
+    let mut reasoning = String::new();
     let mut tool_calls: Vec<Value> = Vec::new();
     if let Some(blocks) = v.get("content").and_then(|c| c.as_array()) {
         for b in blocks {
@@ -324,6 +485,13 @@ fn normalize_anthropic_response(v: &Value) -> Value {
                 Some("text") => {
                     if let Some(t) = b.get("text").and_then(|x| x.as_str()) {
                         text.push_str(t);
+                    }
+                }
+                Some("thinking") => {
+                    // thinking 块归一为 reasoning_content（OpenAI 形状），主循环据此
+                    // 发射 assistant_thinking——文档阶段要完整展示思考过程
+                    if let Some(t) = b.get("thinking").and_then(|x| x.as_str()) {
+                        reasoning.push_str(t);
                     }
                 }
                 Some("tool_use") => {
@@ -349,6 +517,7 @@ fn normalize_anthropic_response(v: &Value) -> Value {
             "message": {
                 "role": "assistant",
                 "content": text,
+                "reasoning_content": reasoning,
                 "tool_calls": tool_calls,
             },
             "finish_reason": stop_reason,
@@ -558,18 +727,39 @@ impl<'a> EngineState<'a> {
             return json!({"ok": false, "error": "op_newline_forbidden"});
         }
 
-        // 空项目起步：template/create 经种子文档引导，与后续 op 同走 **AgentGate**——
+        // 空项目起步：template/create/generate 经种子文档引导，与后续 op 同走 **AgentGate**——
         // 系统提示词向模型承诺"每个 op 都经 AgentGate"，首板不是例外（0.1.5-fix-2
         // 修复 moonviz#14 模板内容债后回收；此前因 4 模板自带债被迫走人类门）。
+        // generate 必须在内：它是建画布的首选通道，若首 op 被拒（会话开不起来），
+        // genUI 第一公民在建画布阶段形同虚设——模型只能退回逐个 place（真实事故：
+        // 420 步逐个摆放、叠出重叠）。
         // 首个 op 落地后立即删除种子画板，canonical 由引擎回传。
         if self.mbt.is_none()
-            && matches!(op.split_whitespace().next(), Some("template") | Some("create"))
+            && matches!(
+                op.split_whitespace().next(),
+                Some("template") | Some("create") | Some("generate")
+            )
         {
             let seed = seed_doc(SEED_BOARD, 24, 24);
-            let mut r = self.call("apply_agent_op", &seed, op).await;
+            let mut r = if op.split_whitespace().next() == Some("generate") {
+                // generate 是 session 管道专属动词：先建会话（种子文档），再走 session_generate
+                let args = op["generate".len()..].trim().to_string();
+                self.call("session_generate", &seed, &args).await
+            } else {
+                self.call("apply_agent_op", &seed, op).await
+            };
             if r.get("ok") != Some(&json!(true)) {
                 return r;
             }
+            // generate 的报告字段（score/missing/autofix/template/artboard…）必须在
+            // 后面的 delete-artboard 覆盖 r 之前保留下来：提示词第 2 步要求模型
+            // "READ THE ENVELOPE" 并据此 autofill 补缺，新项目的首 op 恰恰最容易
+            // 用 generate——丢了这些字段等于让首屏生成变成黑盒。
+            let report: Option<Value> = if op.split_whitespace().next() == Some("generate") {
+                Some(r.clone())
+            } else {
+                None
+            };
             let committed = r
                 .get("mbt")
                 .and_then(|v| v.as_str())
@@ -584,11 +774,22 @@ impl<'a> EngineState<'a> {
             self.last_render = Some(r.clone());
             self.ops.push(op.to_string());
             self.revision += 1;
-            return json!({
+            let mut out = json!({
                 "ok": true, "op": op,
                 "revision": r.get("revision").cloned().unwrap_or(json!(0)),
                 "artboards": r.get("artboards").map(artboard_index).unwrap_or(json!([])),
             });
+            // 合并 generate 报告（剥 mbt，与常规 generate 路由的信封形态一致）
+            if let (Some(rep), Some(o)) = (report, out.as_object_mut()) {
+                if let Some(src) = rep.as_object() {
+                    for (k, v) in src {
+                        if k != "mbt" && k != "ok" {
+                            o.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+            return out;
         }
 
         let Some(mbt) = self.mbt.clone() else {
@@ -658,6 +859,35 @@ impl<'a> EngineState<'a> {
             self.revision += 1;
             // L0 整形：export-* 信封化 / 检视类超限截断（失败信封已在内部原样放行）
             return shape_readonly_result(op, r);
+        }
+
+        // generate：生成式 UI（确定性意图 → 模板实例化 → 规范自愈 → 质量评分）。
+        // 与 constrain 同构的 session 特判路由：apply 门不认这个动词。成功信封带
+        // canonical（变更路径同构：键前移 + 记 ops）；评分/缺失/自愈等报告字段随
+        // 信封回传（mbt 剥除，模型读到可据以补缺的结构化结果）。
+        // **建画布的首选通道**：一次调用产出整页，比逐个 place 快两个数量级；
+        // 重叠/溢出由引擎自愈兜底（逐 place 让模型自己算坐标，必然叠出重叠）。
+        if op.split_whitespace().next() == Some("generate") {
+            let args = op["generate".len()..].trim();
+            if args.is_empty() {
+                return json!({"ok": false, "error": "generate_usage: generate <intent> [as <name>]"});
+            }
+            let r = self.call("session_generate", &mbt, args).await;
+            if !(r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some()) {
+                return r;
+            }
+            self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
+            self.ops.push(op.to_string());
+            self.revision += 1;
+            let mut out = json!({"ok": true, "op": op});
+            if let (Some(o), Some(src)) = (out.as_object_mut(), r.as_object()) {
+                for (k, v) in src {
+                    if k != "mbt" {
+                        o.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            return out;
         }
 
         // constrain：布局意图解析器，session 管道专属——apply 门不认
@@ -964,7 +1194,7 @@ fn tools_typed() -> Vec<ChatCompletionTools> {
     vec![
         tool(
             "moonviz_op",
-            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, extract-design-system <ab>, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
+            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): generate (PREFERRED for whole pages — intent to page, self-healing, scored)/autofill/template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, extract-design-system <ab>, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
             json!({
                 "type": "object",
                 "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -984,18 +1214,69 @@ fn tools_typed() -> Vec<ChatCompletionTools> {
     ]
 }
 
-/// tools 的序列化形态（anthropic_tools 转换与契约测试消费）。
+/// tools 的序列化形态（契约测试消费；生产路径走 tools_schema_for(mode)）。
+#[cfg(test)]
 fn tools_schema() -> Value {
     serde_json::to_value(tools_typed()).expect("tools schema 序列化不可失败（纯数据结构）")
+}
+
+/// 文档阶段的工具面：write_doc + 只读检视（read_mbt / list_components）。
+/// 刻意**不含** moonviz_op——文档阶段拿不到任何变更通道，结构上就不可能误改画布。
+fn tools_typed_doc() -> Vec<ChatCompletionTools> {
+    let tool = |name: &str, description: &str, parameters: Value| {
+        ChatCompletionTools::Function(ChatCompletionTool {
+            function: FunctionObject {
+                name: name.to_string(),
+                description: Some(description.to_string()),
+                parameters: Some(parameters),
+                ..Default::default()
+            },
+        })
+    };
+    vec![
+        tool(
+            "write_doc",
+            "Deliver the finished document. Call this exactly once with kind=\"prd\" or kind=\"ui\" and the complete Markdown.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["prd", "ui"], "description": "Which document this is"},
+                    "markdown": {"type": "string", "description": "The complete document in Markdown"}
+                },
+                "required": ["kind", "markdown"]
+            }),
+        ),
+        tool(
+            "read_mbt",
+            "Read the current canonical .mbt.md source of truth (node ids, flows, all screens).",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "list_components",
+            "List all engine UI component presets (id, category, variants).",
+            json!({"type": "object", "properties": {}}),
+        ),
+    ]
+}
+
+fn tools_schema_for(mode: Option<&str>) -> Value {
+    let tools = if doc_phase(mode) { tools_typed_doc() } else { tools_typed() };
+    serde_json::to_value(tools).expect("tools schema 序列化不可失败（纯数据结构）")
 }
 
 /// OpenAI 请求体：SDK 类型骨架 + 原始 messages 逐字合并 + thinking 方言注入。
 /// 拆成独立函数是为了 wire 契约测试——typed 骨架不得吞掉 messages 里的非标字段
 /// （MiniMax 多轮要求 assistant 消息（含 reasoning_content）完整回传）。
+#[cfg(test)]
 fn openai_request_body(model: &str, thinking: &str, messages: &[Value]) -> Value {
+    openai_request_body_for(model, thinking, messages, None)
+}
+
+/// chat 请求体构造（带阶段）：文档阶段的工具面不含 moonviz_op。
+fn openai_request_body_for(model: &str, thinking: &str, messages: &[Value], mode: Option<&str>) -> Value {
     let typed = CreateChatCompletionRequest {
         model: model.to_string(),
-        tools: Some(tools_typed()),
+        tools: Some(if doc_phase(mode) { tools_typed_doc() } else { tools_typed() }),
         ..Default::default()
     };
     let mut body =
@@ -1044,18 +1325,20 @@ fn safe_base_url(u: &str) -> Option<String> {
 
 /// 单次 LLM 请求：按 protocol_for 分流——OpenAI Chat Completions（bearer）或
 /// Anthropic Messages（x-api-key + anthropic-version）；后者归一化为 OpenAI 形状返回。
-async fn chat_once(
+/// LLM 单次调用（带阶段）：文档阶段只给 write_doc + 只读工具。
+async fn chat_once_mode(
     client: &reqwest::Client,
     base_url: &str,
     api_key: &str,
     model: &str,
     thinking: &str,
     messages: &[Value],
+    mode: Option<&str>,
 ) -> Result<Value, String> {
     let protocol = protocol_for(base_url);
     let req = match protocol {
         Protocol::OpenAi => {
-            let body = openai_request_body(model, thinking, messages);
+            let body = openai_request_body_for(model, thinking, messages, mode);
             let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
             client.post(&url).bearer_auth(api_key).json(&body)
         }
@@ -1073,7 +1356,7 @@ async fn chat_once(
                 "model": model,
                 "max_tokens": max_tokens,
                 "messages": msgs,
-                "tools": anthropic_tools(),
+                "tools": anthropic_tools(mode),
             });
             if let Some(sys) = system {
                 body["system"] = json!(sys);
@@ -1158,27 +1441,389 @@ fn is_transient_llm_error(e: &str) -> bool {
         || e.contains("overloaded")
 }
 
-/// LLM 调用 + 瞬时错误指数退避重试（3 次：0.8s/2.5s/5s）——
-/// 本机网络对部分端点存在间歇性 TLS/连接阻断，单发失败不代表性故障
-async fn chat_once_with_retry(
+/// write_doc 参数增量提取器：SSE 下 tool_calls 的 arguments 是 JSON 字符串
+/// 的碎片流，文档正文要从 `"markdown":"` 之后的转义串里**边到边解**。
+/// 返回当前可解出的完整前缀（未转义后）；转义序列不完整（如尾部孤 `\
+/// 或 `\u00`）时停在该转义前，等下一片补齐。找不到 markdown 键（kind
+/// 还在到货）返回 None。
+fn extract_markdown_prefix(args: &str) -> Option<String> {
+    const KEY: &str = "\"markdown\"";
+    let key_pos = args.find(KEY)?;
+    let rest = &args[key_pos + KEY.len()..];
+    // 跳过空白与冒号，定位值的开引号
+    let v = rest.trim_start().strip_prefix(':')?.trim_start();
+    if !v.starts_with('"') {
+        return None;
+    }
+    let mut out = String::new();
+    let chars: Vec<char> = v.chars().collect();
+    let mut j = 1; // 跳过开引号
+    while j < chars.len() {
+        let c = chars[j];
+        if c == '"' {
+            break; // 值结束（write_doc 的 markdown 后不再有内容，直接停）
+        }
+        if c != '\\' {
+            out.push(c);
+            j += 1;
+            continue;
+        }
+        // 转义序列：需要至少 2 个字符；不完整就停（等下一片）
+        if j + 1 >= chars.len() {
+            break;
+        }
+        match chars[j + 1] {
+            'n' => out.push('\n'),
+            't' => out.push('\t'),
+            'r' => out.push('\r'),
+            'b' => out.push('\u{8}'),
+            'f' => out.push('\u{c}'),
+            '"' => out.push('"'),
+            '\\' => out.push('\\'),
+            '/' => out.push('/'),
+            'u' => {
+                // \uXXXX 需要 4 个十六进制位；不足则停
+                if j + 5 >= chars.len() {
+                    break;
+                }
+                let hex: String = chars[j + 2..j + 6].iter().collect();
+                if let Some(uc) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    out.push(uc);
+                }
+                j += 6;
+                continue;
+            }
+            _ => out.push(chars[j + 1]),
+        }
+        j += 2;
+    }
+    Some(out)
+}
+
+/// SSE 流式聚合状态（chat_once_stream_mode 专用）：一条 data 载荷经
+/// apply_sse_chunk 归并进这里；流结束后由此组装非流式形状的响应。
+struct StreamAcc {
+    content: String,
+    reasoning: String,
+    reasoning_pending: String,
+    finish_reason: String,
+    tc_ids: Vec<String>,
+    tc_names: Vec<String>,
+    tc_args: Vec<String>,
+    doc_emitted_chars: usize,
+}
+
+/// 归并一条 SSE data 载荷（delta 形状）进聚合状态；write_doc 的 markdown
+/// 增量在此推进 doc_delta 事件。思考按 ≥32 字节批量、文档按到达即推。
+fn apply_sse_chunk(v: Value, acc: &mut StreamAcc, progress: &(dyn Fn(Value) + Send + Sync)) {
+    let Some(d) = v.pointer("/choices/0/delta") else {
+        if let Some(fr) = v.pointer("/choices/0/finish_reason").and_then(|x| x.as_str()) {
+            if !fr.is_empty() {
+                acc.finish_reason = fr.to_string();
+            }
+        }
+        return;
+    };
+    if let Some(r) = d.get("reasoning_content").and_then(|x| x.as_str()) {
+        acc.reasoning.push_str(r);
+        acc.reasoning_pending.push_str(r);
+        if acc.reasoning_pending.chars().count() >= 32 {
+            progress(json!({"type": "thinking_delta", "text": acc.reasoning_pending.clone()}));
+            acc.reasoning_pending.clear();
+        }
+    }
+    if let Some(c) = d.get("content").and_then(|x| x.as_str()) {
+        acc.content.push_str(c);
+    }
+    if let Some(tcs) = d.get("tool_calls").and_then(|x| x.as_array()) {
+        for tc in tcs {
+            let idx = tc.get("index").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+            while acc.tc_args.len() <= idx {
+                acc.tc_ids.push(String::new());
+                acc.tc_names.push(String::new());
+                acc.tc_args.push(String::new());
+            }
+            if let Some(id) = tc.get("id").and_then(|x| x.as_str()) {
+                acc.tc_ids[idx].push_str(id);
+            }
+            if let Some(f) = tc.get("function") {
+                if let Some(n) = f.get("name").and_then(|x| x.as_str()) {
+                    acc.tc_names[idx].push_str(n);
+                }
+                if let Some(a) = f.get("arguments").and_then(|x| x.as_str()) {
+                    acc.tc_args[idx].push_str(a);
+                    // write_doc 的正文增量：解出前缀并推进 doc_delta
+                    if acc.tc_names[idx] == "write_doc" {
+                        if let Some(md) = extract_markdown_prefix(&acc.tc_args[idx]) {
+                            let n_chars = md.chars().count();
+                            if n_chars > acc.doc_emitted_chars {
+                                let tail: String =
+                                    md.chars().skip(acc.doc_emitted_chars).collect();
+                                progress(json!({"type": "doc_delta", "text": tail}));
+                                acc.doc_emitted_chars = n_chars;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(fr) = v.pointer("/choices/0/finish_reason").and_then(|x| x.as_str()) {
+        if !fr.is_empty() {
+            acc.finish_reason = fr.to_string();
+        }
+    }
+}
+
+/// 文档阶段流式传输（OpenAI 协议 SSE）：思考增量与 write_doc 的文档正文
+/// 在生成时就推进给前端（progress → agent-event → 轨迹/编辑器）——用户看着
+/// 文档「写出来」而不是 30-60s 后一次性掉出来。返回与非流式同形状的响应
+/// （choices[0].message），主循环零改动。
+/// Anthropic 协议端点暂不流式（调用方回退非流式，功能不受影响只是没有
+/// 直播）——content_block_delta/input_json_delta 形状另行接入时再开。
+/// 发出的事件：thinking_delta{text}（reasoning_content 增量，≥32 字节批量）、
+/// doc_delta{text}（markdown 未转义增量，≥16 字节批量；结尾余量在流结束时冲掉）。
+async fn chat_once_stream_mode(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    thinking: &str,
+    messages: &[Value],
+    mode: Option<&str>,
+    progress: &(dyn Fn(Value) + Send + Sync),
+) -> Result<Value, String> {
+    let mut body = openai_request_body_for(model, thinking, messages, mode);
+    body["stream"] = json!(true);
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| redact_userinfo(format!("llm_request_failed:{e}")))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        // 部分网关不支持流式（400 指名 stream）——退回非流式重发一次
+        if status.as_u16() == 400 && text.to_lowercase().contains("stream") {
+            return chat_once_mode(client, base_url, api_key, model, thinking, messages, mode).await;
+        }
+        return Err(format!(
+            "llm_http_{}:{}",
+            status.as_u16(),
+            text.chars().take(200).collect::<String>()
+        ));
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut sse_buf: Vec<u8> = Vec::new();
+    let mut acc = StreamAcc {
+        content: String::new(),
+        reasoning: String::new(),
+        reasoning_pending: String::new(),
+        finish_reason: String::new(),
+        tc_ids: Vec::new(),
+        tc_names: Vec::new(),
+        tc_args: Vec::new(),
+        doc_emitted_chars: 0,
+    };
+    let mut saw_done = false;
+    // 非流式透传兜底：部分网关忽略 stream:true 直接回整份 JSON。没见过任何
+    // data: 行时按普通响应处理（原样解析返回），否则文档阶段会拿到空回合。
+    let mut saw_sse_data = false;
+    let mut raw_body: Vec<u8> = Vec::new();
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = match chunk {
+            Ok(b) => b,
+            Err(e) => {
+                return Err(redact_userinfo(format!("llm_read_failed:{e}")));
+            }
+        };
+        sse_buf.extend_from_slice(&bytes);
+        // SSE 事件以换行分帧；余行留待下一块
+        while let Some(pos) = sse_buf.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = sse_buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line_bytes);
+            let line = line.trim_end_matches(['\n', '\r']);
+            raw_body.extend_from_slice(line.as_bytes());
+            raw_body.push(b'\n');
+            let payload = if let Some(p) = line.strip_prefix("data:") {
+                saw_sse_data = true;
+                p.trim()
+            } else {
+                continue; // event:/id:/注释行/空行都不携带增量
+            };
+            if payload == "[DONE]" {
+                saw_done = true;
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<Value>(payload) else {
+                continue;
+            };
+            // 错误载荷（部分网关 200 + {"error":...}）
+            if v.get("error").is_some() {
+                let msg = v
+                    .pointer("/error/message")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("unknown");
+                return Err(format!("llm_api_error:stream:{msg}"));
+            }
+            apply_sse_chunk(v, &mut acc, progress);
+        }
+    }
+    // 余行冲刷：非流式 JSON body（无尾换行）整体滞在 sse_buf——按最后一行处理
+    if !sse_buf.is_empty() {
+        let line = String::from_utf8_lossy(&sse_buf);
+        let line = line.trim_end_matches(['\n', '\r']);
+        raw_body.extend_from_slice(line.as_bytes());
+        if let Some(p) = line.strip_prefix("data:") {
+            saw_sse_data = true;
+            let payload = p.trim();
+            if payload != "[DONE]" {
+                if let Ok(v) = serde_json::from_str::<Value>(payload) {
+                    if v.get("error").is_some() {
+                        let msg = v
+                            .pointer("/error/message")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("unknown");
+                        return Err(format!("llm_api_error:stream:{msg}"));
+                    }
+                    apply_sse_chunk(v, &mut acc, progress);
+                }
+            }
+        }
+    }
+    sse_buf.clear();
+    let _ = saw_done; // 部分网关不发 [DONE]，有内容即视为成功
+
+    // 余量冲刷：思考与文档尾部（流结束时的不足批量部分）
+    if !acc.reasoning_pending.is_empty() {
+        progress(json!({"type": "thinking_delta", "text": acc.reasoning_pending.clone()}));
+        acc.reasoning_pending.clear();
+    }
+    if let Some(i) = acc.tc_names.iter().position(|n| n == "write_doc") {
+        if let Some(md) = extract_markdown_prefix(&acc.tc_args[i]) {
+            let n_chars = md.chars().count();
+            if n_chars > acc.doc_emitted_chars {
+                let tail: String = md.chars().skip(acc.doc_emitted_chars).collect();
+                progress(json!({"type": "doc_delta", "text": tail}));
+            }
+        }
+    }
+
+    // 非流式透传兜底：整个响应体没有一条 data: 行 → 网关忽略 stream:true，
+    // body 就是普通 chat.completion JSON，原样返回（错误信封同形处理）。
+    // 思考按旧契约整段补发 assistant_thinking（本路径没有 delta 发出，
+    // 主循环流式分支又跳过了整段发射——不补则思考丢失）
+    if !saw_sse_data {
+        let text = String::from_utf8_lossy(&raw_body);
+        let parsed: Value = serde_json::from_str(text.trim())
+            .map_err(|e| format!("llm_response_invalid:{e}"))?;
+        if parsed.get("error").is_some() {
+            let msg = parsed
+                .pointer("/error/message")
+                .and_then(|x| x.as_str())
+                .unwrap_or("unknown");
+            return Err(format!("llm_api_error:stream:{msg}"));
+        }
+        if let Some(r) = parsed
+            .pointer("/choices/0/message/reasoning_content")
+            .and_then(|x| x.as_str())
+        {
+            if !r.trim().is_empty() {
+                progress(json!({"type": "assistant_thinking", "text": r}));
+            }
+        }
+        return Ok(parsed);
+    }
+
+    let tool_calls: Vec<Value> = acc
+        .tc_names
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| !n.is_empty())
+        .map(|(i, n)| {
+            json!({
+                "id": acc.tc_ids[i],
+                "type": "function",
+                "function": {"name": n, "arguments": acc.tc_args[i]},
+            })
+        })
+        .collect();
+    Ok(json!({
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": acc.content,
+                "reasoning_content": acc.reasoning,
+                "tool_calls": tool_calls,
+            },
+            "finish_reason": if acc.finish_reason.is_empty() { "stop" } else { &acc.finish_reason },
+        }]
+    }))
+}
+
+
+/// LLM 调用 + 瞬时错误指数退避重试（6 发：1s/3s/8s/20s/45s）——
+/// 本机网络对部分端点存在间歇性 TLS/连接阻断，单发失败不代表性故障。
+/// 旧序列 [0,0.8s,2.5s,5s] 总跨度 ~8s，实测覆盖不了十几秒的抖动
+/// （studio_e2e 阶段2 四发全落坑，端点本身 50ms 可达）；指数拉长后
+/// 兜住分钟级抖动，对长生成（每发 180s 超时）总代价不变。
+async fn chat_once_with_retry_mode(
     client: &reqwest::Client,
     base: &str,
     api_key: &str,
     model: &str,
     thinking: &str,
     messages: &[Value],
+    mode: Option<&str>,
 ) -> Result<Value, String> {
     let mut last = String::new();
-    for wait in [0u64, 800, 2500, 5000] {
+    for wait in [0u64, 1000, 3000, 8000, 20000, 45000] {
         if wait > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
         }
-        match chat_once(client, base, api_key, model, thinking, messages).await {
+        match chat_once_mode(client, base, api_key, model, thinking, messages, mode).await {
             Ok(v) => return Ok(v),
             Err(e) => {
                 last = e;
                 if !is_transient_llm_error(&last) {
                     return Err(last); // 4xx 语义错误不重试
+                }
+            }
+        }
+    }
+    Err(last)
+}
+
+/// 流式版重试包装：与 chat_once_with_retry_mode 同序列，透传 progress
+/// 给 SSE 增量发射。已发出的增量在重试时会重复——前端按「直播行」处理，
+/// 重试后重新落行可接受（语义：上一轮中断，本轮重来）。
+async fn chat_once_with_retry_stream(
+    client: &reqwest::Client,
+    base: &str,
+    api_key: &str,
+    model: &str,
+    thinking: &str,
+    messages: &[Value],
+    mode: Option<&str>,
+    progress: &(dyn Fn(Value) + Send + Sync),
+) -> Result<Value, String> {
+    let mut last = String::new();
+    for wait in [0u64, 1000, 3000, 8000, 20000, 45000] {
+        if wait > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+        }
+        match chat_once_stream_mode(client, base, api_key, model, thinking, messages, mode, progress).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                last = e;
+                if !is_transient_llm_error(&last) {
+                    return Err(last);
                 }
             }
         }
@@ -1287,6 +1932,25 @@ pub async fn run_with_steps(
     progress: Option<&(dyn Fn(Value) + Send + Sync)>,
     max_steps: usize,
 ) -> Value {
+    run_with_mode(host, instruction, mbt_b64, api_key, model, base_url, thinking, progress, max_steps, None).await
+}
+
+/// 带阶段模式的 run。`mode` 决定系统提示词与工具面：
+/// - `None` → 建画布 agent（既有默认行为，与 run_with_steps 等价）
+/// - `Some("prd")` / `Some("ui")` → 文档阶段：只写文档，结构上无法改动画布
+pub async fn run_with_mode(
+    host: &EngineHost,
+    instruction: &str,
+    mbt_b64: Option<&str>,
+    api_key: &str,
+    model: &str,
+    base_url: &str,
+    thinking: &str,
+    progress: Option<&(dyn Fn(Value) + Send + Sync)>,
+    max_steps: usize,
+    mode: Option<&str>,
+) -> Value {
+    let doc_mode = doc_phase(mode);
     let max_steps = max_steps.clamp(MAX_STEPS_MIN, MAX_STEPS_MAX);
     if api_key.trim().is_empty() {
         return json!({"ok": false, "error": "api_key_missing"});
@@ -1312,9 +1976,11 @@ pub async fn run_with_steps(
     };
 
     let mut messages: Vec<Value> = vec![
-        json!({"role": "system", "content": instructions()}),
+        json!({"role": "system", "content": instructions_for(mode)}),
         json!({"role": "user", "content": instruction}),
     ];
+    // 文档阶段收集到的文档（write_doc 的产物）；正常建画布阶段恒为空
+    let mut written_docs: serde_json::Map<String, Value> = serde_json::Map::new();
     // 运行日志（stderr → tauri dev 控制台）：无落盘日志时的最小可诊断性——
     // 每次 op 的结果、run 起止与终态。eprintln 只影响调试，不进产品 UI。
     eprintln!(
@@ -1351,7 +2017,8 @@ pub async fn run_with_steps(
 
     // ── 闲置画板清扫（开始）：清上一轮运行遗留的空占位画板 ──
     // 新项目（mbt None）与单画板文档天然跳过（总数 ≤1 不动）。
-    if state.mbt.is_some() {
+    // 文档阶段不碰画布（不改文档、不做清扫）。
+    if state.mbt.is_some() && !doc_mode {
         let _ = sweep_idle_artboards(&mut state, &emit, &mut seq).await;
     }
 
@@ -1388,14 +2055,27 @@ pub async fn run_with_steps(
             }
         }
         // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
-        // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够
-        let resp = chat_once_with_retry(&client, &base, api_key, model, thinking, &request_messages).await;
+        // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够。
+        // OpenAI 协议一律走流式（thinking_delta 直播）——建画布 agent 的轨迹
+        // 同样要显示思考逻辑与完整输出流程（2026-10-27 用户要求，覆盖此前
+        // 「原型阶段保持现状」的决定）；Anthropic 协议端点回退非流式。
+        let streamed_thinking = protocol_for(&base) == Protocol::OpenAi;
+        let resp = if streamed_thinking {
+            // 流式事件自带 type 字段，直接走底层 progress（emit 的双参包装不适用）
+            match progress {
+                Some(f) => chat_once_with_retry_stream(&client, &base, api_key, model, thinking, &request_messages, mode, f).await,
+                None => chat_once_with_retry_mode(&client, &base, api_key, model, thinking, &request_messages, mode).await,
+            }
+        } else {
+            chat_once_with_retry_mode(&client, &base, api_key, model, thinking, &request_messages, mode).await
+        };
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
                 // 中途 LLM 失败：已提交的引擎操作不丢弃（对齐旧桥语义）——
                 // 零操作时才整体失败，否则带部分状态返回，前端可应用已完成的变更。
-                emit("failed", json!({"error": e}));
+                // ops 随事件下发：前端终态卡据此区分「已保留部分」与「零提交」
+                emit("failed", json!({"error": e, "ops": state.ops.len()}));
                 let partial = finish_partial(&mut state, &e).await;
                 eprintln!("[agent] run end: stop=error ops={} error={e}", partial.get("ops").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0));
                 return partial;
@@ -1405,7 +2085,7 @@ pub async fn run_with_steps(
             .pointer("/choices/0/message")
             .and_then(|v| v.as_object().cloned())
         else {
-            emit("failed", json!({"error": "llm_no_choice"}));
+            emit("failed", json!({"error": "llm_no_choice", "ops": state.ops.len()}));
             return finish_partial(&mut state, "llm_no_choice").await;
         };
         let tool_calls: Vec<Value> = msg
@@ -1416,8 +2096,23 @@ pub async fn run_with_steps(
         // 不静默——截断的"总结"与半截 tool_use 都曾因不可见而被误当正常回合（issues #10）
         let truncated = resp.pointer("/choices/0/finish_reason") == Some(&json!("max_tokens"));
 
-        // 中间轮的 assistant 文本（计划/说明）进轨迹
-        let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        // 中间轮的 assistant 文本（计划/说明）进轨迹。
+        // 取 String 而非 &str：msg 随后会被 move 进 messages，文档阶段收尾还要用这段文本。
+        let mid_text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // 思考过程进轨迹（reasoning_content=OpenAI 侧非标字段；reasoning=
+        // OpenRouter 形状；Anthropic 侧已在 normalize 时归一为 reasoning_content）。
+        // 流式回合（thinking_delta 已直播）不再整段重发。**所有模式都发**——
+        // 建画布 agent 的轨迹同样要显示思考逻辑（2026-10-27 用户要求）。
+        if !streamed_thinking {
+            let think = msg
+                .get("reasoning_content")
+                .and_then(|v| v.as_str())
+                .or_else(|| msg.get("reasoning").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            if !think.trim().is_empty() {
+                emit("assistant_thinking", json!({"text": think}));
+            }
+        }
         if !mid_text.trim().is_empty() && !tool_calls.is_empty() {
             emit("assistant_text", json!({"text": mid_text}));
         }
@@ -1429,7 +2124,7 @@ pub async fn run_with_steps(
             // 由 LLM 在剩余预算内用工具自查补齐）→ continue 回主循环；审查后再次
             // done（文本=审查报告）走正常返回。预算不足/零产出/已审查均不触发。
             let review_start = max_steps.saturating_sub(REVIEW_STEPS);
-            if !review_done && state.mbt.is_some() && !state.ops.is_empty() && step < review_start {
+            if !review_done && !doc_mode && state.mbt.is_some() && !state.ops.is_empty() && step < review_start {
                 review_done = true;
                 emit("review", json!({}));
                 for ab in artboard_ids(state.mbt.as_deref().unwrap_or("")) {
@@ -1444,6 +2139,21 @@ pub async fn run_with_steps(
                 continue;
             }
             let mut text = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // 文档阶段：模型选择用纯文本回答而没调 write_doc——如实失败，不伪装成"澄清"。
+            // （澄清是建画布阶段的合法意图；文档阶段要的是一份交付物，缺失就是没完成。）
+            // 已写出的部分（both 模式单份先到）随 docs 交回，前端 partialDocs 保留。
+            if doc_mode && !doc_satisfied(mode, &written_docs) {
+                emit("assistant_text", json!({"text": text}));
+                emit("failed", json!({"error": "doc_not_written", "ops": 0}));
+                return json!({
+                    "ok": false,
+                    "error": "doc_not_written",
+                    "detail": "LLM replied with text instead of calling write_doc",
+                    "mode": mode,
+                    "docs": Value::Object(written_docs.clone()),
+                    "text": text,
+                });
+            }
             if state.mbt.is_none() && state.ops.is_empty() {
                 // 澄清式回复（CLARIFY-FIRST）：文本即 agent 的提问——照常推送轨迹
                 emit("assistant_text", json!({"text": text}));
@@ -1511,8 +2221,29 @@ pub async fn run_with_steps(
                 )}),
                 Ok(args) => match name {
                     "moonviz_op" => {
-                        let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        state.moonviz_op(&op).await
+                        // 文档阶段工具面不含 moonviz_op；模型若硬调（历史残留/幻觉）也在这里挡住，
+                        // 保证"文档阶段结构上不可能改画布"这一不变式不依赖提示词自觉
+                        if doc_mode {
+                            json!({"ok": false, "error": "doc_phase_readonly: this turn only writes documents"})
+                        } else {
+                            let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            state.moonviz_op(&op).await
+                        }
+                    }
+                    "write_doc" => {
+                        let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                        let md = args.get("markdown").and_then(|v| v.as_str()).unwrap_or("");
+                        if !matches!(kind, "prd" | "ui") {
+                            json!({"ok": false, "error": "write_doc_kind_invalid: expected prd|ui"})
+                        } else if md.trim().is_empty() {
+                            json!({"ok": false, "error": "write_doc_empty"})
+                        } else {
+                            written_docs.insert(kind.to_string(), json!(md));
+                            // 正文随事件下发：文档阶段没有 op/preview 可看，
+                            // 前端要靠这份内容即时渲染面板——否则整个等待期是黑盒
+                            emit("doc_written", json!({"kind": kind, "chars": md.chars().count(), "md": md}));
+                            json!({"ok": true, "kind": kind, "chars": md.chars().count()})
+                        }
                     }
                     "read_mbt" => state.read_mbt().await,
                     "list_components" => state.list_components().await,
@@ -1550,10 +2281,68 @@ pub async fn run_with_steps(
                 "content": serde_json::to_string(&result).unwrap_or_else(|_| "{}".into()),
             }));
         }
+        // ── 文档阶段收尾：write_doc 成功即任务完成，不再进主循环 ──
+        // 不等模型自己给总结（它没有再调工具的理由，多等一轮纯浪费 token）：
+        // 拿到期望的那份文档就返回；both（组合请求）则两份齐再退。
+        if doc_mode && doc_satisfied(mode, &written_docs) {
+            // msg 已在工具循环前 move 进 messages；这里用当时取出的 mid_text
+            let text = mid_text.to_string();
+            if !text.trim().is_empty() {
+                emit("assistant_text", json!({"text": text}));
+            }
+            let docs = Value::Object(written_docs.clone());
+            let kind = mode.unwrap_or("").to_string();
+            eprintln!("[agent] doc end: kind={kind} docs={}", written_docs.len());
+            emit(
+                "done",
+                json!({"stopReason": "done", "ops": 0, "docs": written_docs.len(), "kind": kind}),
+            );
+            return json!({
+                "ok": true,
+                "stopReason": "done",
+                "mode": mode,
+                "docs": docs,
+                "ops": [],
+                "text": text,
+            });
+        }
     }
 
-    // 跑满步数：尽力返回当前状态
+    // 跑满步数：尽力返回当前状态。
+    // 文档阶段（prd/ui）走的是另一条兜底：模型跑了很久却始终没交出期望的那份文档，
+    // 必须如实报 doc_not_written 并把**已经写出来的**文档交回（否则前端只能显示
+    // fxsdk_failed，用户拿不到任何已产出的内容）。
+    if doc_mode {
+        let want = match mode {
+            Some("prd") => "prd",
+            Some("ui") => "ui",
+            Some("both") => "both",
+            _ => "",
+        };
+        emit(
+            "failed",
+            json!({"error": "doc_not_written", "ops": 0, "kind": want, "docs": written_docs.len()}),
+        );
+        eprintln!("[agent] doc end: stop=max_turns kind={want} docs={}", written_docs.len());
+        return json!({
+            "ok": false,
+            "error": "doc_not_written",
+            "detail": format!("model exhausted {max_steps} steps without delivering kind={want}"),
+            "mode": mode,
+            "docs": Value::Object(written_docs),
+            "ops": [],
+            "stopReason": "max_turns",
+            "text": "",
+        });
+    }
+
+    // 轨迹终态事件必须显式发出——此前该路径零事件，前端时间线既不知道运行已结束、
+    // 更无法分辨正常/异常（stopReason 只存在于返回契约，实时轨迹看不到）
     state.ensure_render().await;
+    let boards_n = artboard_ids(state.mbt.as_deref().unwrap_or("")).len();
+    // cleanup 恒空：本路径不跑收尾清扫（尽力返回，不做变更类操作）——boards 口径
+    // 含本轮产生却未填的闲置板，与 done 路径（清扫后计数）刻意不同源
+    emit("done", json!({"stopReason": "max_turns", "ops": state.ops.len(), "boards": boards_n, "cleanup": []}));
     eprintln!("[agent] run end: stop=max_turns ops={}", state.ops.len());
     json!({
         "ok": state.mbt.is_some(),
@@ -1561,6 +2350,7 @@ pub async fn run_with_steps(
         "render": state.last_render.clone(),
         "ops": state.ops,
         "stopReason": "max_turns",
+        "boards": boards_n,
         "text": "",
     })
 }
@@ -1590,6 +2380,25 @@ async fn finish_partial(state: &mut EngineState<'_>, error: &str) -> Value {
 /// 0.37ms/op；AgentGate 逐条重校验，「拒绝即跳过并报告」（op 在新基底上合法失效
 /// 不是错误，宁缺勿债绝不留 gate debt）；只读 op 过滤（无副作用）。
 /// 失败信封保留引擎错误原文（skipped[].error），供前端轨迹呈现与模型可见性。
+/// rebase 的动词路由：与 `EngineState::moonviz_op` 的 session 特判保持同构。
+/// `generate` / `constrain` 只存在于 session 管道——`session_apply_agent` 会以
+/// `mbt_operation_unsupported` 拒绝它们。若不在此分流，用户在 agent 跑动期间做了
+/// 任何人类编辑，rebase 就会把本次 run 里**所有** generate 记为 skipped，
+/// 而 generate 正是建页主路径 → 原型几乎空白（静默的数据丢失）。
+fn rebase_via(r: &Value) -> bool {
+    r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some()
+}
+
+async fn rebase_apply_one(host: &EngineHost, cur: &str, op: &str) -> Result<Value, String> {
+    let head = op.split_whitespace().next().unwrap_or("");
+    let (fn_name, args) = match head {
+        "generate" => ("session_generate", op["generate".len()..].trim()),
+        "constrain" => ("session_constrain", op["constrain".len()..].trim()),
+        _ => ("session_apply_agent", op),
+    };
+    host.call(fn_name, cur, args).await
+}
+
 pub async fn rebase_ops(host: &EngineHost, latest_mbt: &str, ops: &[String]) -> Value {
     let mut cur = latest_mbt.to_string();
     let mut applied: Vec<Value> = Vec::new();
@@ -1597,14 +2406,14 @@ pub async fn rebase_ops(host: &EngineHost, latest_mbt: &str, ops: &[String]) -> 
     for op in ops.iter().filter(|o| !is_readonly_op(o)) {
         // host 级失败（trap/腐坏读等 Err）与门拒绝同语义：跳过并保留错误原文，
         // 不中断整个 rebase（宿主随后自会弃缓存，下次按权威 canonical 重开）
-        let r = match host.call("session_apply_agent", &cur, op).await {
+        let r = match rebase_apply_one(host, &cur, op).await {
             Ok(r) => r,
             Err(e) => {
                 skipped.push(json!({"op": op, "error": e}));
                 continue;
             }
         };
-        if r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some() {
+        if rebase_via(&r) {
             cur = r.get("mbt").and_then(|v| v.as_str()).unwrap_or_default().to_string();
             applied.push(json!(op));
         } else {
@@ -2216,6 +3025,33 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         // 独立 name op 仅存在于 CLI 直连面，apply 路径返回 mbt_operation_unsupported，
         // 提示词必须点名其替代用法；constrain 自 0.1.6-fix/#19 起经 session 路由
         // **可达**，提示词必须作为变更 op 教（含意图词表锚点——漏一个模型就永远不用）。
+        // genUI 第一层契约（2026-10-27 审查）：generate 必须是建页默认路径——
+        // 提示词丢了这一节，模型会退回手工 place 整页（重叠债的根源）。
+        assert!(
+            INSTRUCTIONS.contains("## Build loop — GENERATE FIRST (this is the default path)"),
+            "提示词必须保留 GENERATE FIRST 建页策略（genUI 第一层）"
+        );
+        // 工具面：moonviz_op 的 description 必须把 generate 标注为整页首选（PREFERRED）
+        let tools_json = serde_json::to_value(tools_typed()).expect("tools 序列化不可失败");
+        let mv_desc = tools_json
+            .as_array()
+            .and_then(|a| {
+                a.iter().find(|t| {
+                    t.pointer("/function/name").and_then(|v| v.as_str()) == Some("moonviz_op")
+                })
+            })
+            .and_then(|t| t.pointer("/function/description").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        assert!(
+            mv_desc.contains("generate (PREFERRED for whole pages"),
+            "工具面必须把 generate 标注为整页首选（PREFERRED）"
+        );
+        for token in ["autofill <artboard>", "skipped[]"] {
+            assert!(
+                INSTRUCTIONS.contains(token),
+                "generate 信封消费指引缺失：{token}——模型不知道要读信封补缺/救丢段"
+            );
+        }
         assert!(
             INSTRUCTIONS.contains("mbt_operation_unsupported"),
             "提示词必须告知 Agent 存在被引擎拒绝的 op"
@@ -2361,6 +3197,53 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(out["render"]["artboards"].is_array(), "render 应含 artboards");
     }
 
+    /// 步数耗尽路径必须显式发出轨迹终态事件（done + stopReason=max_turns）——
+    /// 此前该路径零事件，前端时间线无法分辨运行是否结束、正常还是异常
+    /// （2026-10-11 用户反馈）。mock 恒回 tool_calls，永不给文本总结：run_with_steps
+    /// 的 max_steps 会被 clamp 到最小 50（MAX_STEPS_MIN），循环恰好发 50 次请求后
+    /// break——轮数给 64 留余量，多余轮次无人消费（mock.abort() 收尾）。
+    #[tokio::test]
+    async fn agent_max_turns_emits_terminal_trace_event() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let tool_call_round = serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "moonviz_op",
+                 "arguments": "{\"op\": \"template login lg\"}"}}
+            ]}}]
+        });
+        let (port, mock, _bodies) =
+            spawn_mock_llm(std::iter::repeat(tool_call_round).take(64).collect()).await;
+        let events: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+        let progress = |v: Value| {
+            if let Ok(mut ev) = events.lock() {
+                ev.push(v);
+            }
+        };
+        let out = run_with_steps(
+            &ENGINE,
+            "建一个登录页",
+            None,
+            "sk-test",
+            "mock-model",
+            &format!("http://127.0.0.1:{port}"),
+            "auto",
+            Some(&progress),
+            3,
+        )
+        .await;
+        mock.abort();
+        let _ = mock.await;
+        assert_eq!(out["stopReason"], json!("max_turns"));
+        let ev = events.lock().unwrap();
+        let term = ev
+            .iter()
+            .find(|e| e["type"] == json!("done"))
+            .expect("轨迹缺 done 终态事件——步数耗尽路径在时间线上静默");
+        assert_eq!(term["stopReason"], json!("max_turns"));
+        assert_eq!(term["ops"], out["ops"].as_array().map(|a| json!(a.len())).unwrap_or(json!(0)));
+    }
+
     /// 可复用 mock LLM：按顺序回放脚本化响应体，读完整请求后返回。
     /// mock OpenAI/Anthropic 端点：按 rounds 依次返回预设响应体，
     /// 同时把每轮收到的**请求行 + 请求体**捕获进 bodies（测试可断言 URL 路径与线上形态）。
@@ -2458,6 +3341,175 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             }
         });
         (port, handle, bodies)
+    }
+
+    /// SSE 流式 mock：每个 round 是**SSE data 载荷字符串数组**（原样包装成
+    /// `data: <行>\n\n` + 结尾 [DONE]），供流式传输测试精确控制增量切片
+    /// （包括转义序列中间切断）。
+    async fn spawn_mock_llm_sse(rounds: Vec<Vec<String>>) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut rounds = rounds.into_iter();
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else { break };
+                let mut raw = Vec::new();
+                let mut chunk = [0u8; 16384];
+                loop {
+                    match sock.read(&mut chunk).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            raw.extend_from_slice(&chunk[..n]);
+                            let s = String::from_utf8_lossy(&raw).into_owned();
+                            if s.contains("\r\n\r\n") {
+                                break; // POST：头读齐即应答（不校验 content-length）
+                            }
+                        }
+                    }
+                }
+                let payloads = rounds.next().unwrap_or_default();
+                let mut body = String::new();
+                for p in payloads {
+                    body.push_str(&format!("data: {p}\n\n"));
+                }
+                body.push_str("data: [DONE]\n\n");
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{body}"
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+        (port, handle)
+    }
+
+    /// 文档阶段流式端到端：thinking_delta / doc_delta 增量事件必须发出且
+    /// 拼接后与完整内容逐字一致——尤其 markdown 的 JSON 转义在**转义序列
+    /// 中间**被切片切断时（`# 标题\` | `n...`），提取器必须停住等下一片，
+    /// 不能把半个转义当正文漏出去。响应重组装形状与非流式一致（主循环零改动）。
+    /// both 模式（2026-10-27 用户要求）：同轮两次 write_doc（prd+ui）齐了才收工，
+    /// 信封带回两份；只交一份不满足——继续等，文本收尾则 doc_not_written 且
+    /// 已写出的部分随 docs 交回（前端 partialDocs 保留路径）。
+    #[tokio::test]
+    async fn doc_phase_both_mode_requires_both_docs() {
+        let args = |kind: &str, md: &str| {
+            format!("{{\"kind\": \"{}\", \"markdown\": \"{}\"}}", kind, md)
+        };
+        let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null,
+                "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "write_doc",
+                     "arguments": args("prd", "# 测试 PRD\\n\\n页面清单齐备。")}},
+                    {"id": "c2", "type": "function", "function": {"name": "write_doc",
+                     "arguments": args("ui", "# UI 设计文档\\n\\n令牌与逐页布局齐备。")}},
+                ]}}]
+        })]).await;
+        let out = run_with_mode(
+            &ENGINE, "写 PRD 和 UI 文档", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port}"), "auto", None, 30, Some("both"),
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(
+            out.pointer("/docs/prd").and_then(|v| v.as_str()),
+            Some("# 测试 PRD\n\n页面清单齐备。"),
+            "prd 必须在信封: {out}"
+        );
+        assert_eq!(
+            out.pointer("/docs/ui").and_then(|v| v.as_str()),
+            Some("# UI 设计文档\n\n令牌与逐页布局齐备。"),
+            "ui 必须在信封: {out}"
+        );
+        // 只交一份：不满足 → 文本收尾时 doc_not_written，部分随 docs 交回
+        let (port2, mock2, _bodies2) = spawn_mock_llm(vec![
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null,
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "write_doc",
+                     "arguments": args("prd", "# 只有 PRD")}}]}}]
+            }),
+            serde_json::json!({"choices": [{"message": {"role": "assistant", "content": "写完了。"}}]}),
+        ])
+        .await;
+        let out2 = run_with_mode(
+            &ENGINE, "写两份文档", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port2}"), "auto", None, 30, Some("both"),
+        )
+        .await;
+        mock2.abort();
+        assert_eq!(out2["ok"], json!(false), "{out2}");
+        assert_eq!(out2["error"], json!("doc_not_written"), "{out2}");
+        assert_eq!(
+            out2.pointer("/docs/prd").and_then(|v| v.as_str()),
+            Some("# 只有 PRD"),
+            "部分产出的 prd 必须随失败信封交回: {out2}"
+        );
+        assert!(
+            out2.pointer("/docs/ui").is_none(),
+            "未写出的 ui 不得凭空出现: {out2}"
+        );
+    }
+
+    #[tokio::test]
+    async fn doc_phase_streams_thinking_and_doc_deltas() {
+        // 完整 markdown（JSON 转义后）：# 标题\n\n第二段落
+        let md_plain = "# 标题\n\n第二段落";
+        // args 全串：{"kind": "prd", "markdown": "# 标题\n\n第二段落"}
+        // 切片 A 止于孤反斜杠（转义 \n 的前半），B 从 'n' 续——中途断escape
+        let frag_a = "{\"kind\": \"prd\", \"markdown\": \"# 标题\\";
+        let frag_b = "n\\n第二段落\"}";
+        let (port, mock) = spawn_mock_llm_sse(vec![vec![
+            serde_json::json!({"choices":[{"delta":{"role":"assistant"}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"reasoning_content":"先想五页结构。"}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"reasoning_content":"再写正文。"}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"tool_calls":[
+                {"index":0,"id":"c1","function":{"name":"write_doc","arguments":frag_a}}]}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{"tool_calls":[
+                {"index":0,"function":{"arguments":frag_b}}]}}]}).to_string(),
+            serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}).to_string(),
+        ]])
+        .await;
+        let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let ev2 = events.clone();
+        let progress = move |v: Value| ev2.lock().unwrap().push(v);
+        let out = run_with_mode(
+            &ENGINE, "写一份 PRD", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port}"), "auto", Some(&progress), 30, Some("prd"),
+        )
+        .await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(out["stopReason"], json!("done"));
+        assert_eq!(
+            out.pointer("/docs/prd").and_then(|v| v.as_str()),
+            Some(md_plain),
+            "重组装后的文档必须与非流式逐字一致: {out}"
+        );
+        let evs = events.lock().unwrap();
+        // 思考增量拼接 == 完整思考（且没有整段 assistant_thinking 重发）
+        let think: String = evs
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("thinking_delta"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(think, "先想五页结构。再写正文。", "{evs:?}");
+        assert!(
+            !evs.iter().any(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking")),
+            "流式回合不得再整段重发思考: {evs:?}"
+        );
+        // 文档增量拼接 == 完整 markdown（转义跨片不得漏半截）
+        let doc: String = evs
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("doc_delta"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(doc, md_plain, "doc_delta 拼接必须逐字一致: {evs:?}");
+        // doc_written 终态照发（前端以它收口）
+        assert!(
+            evs.iter().any(|v| v.get("type").and_then(|t| t.as_str()) == Some("doc_written")),
+            "doc_written 必须照发: {evs:?}"
+        );
+        drop(evs);
     }
 
     /// Anthropic 协议端到端（多轮 + 线上形态断言）：mock 返回 Messages 形态的
@@ -2641,6 +3693,75 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         );
     }
 
+    /// 思考轨迹契约（2026-10-26 起文档阶段、2026-10-27 起全模式）：模型的思考
+    /// （reasoning_content；Anthropic 侧经 normalize 的 thinking 块同理）必须以
+    /// assistant_thinking 事件**完整**下发——轨迹面板要能读到全量思考。
+    /// 流式端点则走 thinking_delta 增量（另一个测试覆盖）。
+    #[tokio::test]
+    async fn doc_phase_emits_assistant_thinking_events() {
+        // ── doc 模式：write_doc 不碰 wasm，无需引擎就绪 ──
+        let (port, mock, _bodies) = spawn_mock_llm(vec![serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null,
+                "reasoning_content": "思考：先定页面清单（首页/详情/订单/我的/设置），再逐页写职责。",
+                "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "write_doc",
+                 "arguments": "{\"kind\": \"prd\", \"markdown\": \"# 测试 PRD\\n\\n## 页面清单\\n首页/详情/订单/我的/设置，各自职责如上。\"}"}}]}}]
+        })]).await;
+        let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let ev2 = events.clone();
+        let progress = move |v: Value| ev2.lock().unwrap().push(v);
+        let out = run_with_mode(
+            &ENGINE, "写一份 PRD", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port}"), "auto", Some(&progress), 30, Some("prd"),
+        ).await;
+        mock.abort();
+        assert_eq!(out["ok"], json!(true), "{out}");
+        assert_eq!(out["stopReason"], json!("done"));
+        let evs = events.lock().unwrap();
+        let thinks: Vec<&str> = evs.iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(
+            thinks,
+            vec!["思考：先定页面清单（首页/详情/订单/我的/设置），再逐页写职责。"],
+            "doc 模式必须完整下发思考事件: {evs:?}"
+        );
+        drop(evs);
+        // ── 画布模式：思考**同样进轨迹**（2026-10-27 用户要求——建画布 agent 的
+        // 轨迹也要显示思考逻辑与完整输出流程；非流式 mock 走整段 assistant_thinking，
+        // 流式端点走 thinking_delta 增量）──
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let (port2, mock2, _bodies2) = spawn_mock_llm(vec![
+            serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": null,
+                    "reasoning_content": "画布阶段的思考同样进轨迹。",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "moonviz_op",
+                     "arguments": "{\"op\": \"template login wl\"}"}}]}}]
+            }),
+            serde_json::json!({"choices": [{"message": {"role": "assistant", "content": "已建板。"}}]}),
+        ]).await;
+        let events2: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let ev3 = events2.clone();
+        let progress2 = move |v: Value| ev3.lock().unwrap().push(v);
+        let out2 = run_with_mode(
+            &ENGINE, "建一个登录页", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port2}"), "auto", Some(&progress2), 30, None,
+        ).await;
+        mock2.abort();
+        assert_eq!(out2["ok"], json!(true), "{out2}");
+        let evs2 = events2.lock().unwrap();
+        let thinks2: Vec<&str> = evs2.iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("assistant_thinking"))
+            .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
+            .collect();
+        assert_eq!(
+            thinks2,
+            vec!["画布阶段的思考同样进轨迹。"],
+            "画布模式的思考必须进轨迹: {evs2:?}"
+        );
+    }
+
     /// engine-v0.1.6 / 上游 #18：place 支持 [w] [h] 位置参数且门在**最终 bbox** 评估——
     /// 「默认尺寸撞兄弟 + 马上 update 修正」的中间态拒绝形态（真实 run 111 次拒绝的
     /// 根因）整类消除。锚定：默认尺寸相交被拒、带最终尺寸一次过门。
@@ -2753,6 +3874,51 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             bad.get("ok") == Some(&json!(false)) && err.contains("cannot_parse") && err.contains("居中"),
             "cannot_parse 错误必须带意图词表：{bad}"
         );
+    }
+
+    /// rebase 必须认识 session-only 动词（generate / constrain）。
+    /// `session_apply_agent` 会以 mbt_operation_unsupported 拒绝它们；若不分流，
+    /// 用户在 agent 跑动期间做任何人类编辑，rebase 就会把本次 run 的所有 generate
+    /// 记为 skipped —— 而 generate 是建页主路径，等于原型几乎空白（静默丢数据）。
+    #[tokio::test]
+    async fn rebase_replays_generate_and_constrain() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        // 人类先建一块板（模拟 run 起点）
+        let d0 = ENGINE
+            .call("apply_agent_op", &seed_doc("rb2", 390, 844), "template login rb2")
+            .await
+            .unwrap();
+        let doc0 = d0.get("mbt").and_then(|v| v.as_str()).expect("canonical 回传").to_string();
+        // 「人类」在 run 期间又挪了一个节点（触发前端 rebase 判定）
+        let latest = ENGINE
+            .call("apply_agent_op", &doc0, "move rb2 welcome_title 20 700")
+            .await
+            .unwrap()
+            .get("mbt")
+            .and_then(|v| v.as_str())
+            .expect("canonical 回传")
+            .to_string();
+        // run 的 op 流里全是 generate（新主路径）+ 一条 constrain
+        let ops = vec![
+            "generate 首页 列表 as home".to_string(),
+            "generate 个人主页 as profile".to_string(),
+            "constrain rb2 居中".to_string(),
+        ];
+        let out = rebase_ops(&ENGINE, &latest, &ops).await;
+        assert_eq!(out["ok"], json!(true), "{out}");
+        let applied = out["applied"].as_array().expect("applied 数组");
+        let skipped = out["skipped"].as_array().expect("skipped 数组");
+        assert_eq!(
+            applied.len(), ops.len(),
+            "generate/constrain 都是 session-only 动词，rebase 必须分流重放（skipped={skipped:?}）"
+        );
+        assert!(skipped.is_empty(), "不应有任何 op 被跳过：{skipped:?}");
+        let canon = b64_decode(out["mbt_b64"].as_str().unwrap()).unwrap();
+        assert!(canon.contains("moonviz:artboard home"), "generate 的页必须落地");
+        assert!(canon.contains("moonviz:artboard profile"), "第二页必须落地");
+        // 人类编辑也保住了（rebase 的前提）
+        assert!(canon.contains("y=700") || canon.contains("y=700,"), "人类挪动的节点位置应保留");
     }
 
     /// 终态 rebase（docs/agent-rebase.md 方案 C）：人类编辑推进文档后，run 的变更
@@ -2879,6 +4045,100 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(tokens.get("colors").is_some(), "list_tokens 应返回颜色分组：{tokens}");
         let themes = ENGINE.call("list_themes", "", "").await.unwrap();
         assert!(themes.as_array().is_some_and(|a| a.len() >= 5), "list_themes 应返回 6 主题");
+    }
+
+    /// 空项目首 op 是 generate 时必须能落地（genUI 第一公民的**前提**）。
+    /// 真实事故：种子引导只认 template/create，generate 作为首 op 时会话开不起来、
+    /// 被当失败重试，模型只好退回逐个 place——420 步摆一屏、叠出重叠。
+    /// 这条测试锁死"generate 可作为首个变更 op"。
+    #[tokio::test]
+    async fn generate_works_as_first_op_on_empty_project() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
+        let r = state.moonviz_op("generate 登录页 as home").await;
+        assert_eq!(r["ok"], json!(true), "generate 应能作为空项目的首个 op：{r}");
+        assert!(
+            state.mbt.as_deref().is_some_and(|m| m.contains("home")),
+            "生成结果应写进自持 canonical"
+        );
+        // 种子板必须被清掉，只留生成的页
+        let canon = state.mbt.clone().unwrap_or_default();
+        assert!(
+            !canon.contains(&format!("moonviz:artboard {SEED_BOARD}")),
+            "种子画板应已在引导后删除"
+        );
+        assert_eq!(state.ops.len(), 1, "只记一条 op");
+    }
+
+    /// 首 op 的 generate 必须把**报告字段**一并交回（score/missing/autofix/template/artboard）。
+    /// 提示词第 2 步要求模型读信封再 autofill 补缺；首屏生成恰恰最容易用 generate，
+    /// 若信封只剩 {ok,op,revision,artboards}，模型拿不到缺什么、自愈了什么都看不见。
+    #[tokio::test]
+    async fn first_op_generate_keeps_report_fields() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
+        let r = state.moonviz_op("generate 登录页 as home").await;
+        assert_eq!(r["ok"], json!(true), "{r}");
+        assert_eq!(r["artboard"], json!("home"), "报告里的 artboard 字段应保留：{r}");
+        assert_eq!(r["template"], json!("login"), "报告里的 template 字段应保留：{r}");
+        assert!(r["score"]["total"].as_i64().is_some_and(|v| v > 0), "报告里应有质量评分：{r}");
+        assert!(r["missing"]["page_type"].as_str().is_some(), "报告里应有缺失分析：{r}");
+        assert!(r.get("autofix").is_some(), "报告里应有自愈统计：{r}");
+        assert!(r.get("mbt").is_none(), "mbt 本体应剥除（与常规 generate 路由一致）");
+    }
+
+    /// 生成式 UI 宿主契约：`generate` 是建画布的首选通道（一次调用产出整页，
+    /// 布局由引擎确定性求解 + norms 自愈）。这条路由必须真的通——否则 agent 只能退回
+    /// 逐 place，而逐 place 会让模型自己算坐标、叠出重叠（真实事故）。
+    /// 同时锚定：意图里的空格不被按 token 切碎（"首页 列表" 是一个意图），
+    /// 以及 `as <name>` 能指定画板 id。
+    #[tokio::test]
+    async fn session_generate_host_contract() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        // 引擎要求文档至少一个视觉块——空串开会话会 session_open_failed:-1
+        let seed = seed_doc("sd", 390, 844);
+        // 空格意图 + 显式命名
+        let r = ENGINE.call("session_generate", &seed, "登录页 as gen_login").await.unwrap();
+        assert_eq!(r["ok"], json!(true), "generate 应成功：{r}");
+        assert_eq!(r["artboard"], json!("gen_login"), "as <name> 应指定画板 id：{r}");
+        assert!(r["mbt"].as_str().is_some_and(|m| m.contains("gen_login")), "信封应回传 canonical");
+        assert!(r["score"]["total"].as_i64().is_some_and(|v| v > 0), "应带质量评分：{r}");
+        // 组合意图：多页 + 自动导航（同样要有种子文档才能开会话）
+        let multi = ENGINE.call("session_generate", &seed, "登录+注册").await.unwrap();
+        assert_eq!(multi["ok"], json!(true), "组合意图应成功：{multi}");
+        let canon = multi["mbt"].as_str().unwrap_or("");
+        assert!(canon.matches("<!-- moonviz:artboard").count() >= 2, "组合意图应产出多块画板");
+        // autofill 是 op（不是 session 导出），走 apply 通道
+        let filled = ENGINE.call("session_apply_agent", canon, "autofill gen_login").await;
+        if let Ok(v) = filled {
+            // 生成式产物的缺失项可能为空（模板已自足），此时 autofill 也应幂等成功或明确拒绝
+            assert!(v.get("ok").is_some(), "autofill 应返回信封：{v}");
+        }
+    }
+
+    /// arg2 槽是 wasm 实例级状态，不会随会话清空。`generate` 的无名分支必须显式
+    /// 清空它——否则残留的上一页 name 会让新页原地覆盖旧页（静默丢页），或把上一次
+    /// constrain 的意图当画板名（造出垃圾画板）。这条测试锁死"无名 generate 不继承 name"。
+    #[tokio::test]
+    async fn generate_without_name_does_not_inherit_stale_arg2() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let seed = seed_doc("sd", 390, 844);
+        // 先带名生成一页，把 name 写进 arg2 槽
+        let named = ENGINE.call("session_generate", &seed, "登录页 as named_page").await.unwrap();
+        assert_eq!(named["artboard"], json!("named_page"), "首次应使用显式名字：{named}");
+        let after_named = named["mbt"].as_str().unwrap_or("").to_string();
+        // 再无名生成：不得写到 named_page 上（那就是静默覆盖），应新增一页
+        let anon = ENGINE.call("session_generate", &after_named, "首页 列表").await.unwrap();
+        assert_eq!(anon["ok"], json!(true), "无名 generate 应成功：{anon}");
+        let got = anon["artboard"].as_str().unwrap_or("");
+        assert_ne!(got, "named_page", "无名 generate 继承了残留 name（会把新页覆盖到旧页上）");
+        let canon = anon["mbt"].as_str().unwrap_or("");
+        let boards = canon.matches("<!-- moonviz:artboard ").count();
+        assert!(boards >= 3, "应新增画板而不是覆盖（当前 {boards} 块：sd + named_page + 新页）");
     }
 
     /// 中途 LLM 失败（第二轮连接被拒）：已提交工作必须保留。

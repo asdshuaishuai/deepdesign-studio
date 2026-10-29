@@ -95,6 +95,12 @@
   "{n} h ago",
   "il y a {n} h"
  ],
+ "「{node}」是未实现交互——演示支持：跳转/返回/提示/改文字/切状态": [
+  "「{node}」は未実装のインタラクションです——デモ対応：遷移/戻る/通知/文字変更/状態切替",
+  "「{node}」은(는) 미구현 인터랙션입니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환",
+  "{node} has an unimplemented interaction — demo supports: navigate/back/toast/set text/toggle state",
+  "{node} a une interaction non implémentée — démo gère : navigation/retour/toast/texte/bascule"
+ ],
  "上下文": [
   "コンテキスト",
   "컨텍스트",
@@ -142,6 +148,12 @@
   "정보",
   "About",
   "À propos"
+ ],
+ "切换状态": [
+  "状態を切替",
+  "상태 전환",
+  "Toggle state",
+  "Basculer l'état"
  ],
  "切换节点 {node} 的状态": [
   "ノード {node} の状態を切り替え",
@@ -329,11 +341,29 @@
   "Onboarding",
   "Onboarding"
  ],
+ "引擎": [
+  "エンジン",
+  "엔진",
+  "Engine",
+  "Moteur"
+ ],
  "引擎升级 0.1.8：多画板撤销修复": [
   "エンジン 0.1.8 に更新：複数アートボードの取り消しを修正",
   "엔진 0.1.8 업그레이드: 다중 아트보드 실행 취소 수정",
   "Engine upgraded to 0.1.8: multi-artboard undo fix",
   "Moteur mis à jour en 0.1.8 : correction de l'annulation multi-planches"
+ ],
+ "引擎来源": [
+  "エンジンソース",
+  "엔진 소스",
+  "Engine source",
+  "Source du moteur"
+ ],
+ "引擎版本": [
+  "エンジンバージョン",
+  "엔진 버전",
+  "Engine version",
+  "Version du moteur"
  ],
  "当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。": [
   "未保存の変更（ソース草案を含む）があります。新しいファイルを開くと破棄されます。",
@@ -353,6 +383,18 @@
   "This document has unsaved changes (including source draft). Quit anyway?",
   "Ce document a des modifications non enregistrées (brouillon source inclus). Quitter ?"
  ],
+ "思考": [
+  "思考",
+  "생각",
+  "Thinking",
+  "Réflexion"
+ ],
+ "思考中…": [
+  "思考中…",
+  "생각 중…",
+  "Thinking…",
+  "Réflexion…"
+ ],
  "手机原型": [
   "モバイル",
   "모바일",
@@ -371,11 +413,35 @@
   "Extracting design system of board {ab}",
   "Extraction du design system de la planche {ab}"
  ],
+ "提示": [
+  "通知",
+  "알림",
+  "Toast",
+  "Notification"
+ ],
+ "撰写中…": [
+  "作成中…",
+  "작성 중…",
+  "Writing…",
+  "Rédaction…"
+ ],
+ "撰写文档": [
+  "ドキュメントを作成",
+  "문서 작성",
+  "Write document",
+  "Rédiger le document"
+ ],
  "放弃更改": [
   "変更を破棄",
   "변경 사항 버리기",
   "Discard Changes",
   "Abandonner les modifications"
+ ],
+ "文档目录": [
+  "文書目次",
+  "문서 목차",
+  "Document Outline",
+  "Plan du document"
  ],
  "更新日志": [
   "更新履歴",
@@ -394,6 +460,12 @@
   "이 앱은 오픈소스 커뮤니티 위에 세워졌습니다. 위 프로젝트의 저작권은 각 저자에게 있습니다.",
   "This app stands on the open source community — the projects above remain the property of their respective authors.",
   "Cette application s'appuie sur la communauté open source — les projets listés restent la propriété de leurs auteurs respectifs."
+ ],
+ "本文档没有 Markdown 标题（#/##/###），无法生成目录": [
+  "Markdown 見出し（#/##/###）がないため目次を生成できません",
+  "Markdown 제목(#/##/###)이 없어 목차를 만들 수 없습니다",
+  "No Markdown headings (#/##/###) in this document — no outline available",
+  "Aucun titre Markdown (#/##/###) dans ce document — plan indisponible"
  ],
  "查看主题清单": [
   "テーマ一覧を取得",
@@ -509,6 +581,12 @@
   "Listing boards",
   "Liste des planches"
  ],
+ "演示未播放「{node}」的 {act}——演示支持：跳转/返回/提示/改文字/切状态": [
+  "「{node}」の {act} はデモ再生されません——デモ対応：遷移/戻る/通知/文字変更/状態切替",
+  "데모에서 {node}의 {act}은(는) 재생되지 않습니다——데모 지원: 이동/뒤로/알림/텍스트 변경/상태 전환",
+  "Demo does not play {node}'s {act} — demo supports: navigate/back/toast/set text/toggle state",
+  "La démo ne lit pas {act} de {node} — démo gère : navigation/retour/toast/texte/bascule"
+ ],
  "演示模式与 Neu 主题修复": [
   "デモモードと Neu テーマの修正",
   "데모 모드 및 Neu 테마 수정",
@@ -593,6 +671,18 @@
   "Setting color token {t}",
   "Définition du token de couleur {t}"
  ],
+ "设计文档为空——写入内容后，这里会显示章节目录": [
+  "設計ドキュメントが空です。内容を書くとここに目次が表示されます",
+  "설계 문서가 비어 있습니다. 내용을 작성하면 여기에 목차가 표시됩니다",
+  "The design document is empty — write something and its outline will appear here",
+  "Le document de conception est vide — écrivez du contenu et son plan apparaîtra ici"
+ ],
+ "设计规范暂无内容——保存或「从引擎抽取」后按顶层键导航": [
+  "デザイン仕様はまだ空です。保存または抽出するとトップレベルキーで移動できます",
+  "디자인 사양이 비어 있습니다. 저장 또는 추출 후 최상위 키로 이동합니다",
+  "Design spec is empty — save or extract to navigate by top-level keys",
+  "La spécification de design est vide — enregistrez ou extrayez pour naviguer par clés de premier niveau"
+ ],
  "评审画板 {ab} 的设计": [
   "ボード {ab} のデザインをレビュー",
   "보드 {ab} 디자인 검토",
@@ -617,6 +707,12 @@
   "Resizing board {ab}",
   "Redimensionnement de la planche {ab}"
  ],
+ "跳转": [
+  "遷移",
+  "이동",
+  "Navigate",
+  "Naviguer"
+ ],
  "进程内 WASM 引擎宿主": [
   "インプロセス WASM エンジンホスト",
   "인프로세스 WASM 엔진 호스트",
@@ -628,6 +724,12 @@
   "유휴 아트보드 정리: Agent 실행 전후로 빈 자리표시자 자동 정리",
   "Idle artboard sweep: empty placeholders cleaned around Agent runs",
   "Nettoyage des planches inactives : les espaces réservés vides sont purgés autour des exécutions de l'agent"
+ ],
+ "集成模式": [
+  "統合モード",
+  "통합 모드",
+  "Integration mode",
+  "Mode d'intégration"
  ],
  "鸿蒙版首发；Linux 提供 deb 与 AppImage（玲珑下线）": [
   "HarmonyOS 版を初公開。Linux は deb と AppImage を提供（linyaps 廃止）",
@@ -641,34 +743,40 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
+ "设计文档流式生成：思考与正文边生成边排版，目录实时生长，Markdown 源码默认隐藏": [
+  "設計ドキュメントのストリーミング生成：思考と本文が即時排版され、目次もリアルタイム成長、Markdown ソースは既定で非表示",
+  "설계 문서 스트리밍 생성: 생각과 본문이 실시간 조판, 목차 실시간 성장, Markdown 소스 기본 숨김",
+  "Streaming design-doc generation: thinking and body render as they arrive, outline grows live, markdown hidden by default",
+  "Génération en flux du document : pensée et corps mis en page en direct, plan en croissance, source Markdown masquée"
+ ],
+ "一句话同步产出设计文档 + UI 说明；生成原型后自动抽取设计规范（DESIGN.md）": [
+  "一句话で設計ドキュメント+UI仕様を同時生成；プロトタイプ生成後にデザイン仕様（DESIGN.md）を自動抽出",
+  "한 문장으로 설계 문서+UI 명세 동시 생성; 프로토타입 생성 후 디자인 사양(DESIGN.md) 자동 추출",
+  "One line yields design doc + UI spec together; DESIGN.md auto-extracted after prototyping",
+  "Une phrase produit document + spécification UI ; DESIGN.md extrait après prototypage"
+ ],
+ "文档模式左栏改为文档目录（点击定位、滚动高亮）；生成原型时画布实时同步": [
+  "ドキュメントモードの左パネルが目次に（クリック移動・スクロール連動ハイライト）；プロトタイプ生成中はキャンバスがリアルタイム同期",
+  "문서 모드 왼쪽 패널이 목차로(클릭 이동, 스크롤 하이라이트); 프로토타입 생성 중 캔버스 실시간 동기화",
+  "Doc mode left rail becomes a document outline (click-to-scroll, scrollspy); canvas syncs live during builds",
+  "Le panneau gauche devient un plan du document (clic-scroll, surlignage) ; canevas synchronisé en direct"
+ ],
+ "Agent 轨迹全量直播：全模式思考流式展示、完成后自动收缩；终态卡时序修复": [
+  "Agent 軌跡の完全ライブ配信：全モードで思考をストリーミング表示、完了後に自動収縮；終端カードの順序を修正",
+  "Agent轨迹 전체 라이브: 모든 모드에서思考 스트리밍, 완료 후 자동 축소; 종료 카드 순서 수정",
+  "Full live agent trace: streaming thinking in all modes, auto-collapsed when done; final-card ordering fixed",
+  "Trace agent en direct : réflexion en flux dans tous les modes, repliée après ; ordre des cartes corrigé"
+ ],
+ "引擎升级 0.1.10：genUI 建页第一层锚定，组合意图丢段可见（skipped）、变体错误即文档": [
+  "エンジン 0.1.10：genUI 第一層を固定、結合意図の欠落セグメント可視化（skipped）、バリアントエラーが文書化",
+  "엔진 0.1.10: genUI 1계층 고정, 복합 의도 누락 세그먼트 가시화(skipped), 변형 오류 문서화",
+  "Engine 0.1.10: genUI first-tier pinned, dropped combined-intent segments visible (skipped), variant errors as documentation",
+  "Moteur 0.1.10 : genUI premier niveau épinglé, segments perdus visibles (skipped), erreurs de variante documentées"
+ ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",
   "최소 하나의 보드는 남겨야 합니다",
   "Keep at least one board",
   "Gardez au moins une planche"
- ],
- "引擎": [
-  "エンジン",
-  "엔진",
-  "Engine",
-  "Moteur"
- ],
- "引擎版本": [
-  "エンジンバージョン",
-  "엔진 버전",
-  "Engine version",
-  "Version du moteur"
- ],
- "集成模式": [
-  "統合モード",
-  "통합 모드",
-  "Integration mode",
-  "Mode d'intégration"
- ],
- "引擎来源": [
-  "エンジンソース",
-  "엔진 소스",
-  "Engine source",
-  "Source du moteur"
  ]
 }

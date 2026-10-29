@@ -3,6 +3,16 @@ const html=fs.readFileSync(path.join(__dirname,'frontend','index.html'),'utf8');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const markup=html.slice(0,html.indexOf('<script>'));
 const source=script;
+
+/* 检查 X：前端脚本必须能被真实解析器接受。
+ * 历史事故（本次审查发现）：注释里写三反引号会提前闭合代码块标记，
+ * 整份内联脚本解析失败 → 应用白屏，而所有静态断言照样全绿（它们只做正则匹配）。
+ * 注释里写 Markdown 示例是很容易踩的坑，必须有一次真实 parse。 */
+try{
+  new vm.Script(script,{filename:'frontend/index.html:inline'});
+}catch(e){
+  assert.fail(`前端内联脚本无法解析（应用会白屏）：${e.message}\n${String(e.stack||'').split('\n')[1]||''}`);
+}
 const elements=new Map();
 function element(id){if(!elements.has(id))elements.set(id,{value:'',style:{},dataset:{},textContent:'',innerHTML:'',className:'',classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},focus(){},select(){},querySelectorAll(){return[]},replaceChildren(){}});return elements.get(id)}
 
@@ -100,6 +110,9 @@ assert.deepEqual(stubMasking,[],
 /* 检查 D：跨文件契约——Rust 原生菜单 id 必须都被 nativeMenuAction 处理。
  * lib.rs 用 typeof 守卫兜底，所以漏映射时菜单静默失效，任何前端自测都发现不了。 */
 const libRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','lib.rs'),'utf8');
+// 后端源码只读一次：多个检查块共用（重复 readFileSync 纯浪费，且以后加断言不必再抄路径）
+const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
+const hostRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','wasmtime_host.rs'),'utf8');
 const tauriConf=fs.readFileSync(path.join(__dirname,'src-tauri','tauri.conf.json'),'utf8');
 // id 允许大小写/数字/下划线：只收 [a-z-] 会让 "open_ddp2" 这类 id 静默逃过契约检查
 const menuIds=[...libRs.matchAll(/MenuItem::with_id\(\s*app,\s*"([A-Za-z0-9_-]+)"/g)].map(m=>m[1]);
@@ -263,6 +276,215 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     'dev 徽标/引擎信息 UI（dev-chip/eng-ver/eng-mode/eng-src）缺失——请同步检查 P');
   assert(/releaseTag==='local-dev'/.test(script),
     'dev 渠道判定缺失（releaseTag local-dev）——请同步检查 P');
+}
+
+/* 检查 Q：Agent 轨迹终态二元语义——绿=正常完成、红=异常终止（步数耗尽/中途失败）。
+ * 步数耗尽路径曾零事件（时间线静默，分不清运行是否结束）、failed 仅单行弱标志；
+ * Rust 侧必须为 max_turns 路径补发 done 终态事件，前端三种终态都必须落终态卡。 */
+{
+  assert(agentRs.includes('"stopReason": "max_turns", "ops"'),
+    'agent.rs 步数耗尽路径未发 done 终态事件——轨迹静默回归，请同步检查 Q');
+  assert(agentRs.includes('"error": e, "ops": state.ops.len()'),
+    'failed 事件未携带 ops——前端无法区分「已保留部分」与「零提交」，请同步检查 Q');
+  assert(/function traceFinalCard\(box,ok,tx\)/.test(script)&&/escHtml\(e\.final\.tx\)/.test(script),
+    '轨迹终态卡助手 traceFinalCard 缺失或未在内部统一转义（innerHTML 注入点，终态卡走 tracePending 队列）——请同步检查 Q');
+  assert(/p\.stopReason==='max_turns'\)\{[\s\S]{0,260}traceFinalCard\(box,false,/.test(script),
+    'max_turns 未落异常终止红卡——请同步检查 Q');
+  assert(/p\.type==='failed'\)\{[\s\S]{0,400}traceFinalCard\(box,false,/.test(script),
+    'failed 未升级为异常终止终态卡（单行弱标志回归）——请同步检查 Q');
+  assert(/function traceFailCard\(runId,msg\)/.test(script)&&(script.match(/traceFailCard\(runId,msg\);/g)||[]).length>=2,
+    'run 前置校验失败路径未补落终态卡（traceFailCard）——Rust 零事件早退会让 tl-run 容器空着，请同步检查 Q');
+  assert(/\.tl-final\.abnormal\{/.test(html),
+    '异常终止红卡样式（tl-final.abnormal）缺失——请同步检查 Q');
+}
+
+/* 检查 R：演示模式进入态初始化——enteringPlay 必须在 `mode=m` 赋值**之前**捕获
+ * （位置用 indexOf 断言：仅存在性断言抓不住「挪到赋值后」这一复刻事故形态的变异），
+ * 且 playStack 播种以 enteringPlay 为门。历史上守卫写成 `mode!=='play'` 而当时
+ * mode 已被赋成新值——恒假死代码：演示栈从未初始化、起点页从不生效，演示落在
+ * 最后编辑的画板上（无出边交互即零热区=「热区消失/失效」事故根因）。
+ * 前进导航的进栈序列由 playGo 单点收口——多一处拷贝就会复演栈语义漂移。 */
+{
+  const i=script.indexOf('function setMode(m){');
+  const j=script.indexOf('\nfunction ',i+10);
+  const setModeBody=i>=0?script.slice(i,j):'';
+  assert(/const enteringPlay=m==='play'&&mode!=='play';/.test(setModeBody)
+    &&setModeBody.indexOf('const enteringPlay')>=0
+    &&setModeBody.indexOf('const enteringPlay')<setModeBody.indexOf('mode=m;'),
+    'enteringPlay 未在 mode=m 赋值前捕获（演示初始化守卫回归死代码）——请同步检查 R');
+  assert(!/if\(mode!=='play'\)\{playStack=\[startAb\]/.test(script),
+    "演示栈播种仍用 mode!=='play' 死守卫（恒假）——请同步检查 R");
+  assert(/if\(enteringPlay\)\{playStack=\[startAb\];if\(active!==startAb\)\{active=startAb;playApplySession\(startAb\);\}\}/.test(script),
+    '演示初始化未以 enteringPlay 播种栈/切起点页——请同步检查 R');
+  assert(/function playGo\(to\)\{/.test(script)&&(script.match(/playGo\(/g)||[]).length>=3,
+    '演示前进导航未收口到 playGo 单点（栈不变量多写一处就会漏）——请同步检查 R');
+}
+
+/* 检查 S：产品设计工作室（设计文档 → 可交互原型，UI 说明可选）+ 设计规范一致性契约。
+ * DESIGN.md 载体是 .mbt.md 的注释块，真机实证有五条硬约束（见 index.html 的
+ * designSerialize 注释）：`-->` 会截断注释、缩进被压平、moonviz 前缀被过滤等。
+ * 其中「`-->` 防护」与「幂等」是可静态锚定的实现形态，其余靠运行时约束。 */
+{
+  assert(/<!-- deepdesign:design /.test(script)&&/function designSerialize\(/.test(script),
+    'DESIGN.md 注释块载体/序列化缺失——请同步检查 S');
+  assert(/\.replace\(\/>\/g,'\\\\u003e'\)/.test(script),
+    "DESIGN.md 序列化未把 '>' 转义为 \\u003e——注释块会被 '-->' 提前截断（真机实证坑）——请同步检查 S");
+  assert(/function designInject\(mbt\)\{[\s\S]{0,600}?return out\+'\\n\\n<!-- deepdesign:design '\+payload\+' -->\\n';/.test(script),
+    'DESIGN.md 注入未固定文末追加格式（幂等前提）——请同步检查 S');
+  assert(/const canonical=preview\?result\.mbt:designInject\(inkInject\(result\.mbt\)\);/.test(script),
+    '事实源合成未同时注入批注与 DESIGN.md（applyMbtResult）——请同步检查 S');
+  assert(/designRestore\(b64ToUtf8\(r\.mbt_b64\)\)/.test(script),
+    '打开项目未恢复 DESIGN.md——请同步检查 S');
+  // PRD 是第一步 C 位：一句话只是「产出 PRD 的一种入口」，不是必经的两阶段流水线。
+  // mode='both'（2026-10-27）：PRD + UI 说明一次同步产出，建画布同时拿两份约束。
+  assert(/function runStudioPrompt\(\)/.test(script)&&/askFxSdkMode\(prdInstr,run1,'both'\)/.test(script),
+    '一句话生成设计文档的入口缺失（mode=both 未下发）——请同步检查 S');
+  assert(/function buildFromDocs\(\)/.test(script)&&/askFxSdk\(parts\.join\('\\n\\n'\),runId\)/.test(script),
+    'PRD → 原型的生成入口缺失——请同步检查 S');
+  // 建画布前必须先把编辑器内容收回真源，且以「非空白的设计文档」为门槛
+  // （纯空白不算有内容——否则会把空文档发给 agent）
+  assert(/syncPrdFromEditor\(\);[\s\S]{0,400}?if\(!String\(studioDocs\.prd\|\|''\)\.trim\(\)\)/.test(script),
+    '生成原型前未收回设计文档编辑器内容/未以非空内容为门槛——请同步检查 S');
+  // 第一栏是「设计文档」（需求设计），它才是建原型的唯一功能依据
+  assert(/【设计文档（需求设计）——这是唯一的功能与范围依据】/.test(script),
+    '建画布提示词未把设计文档声明为唯一功能依据——请同步检查 S');
+  assert(/doc-tab on" id="doc-tab-prd"[^>]*>设计文档</.test(html)
+    &&/id="doc-tab-design"[^>]*>设计规范</.test(html),
+    '第一栏必须叫「设计文档」且与「设计规范」明确区分——请同步检查 S');
+  // 位置断言（不是存在性）：设计文档是 C 位第一栏，必须排在 UI 说明与设计规范之前
+  assert(html.indexOf('id="doc-tab-prd"') < html.indexOf('id="doc-tab-ui"')
+    && html.indexOf('id="doc-tab-ui"') < html.indexOf('id="doc-tab-design"'),
+    '面板内的栏位顺序变了（设计文档必须是第一栏）——请同步检查 S');
+  // 顶栏模式切换同理：设计文档排在绘图模式之前（用户决策）
+  assert(html.indexOf('id="mode-doc"') < html.indexOf('id="mode-wireframe"'),
+    '顶栏里设计文档未排在绘图模式之前（C 位入口顺序）——请同步检查 S');
+  assert(/const ui=\$\('doc-pane-ui'\);[\s\S]{0,300}?\u53ef\u9009/.test(script),
+    'UI 说明未标注为可选中间产物（它不该是必经步骤）——请同步检查 S');
+  assert(/id="doc-stage"/.test(html)&&/id="doc-pane-prd"/.test(html)&&/id="doc-prd-text"/.test(html)
+    &&/id="doc-pane-design"/.test(html),
+    'PRD 面板（可编辑 textarea）/ 设计规范面板缺失——请同步检查 S');
+  assert(/function importPrdFromFile\(\)/.test(script)&&/readAsText\(f\)/.test(script),
+    '外部产品文档导入入口缺失（PRD 必须支持粘贴/导入）——请同步检查 S');
+  assert(/function togglePrdEdit\(\)/.test(script)&&/id="doc-prd-preview"/.test(html),
+    'PRD 编辑/预览切换缺失——请同步检查 S');
+  /* 展示形态按**内容**判断，不按文件类型（用户决策）：
+   * Markdown → 渲染排版；纯文本 → 原样显示（保留换行缩进）。
+   * 判定器与两条渲染分支都必须存在，且纯文本分支走 pre.doc-plain。 */
+  assert(/function looksLikeMarkdown\(text\)/.test(script),
+    '缺少内容格式判定器（无法区分 Markdown 与纯文本）——请同步检查 S');
+  assert(/function renderPrdView\(text\)/.test(script)
+    &&/<pre class="doc-plain">'\+escHtml\(t\)\+'<\/pre>/.test(script),
+    '纯文本未走「原样显示」分支（会被错当 Markdown 压平换行）——请同步检查 S');
+  assert(/looksLikeMarkdown\(t\)\)return mdToHtml\(t\)/.test(script),
+    'Markdown 内容未走渲染分支——请同步检查 S');
+  assert(/looksLikeMarkdown\(studioDocs\.prd\)\?'按 Markdown 渲染':'纯文本（原样显示）'/.test(script),
+    '预览态缺少格式标签（用户无法确认系统按哪种格式解读）——请同步检查 S');
+  // XSS：不用源码形态断言（那会锁死实现细节），直接在 vm 里跑真实渲染器验证注入不生效
+  const xssCtx=vm.createContext({});
+  vm.runInContext([
+    (script.match(/^const escHtml=.*$/m)||[])[0],
+    fn('mdToHtml'),
+  ].join('\n')+'\nthis.render=mdToHtml;',xssCtx);
+  // 用不含圆括号的载荷：`[^)]+` 会在第一个 ')' 处截断，带括号的载荷根本进不了 href
+  // （实测：`[x](a" onmouseover="alert(1))` 连链接都不成立，会被当成普通文字）
+  const xssOut=xssCtx.render('# t\n\n[x](a" onmouseover="alert`1`)\n\n<img src=y onerror=alert`1`>\n\n**<script>alert`1`</script>**');
+  assert(!/<a[^>]*onmouseover/i.test(xssOut),'Markdown 渲染把 onmouseover 塞进了 <a> 标签——请同步检查 S');
+  assert(!/<img[^>]*onerror/i.test(xssOut),'Markdown 渲染放行了 <img onerror> 标签（原始 HTML 未被转义）——请同步检查 S');
+  assert(!/<script/i.test(xssOut),'Markdown 渲染放行了 <script> 标签——请同步检查 S');
+  // 伪协议必须降级为纯文本（不可点击）——这是白名单唯一能挡住的攻击面
+  const jsOut=xssCtx.render('# t\n\n[危险](javascript:alert`1`)');
+  assert(!/href="javascript:/i.test(jsOut),'Markdown 渲染放行了 javascript: 伪协议——请同步检查 S');
+  assert(!/href="data:/i.test(xssCtx.render('# t\n\n[危险](data:text/html,x)')),'Markdown 渲染放行了 data: 伪协议——请同步检查 S');
+  assert(/href="https:\/\/example\.com"/.test(xssCtx.render('# t\n\n[正常](https://example.com)')),'合法 https 链接被误杀——请同步检查 S');
+}
+
+/* Rust 侧：文档阶段的工具面必须不含 moonviz_op（结构上不可能改画布）。
+ * 这是"文档阶段只产出文档"不变式的真正保障——提示词禁令可以被幻觉绕过，
+ * 工具面缺失不能。 */
+{
+  assert(/fn tools_typed_doc\(\)[\s\S]{0,1400}?\n\}/.test(agentRs)
+    &&!/fn tools_typed_doc\(\)[\s\S]{0,1400}?"moonviz_op"/.test(agentRs),
+    '文档阶段工具面含 moonviz_op——文档阶段必须结构上无法改画布——请同步检查 S');
+  assert(/if doc_mode \{\s*json!\(\{"ok": false, "error": "doc_phase_readonly/.test(agentRs),
+    '文档阶段缺少 moonviz_op 兜底拦截（提示词禁令不足以防护）——请同步检查 S');
+  assert(/fn doc_phase\(mode: Option<&str>\) -> bool \{\s*matches!\(mode, Some\("prd"\) \| Some\("ui"\) \| Some\("both"\)\)/.test(agentRs),
+    'doc_phase 判定缺失或口径漂移——请同步检查 S');
+}
+
+/* 检查 T：生成式 UI 必须是建画布的首选通道（genUI 第一公民）。
+ * 真实事故：种子引导只认 template/create，`generate` 作为空项目首个 op 时会话开不起来，
+ * 模型被迫退回逐个 place——420 步摆一屏、叠出兄弟重叠（截图实证）。
+ * 三处必须同时在场，缺一即失效：
+ *   1) 宿主槽位（wasmtime_host）：按 " as " 切分且**不能 skip 动词**（op 已剥前缀）
+ *   2) agent 首 op 引导：generate 与 template/create 同权
+ *   3) 提示词：Build loop 把 generate 写成默认路径并解释为何不能手工摆页 */
+{
+  assert(/"session_generate" => \{[\s\S]{0,700}?rsplit_once\(" as "\)/.test(hostRs),
+    'host 未按 " as " 切分 generate 的 name（intent 含空格会被切碎）——请同步检查 T');
+  assert(/"session_generate" => \{[\s\S]{0,400}?let rest = op\.trim\(\);/.test(hostRs),
+    'host 对 generate 的 op 做了 skip 动词处理——op 已剥前缀，skip 会丢意图首词——请同步检查 T');
+  assert(/"session_generate" => \{\s*"session_generate_in"\.to_string\(\)/.test(hostRs.replace(/\s+/g,' '))
+    || /"session_generate_in"\.to_string\(\)/.test(hostRs),
+    'generate 未映射到 session_generate_in——请同步检查 T');
+  // 首 op 引导：generate 必须与 template/create 同列（matches! 宏内出现 "generate"）
+  assert(/Some\("template"\) \| Some\("create"\) \| Some\("generate"\)/.test(agentRs)
+    &&/generate_works_as_first_op_on_empty_project/.test(agentRs),
+    'generate 不是空项目的合法首 op（genUI 在建画布阶段失效）——请同步检查 T；'
+    +'真实事故：种子引导只认 template/create 时 generate 开会话失败，模型退回逐 place 叠重叠');
+  assert(/\*\*`generate <intent> \[as <name>\]`\*\*/.test(agentRs)&&/### Why not hand-place a screen/.test(agentRs),
+    '提示词未把 generate 写成建页默认路径（会退回逐 place 叠重叠）——请同步检查 T');
+  // 自检必须真的把结果**报出来**，而不是只在代码里跑一遍就完（偏差被静默等于没做）。
+  // 锚定实际的两条 toast 模板：有偏差时报条数与页面，无偏差时报通过。
+  assert(/function auditBuiltBoards\(\)/.test(script)&&/const issues=await auditBuiltBoards\(\)/.test(script),
+    '建画布后缺少终态自检（auditBuiltBoards 未接入）——请同步检查 T');
+  assert(/自检发现 \$\{issues\.total\} 处偏差（\$\{issues\.boards\.join/.test(script),
+    '自检结果未如实上报（有偏差时必须报条数与页面名）——请同步检查 T');
+  assert(/自检通过/.test(script),
+    '自检无偏差时缺少「自检通过」的正向反馈——请同步检查 T');
+}
+
+/* 检查 S2：设计文档的**内容格式判定**必须真能区分 Markdown 与纯文本。
+ * 静态断言只能证明函数在场——刻意把判定器改成恒 true/恒 false 也照样绿。
+ * 这里把判定器与渲染分支抽出来真跑（用户决策：Markdown 渲染、纯文本原样显示）。 */
+{
+  const a=script.indexOf('function looksLikeMarkdown(');
+  assert(a>=0,'未能定位 looksLikeMarkdown——请同步检查 S2');
+  const fmtCtx=vm.createContext({});
+  // 用花括号匹配逐个抽真实定义（按注释/文本切片会跨进注释体，parse 失败）
+  const escLine=(script.match(/^const escHtml=.*$/m)||[])[0];
+  assert(escLine,'未能抽取 escHtml 定义——请同步检查 S2');
+  vm.runInContext([
+    escLine,
+    fn('mdToHtml'),
+    fn('looksLikeMarkdown'),
+    fn('renderPrdView'),
+    'this.check=looksLikeMarkdown;this.view=renderPrdView;',
+  ].join('\n'),fmtCtx);
+  const mdCases=[
+    ['# 标题\n\n正文',true,'ATX 标题'],
+    ['| 页面 | 职责 |\n|---|---|\n| 首页 | 浏览 |',true,'表格'],
+    ['- 要点一\n- 要点二\n- 要点三',true,'无序列表'],
+    ['```\ncode\n```',true,'代码围栏'],
+    ['> 引用一句',true,'引用'],
+  ];
+  const plainCases=[
+    ['产品需求：\n\n露营装备租赁小程序。\n面向城市年轻人。\n\n核心流程：\n首页浏览后进入详情。','多段散文'],
+    ['客户名称：张三\n订单编号：20261026\n金额：1280 元','键值纯文本'],
+    ['这是一句话','单行'],
+    ['','空内容'],
+  ];
+  for(const [text,want,label] of mdCases){
+    assert.equal(fmtCtx.check(text),want,`Markdown 判定错误（${label}）：内容被误判`);
+  }
+  for(const [text,label] of plainCases){
+    assert.equal(fmtCtx.check(text),false,`纯文本被误判成 Markdown（${label}）——预览会压平原有换行`);
+  }
+  // 渲染分支：Markdown 出结构标签，纯文本出 pre.doc-plain 且内容逐字保留
+  assert(/<h1>|<h2>/.test(fmtCtx.view('# 标题\n\n正文')),'Markdown 内容未渲染出标题结构');
+  const plainText='第一行\n  缩进的第二行\n第三行';
+  const plainHtml=fmtCtx.view(plainText);
+  assert(/<pre class="doc-plain">/.test(plainHtml),'纯文本未走原样显示分支（应包在 pre.doc-plain 里）');
+  assert(plainHtml.includes('第一行\n  缩进的第二行\n第三行'),'纯文本原样显示丢了换行或缩进');
 }
 
 /* 检查 J：Agent 预览必须按 run/generation/序列收口，禁止迟到帧回写终态。 */

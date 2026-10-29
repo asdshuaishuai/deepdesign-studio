@@ -1,10 +1,12 @@
 # AGENTS.md — deepDesign Studio
 
-AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**唯一事实源是 MoonViz 引擎的 `.mbt.md` 文档**：
-人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后回写同一份文档，
-`.ddp` 只是它的认证加密容器。
+AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**一句话产出产品需求设计文档 →
+完整可交互原型**的一站式产品设计工作室。**唯一事实源是 MoonViz 引擎的
+`.mbt.md` 文档**：人类画布操作与 Agent 修改都必须经引擎校验（HumanGate / AgentGate）后
+回写同一份文档，`.ddp` 只是它的认证加密容器。项目级 **DESIGN.md**（设计规范文档）约束
+全局视觉一致性——配色/字体/间距/圆角/组件规范都从它派生，随 DDP 持久化。
 
-**当前版本：0.4.2-fix**（2026-10-11 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
+**当前版本：0.5.0**（2026-10-29 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
 详见 [docs/versioning.md](docs/versioning.md)。
 
 ## 分支纪律（用户决策）
@@ -33,7 +35,7 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
 
 必须守住的边界：
 
-- **前端只能经 `window.__TAURI__.core.invoke` 调上面 8 个命令**，没有 HTTP 层，不要引入 fetch/axios。
+- **前端只能经 `window.__TAURI__.core.invoke` 调上面注册的 Tauri 命令**，没有 HTTP 层，不要引入 fetch/axios。
 - **Rust 不解释视觉语义、Markdown 或 MoonBit block**。它只做三件事：b64 搬运、wasmtime 宿主、DDP 加解密。
   任何"顺手在 Rust 里改一下布局/属性"的做法都越界了——变更必须回到引擎。
 - **人类操作与 Agent 操作走不同引擎入口**：画布走 `apply_human_op`，Agent 变更走
@@ -45,7 +47,7 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
   的 `moonviz-wasm-classic-<version>.wasm`——**纯 WASM MVP、宿主中立、零 import**；
   docs #wasm 节的「标准 wasm」，与 engine-v* tag 同源；wasm-gc 变体依赖 JS String
   Builtins 提案、仅 V8 类引擎可跑，本仓库不用）。sync-engine.mjs 拉取 + sha512 校验 +
-  真机契约探针（7 经典/4 检视/26 session 导出 + `_in` 面实跑 + 模板/组件/会话计数）。
+  真机契约探针（7 经典/4 检视/28 session 导出 + `_in` 面实跑 + 模板/组件/会话计数）。
   **engine-v0.1.2 的 `_in` 字节契约面（issue #8）是全部宿主的写路径**：wasmtime_host、
   前端（engSlotLoad）、sync 探针三处消费——文档/op/artboard 经 in/arg/arg2 三槽 UTF-8
   分块压入（每块小端 4 字节+有效长度），`*_in()` 变体解码调经典入口。**写方向的逆向
@@ -65,7 +67,7 @@ docs/upstream-engine-ask.md  wasmtime 宿主立项 → **已实施**（上游 cl
 **Rust 命令必须在 `src-tauri/` 下执行**——仓库根目录没有 `Cargo.toml`，也没有 `package.json`。
 
 ```bash
-cd src-tauri && cargo test        # 测试：方言表/协议/归一化单测 + base_url 策略 + wasm 契约（node 宿主跑真产物）+ 4 个端到端（mock LLM）+ 模型快照契约
+cd src-tauri && cargo test        # 测试：方言表/协议/归一化单测 + base_url 策略 + wasm 契约（wasmtime 进程内宿主）+ mock LLM 端到端 + 模型快照契约
 cd src-tauri && cargo build
 node test_studio.cjs              # 前端状态机冒烟 + wasm 产物契约（在仓库根跑，classic wasm 无 node 版本门槛）
 node scripts/sync-engine.mjs      # 引擎产物同步（GitHub Releases classic wasm → frontend/vendor/；先跑这个）
@@ -156,6 +158,12 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 忽略本地源**——标记在场时醒目告警并使用 Release 锚定引擎（CI 全新检出无标记，
 不受影响）。删除标记文件即恢复纯 Release 锚定。
 
+**当前工作状态：本地 SDK 模式已启用**（`ENGINE_LOCAL` → `../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm`，
+引擎 dev 0.1.9-fix-2，含 `generate` 生成式 UI / norms v2 / 动效系统 / `session_spec` /
+`session_extract_design_system`）。契约探针已扩到 **28 session API**——新增能力进 wasm 面时
+必须同步 `scripts/sync-engine.mjs` 的 `SESSION_EXPORTS`，否则本地构建的新导出无人守门。
+生产打包仍走 `--release`（硬性忽略本地源）。
+
 规范线现状（**已随 engine-v0.1.9 重出构建全量发布**，2026-10-11）：
 `core/norms.mbt`（按钮不卡文案：文案宽+24 留白、高 ≥ 字号+20；圆角档：按钮族 8、
 胶囊 高/2、avatar 999；全宽条/全宽行直角；**齐缝列表行必须有行间分割线**——
@@ -213,6 +221,58 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
   （temporal_rs/icu_calendar 编译断裂实证）；**wasmtime 为最终形态**
   （classic wasm 宿主中立使然，见 `docs/upstream-engine-ask.md`）。
 
+## 设计工作室：DESIGN.md 契约与两阶段生成（检查 S 锚定）
+
+**DESIGN.md** 是项目级设计规范，载体是 `.mbt.md` 里的 HTML 注释块
+`<!-- deepdesign:design {...} -->`——与批注（`deepdesign:ink`）同构，DDP 自动携带、
+随文件迁移、不改 Rust 持久化层。载荷含 `palette / typography / spacing / radius /
+rules[] / notes` 与 `docs:{prd,ui}`（两份文档正文）。
+
+**真机实证的五条硬约束**（违反会静默丢内容，见 `frontend/index.html` 的 `designSerialize` 注释）：
+1. 内容里**绝不能出现 `-->` 字面量**——引擎扫描器在首个 `-->` 处截断注释。实现把 `>` 转义为
+   `\u003e`（JSON.parse 能还原）；改序列化时守住这条，否则长文档会被腰斩。
+2. 引擎会**压平行首缩进**——文档正文用表格/扁平列表/显式编号，不用嵌套缩进表达层级。
+3. 注释内不要写**未闭合的 ```mbt 围栏**——会让其后的真实围栏块被吞，文档直接打不开。
+4. 标记不能以 **moonviz** 开头（引擎当锚标记过滤）。
+5. 放**文末**最稳（位置不随删板/改名漂移；放正文前的锚点由其后最近的 `## <板名>` 决定）。
+
+**设计文档是第一栏（站 C 位）**——即"产品需求设计文档"，主线只有两步，UI 说明是**可选**中间产物：
+1. **产出设计文档**，两个等价入口：一句话让 Agent 生成（`runStudioPrompt` → `mode:"prd"`），
+   或**直接粘贴/导入外部产品文档**（`#doc-prd-text` 是默认编辑态，「预览」切只读渲染）。
+2. **设计文档 → 可交互原型**（`buildFromDocs`）——以设计文档为唯一功能与范围依据，实测不需要
+   先写 UI 说明（引擎生成式 UI 按 DESIGN.md 的规范自行决定视觉细节）。
+
+硬约束：
+- **文档阶段工具面不含 `moonviz_op`**（`tools_typed_doc`）——结构上不可能改动画布，
+  外加 `if doc_mode` 兜底拦截（提示词禁令挡不住幻觉，工具面缺失才行）。
+- 每次 run 独立 `runId` / `startMbt` / `max_steps`；文档阶段与建画布若连续执行，必须在
+  同一 `agentBusy` 区间串行（单 wasmtime 单例，禁止并发 run）。
+- 文档阶段不调 `applyAgentTerminal`（不碰画布），`r.docs` 直接落 `studioDocs` 再 `persistDesign()`。
+- 文档阶段模型只回文本不调 `write_doc` → 报 `doc_not_written` 失败，**不伪装成澄清**
+  （澄清是建画布阶段的合法意图，文档阶段要的是交付物）。
+- `buildFromDocs` 前置必须 `syncPrdFromEditor()` 先把编辑器内容收回真源——用户改完 PRD
+  直接点「生成原型」时，不收回就会用旧的 `studioDocs.prd`。
+- `buildFromDocs` 开始即 `setMode('wireframe')`（2026-10-27 用户要求）：生成原型的主秀是画布——
+  preview 帧边跑边把画板长出来，用户看着原型出现，而不是盯着文档覆盖层等跑完才见分晓。
+  右侧追踪照常可见（右栏与模式无关）。
+- **both 模式 + 直播渲染 + 终态卡队列（2026-10-27 用户要求）**：① runStudioPrompt 走
+  `mode='both'`——PRD + UI 说明**一次同步产出**（引擎 `doc_satisfied`：both 需两份齐；
+  单份先到继续等，文本收尾走 doc_not_written 且部分随 docs 交回），建画布同时拿到
+  功能范围与逐页设计约束；buildFromDocs 成功后若无手写 DESIGN.md 则自动从引擎抽取
+  设计基线落盘（`designFromEngine`，不覆盖用户规范）。② doc_delta 直播改为**实时渲染**：
+  markdown 对用户默认不可见——流式期间自动切渲染视图（PRD_EDITING=false），
+  `scheduleLiveRender` rAF 合帧刷渲染与目录，面板恒滚底；「编辑」按钮随时可看原文。
+  ③ `traceFinalCard` 与普通行走**同一条 tracePending RAF 队列**（此前卡片同步插队、
+  行延迟刷新，运行完成卡出现在撰写行中间）；队列按事件到达序渲染，卡自然落在
+  流程末尾。test_studio 检查 Q/S 锚点已随新形态同步（escHtml(e.final.tx)、
+  mode='both'、doc_phase 三模式）。
+
+**DESIGN.md（第三栏「设计规范」）只是视觉规范，不是设计文档**——它约束配色/字号/间距/
+圆角/引擎规范，不描述页面内容（内容由第一栏的设计文档决定）。措辞上不要把它叫成"设计文档"。
+
+**文档面板**：`#doc-stage` 覆盖层三视图 —— 设计文档（可编辑/可预览/可导入，第一栏）/
+UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先 escHtml 再结构化，不引三方库）。
+
 ## Agent 基座约定（`agent.rs`）
 
 - **思考等级方言表是 `thinking_extra_body(model, level, protocol)`**（三参含协议），按模型名分部匹配：GLM-5.3 强制思考（仅 low/high/max）、
@@ -259,10 +319,32 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
 - `safe_base_url` 有 SSRF 防护：仅放行 https 与 localhost/私有网段 http（IP 段是精确判定，
   `172.20.x` 放行、`172.2.x`/`172.255.x` 拒绝，DNS 前缀伪装如 `10.evil.com` 拒绝）。改动时守住单测。
 - **实时轨迹（agent-event 事件流）**：run() 循环每步经 progress 回调 → `app.emit("agent-event")`
-  → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`tool_start`/`tool_end`
-  （op、✓/✗、耗时、门拒绝详情）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。run id 由 lib.rs 注入每个事件（前端按它过滤归属），
-  **丢 run id = 时间线 100% 失效**（历史事故）。长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
+  → 前端「Agent 追踪」时间线。事件类型：`assistant_text`（LLM 计划/澄清提问）、`assistant_thinking`
+  （**仅 doc 模式**发射的思考过程 reasoning_content/reasoning；Anthropic thinking 块在 normalize 时
+  归一为 reasoning_content——建画布阶段刻意不发，一步一思考会淹没 op 流，mock 测试
+  `doc_phase_emits_assistant_thinking_events` 锚定双向）、**`thinking_delta`/`doc_delta`（仅 doc 模式
+  + OpenAI 协议的 SSE 流式增量，2026-10-27）**：文档阶段的思考与 write_doc 正文**边生成边推进**，
+  前端以直播行（`tl-think-live-<run>`/`tl-doc-live-<run>`，`traceLiveLine` 幂等创建）实时追加、
+  doc_delta 同时往 `studioDocs.prd` + PRD 编辑器实时落字（`liveDocRun` 归属门，doc_written/失败清零）；
+  传输层 `chat_once_stream_mode` 带三层兜底：网关 400 指名 stream → 退回非流式；响应体无任何
+  `data:` 行（网关忽略 stream:true）→ 整份 JSON 透传 + 按旧契约整段补发 assistant_thinking；
+  markdown 增量提取器遇不完整转义序列（跨片切断的 `\n`/`\uXXXX`）停住等下一片，
+  `doc_phase_streams_thinking_and_doc_deltas` 用转义中间切断的 SSE mock 锚定逐字一致性）、
+  `tool_start`/`tool_end`
+  （op、✓/✗、耗时、门拒绝详情；write_doc 的 op 是整段 JSON，humanize 为「撰写文档」且 op 不进
+  title 防 ✓ 行回显 JSON）、`doc_written`（kind/chars/md——md 全文以折叠行进轨迹，右侧时间线
+  要能完整读到模型写出的每一句）、`preview`（携带 `preview_seq` 单调序号）、`done`/`failed`。
+  run id 由 lib.rs 注入每个事件（前端按它过滤归属），
+  **丢 run id = 时间线 100% 失效**（历史事故）。**终态二元卡（检查 Q 锚定）**：每条轨迹必须以终态卡收尾显式回答
+  「结束没有、正常与否」——`done`(stopReason=done) 绿卡完成；`done`(stopReason=max_turns，**步数耗尽路径必须发事件**，此前静默)
+  与 `failed`（LLM 中断/无响应）红卡异常终止（`traceFinalCard` 助手，内部统一 escHtml）；`failed` 事件携带 ops，
+  前端据此区分「已保留部分」与「零提交」；run 前置校验失败（api_key/base_url 等 Rust 零事件早退）由前端 `traceFailCard` 补落红卡。
+  长文本折叠为 `<details class="tl-fold">`（前 120/80 字 +
   展开全文），与 gp-thread 面板、trackAgent 卡三处呈现同一事实，改呈现须同步折叠语义。
+  **轨迹是全局唯一时间线**：按 run 分块 prepend 到同一 `#tl-body`，不随顶部模式 tab 切换、
+  不按文档/画布分流（清空只能手动「清空追踪记录」）。**状态栏收尾语义**：`setStatus('')` 是
+  复位（READY + 默认提示语），不是 no-op——过程态（如「生成设计文档…」）必须在 run 结束时
+  被复位，否则绿卡已完成、底部还挂着生成中（2026-10-27 用户实测）。
 - **Agent 运行中预览（preview）四重新鲜度校验**：Rust 每次成功 moonviz_op ≥1.5s 推一帧全量 canonical，
   前端 `schedulePreview`/`paintPreview` 同时校验 **run 归属 + preview_seq 序号 + generation + viewEpoch**——
   旧 run 迟到帧、同 epoch 乱序 WASM 返回、终态/切项目后的残留帧一律丢弃；成功终态只 `invalidatePreview()`
@@ -359,6 +441,15 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
   `place`/`copy` 传什么就是什么。实测 `place … 'x"><img src=y onerror=…>'` 会被原样写进
   `export-svg` 的 `<g id="n_…">`，突破属性引号。所以：中文名会碰撞（画板侧），
   而节点 id 是**不可信字符串**，拼进 `innerHTML` 前必须转义（见 `escHtml`）。
+- **演示模式（play）进入态与导航栈（检查 R 锚定）**：`setMode` 的进入判定 `enteringPlay` 必须在
+  `mode=m` 赋值**前**捕获（检查 R 用 indexOf 位置断言——仅存在性断言抓不住「挪到赋值后」的变异）
+  ——曾写成 `mode!=='play'` 而当时 mode 已是新值，恒假死代码：演示栈从未播种、`demoStartBoard`
+  （交互根/枢纽页）从不生效，演示落在最后编辑的画板上（无出边交互即零热区=2026-10-11「热区消失/
+  失效」事故根因，2026-10-10「第二页进演示返回无效」同根因）。前进导航（playTap 两分支）统一走
+  `playGo` 单点收口——进栈+切板+重渲染的栈不变量只写一处。演示模式 CSS 只显示活动画板
+  （`.frame-wrap:not(.active)` 为 display:none），不存在「点邻板」路径（曾为此加过 playJump，
+  审查证实不可达后已删，2026-10-11）。热区清单=出边 flow ∪ 引擎 `session_interactions` 导出
+  （含 builtin back），返回判定单源于引擎。
 - 拖拽、内联编辑、连接模式等交互最终都要落成一条引擎 op，不要在前端本地改 `nodes` 数组了事。
 
 ## 测试的脆弱点
@@ -372,6 +463,16 @@ interactions 导出带 `builtin:"back"`，`norm_back_issues` 校验卡死页。
   - **动态防线**：靠字符串切片取真实状态机——`indexOf("const APP_VER")` 到
     `indexOf('function mbtResult(')` 划区段，再 `indexOf('function NAME(')` 逐函数抽。
     动这些标记、改函数名、或把签名写成非 `function name(` 形式，都会让它**静默取到错东西**。
+  - **外部驱动 E2E 的三个入口（都是一次性、无参数时零行为）**：
+    ① localStorage `dd-dev-autorun[‑studio]=<指令>` 重启触发——**注意 WebKit localStorage
+    是 WKWebView 私有层，外部直接写 sqlite 经常被无声丢弃**（2026-10-26 实测两次注入
+    均未到达，值已消失；只读 sqlite 查看到的还可能是 checkpoint 滞后的旧视图）；
+    ② `?studio=<一句话>` / `?project=<路径>` 查询参数（新窗口经 open_project_window 携带）；
+    ③ **AppleScript AX 自动化（当前最可靠）**：System Events 对进程 `deepdesign-studio`
+    先递归设 `AXManualAccessibility=true` 激活 WebView AX 树，随后 AXFocused 聚焦输入框 +
+    `keystroke "v" using command down`（**剪贴板粘贴**——keystroke 直打会丢字符且不支持
+    中文，AXValue 直设不生效）+ AXPress 点按钮。已知坑：`pgrep -f "deepDesign"` 匹配不到
+    小写二进制名 `deepdesign-studio`，判进程存活要用 `ps aux | grep -i`。
 - Rust 端到端测试的跳过门已收紧：**wasm 产物缺失 → 合法跳过**（eprintln 提示）；
   **产物在场但宿主/编解码调用失败 → panic**（静默跳过曾把 codec 损坏伪装成绿灯，变异实验实证）。
   受影响的 10 个引擎门测试：`wasm_engine_surface_contract`、`template_ids_match_engine`、
@@ -510,7 +611,7 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   它把版本写进 16 个下游面（tauri.conf / Cargo.toml×2 / Cargo.lock×2 / APP_VER /
   鸿蒙 app.json5 + ArkTS chip + ohpm 包×3 + rawfile 镜像 / README / menus.md / AppStream）。
   `--check` 只校验漂移，`test_studio.cjs` 检查 M 已把它纳入测试门。
-- **每次发布后在 AGENTS.md 顶部「当前版本」处写明版本号与发布日期**（本次：0.4.1 / 2026-10-09），
+- **每次发布后在 AGENTS.md 顶部「当前版本」处写明版本号与发布日期**（本次：0.5.0 / 2026-10-29），
   并同步更新构建内版本号——即跑一次 `sync-version.mjs`，两边都是同一次改动的一部分。
 - **不要手改下游面的版本号**：手改会在下一次 `--check` 变红，也可能让某个产物悄悄停在旧版本
   （2026-10 的 v0.4.1 实测：鸿蒙包与 AppStream 停在 0.4.0，桌面显示 0.4.1，用户看到哪个
@@ -525,11 +626,16 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
 - `docs/menus.md`：原生菜单 + 右键菜单的文案与动作映射，改菜单必读。
 - `docs/harmonyos-port.md`：鸿蒙适配方案（**仅方案未实施**；Rust 侧工具链已在
   Linux 就位：ohrs + aarch64-unknown-linux-ohos target）。
-- `docs/plan-cli-mcp.md`：**1.0 规划**（本分支跟进）——deepDesign Agent 能力抽象为专属
-  CLI + MCP 出口，让 Codex/Claude Code 直接驱动 deepDesign；前置是 deepdesign-core 拆分
-  （与鸿蒙方案共享同一前置）。
+- `docs/plan-cli-mcp.md`：**历史规划（已作废，2026-10-19 用户决策）**——deepDesign 不再
+  单独拆分 `deepdesign-core`、不再自建 CLI/MCP 出口：引擎已承担绝大多数核心能力并把
+  CLI（74 命令）/ MCP（55 工具）/ wasm / Node SDK 四类出口全部收归自身，客户端正式退役为
+  **壳**（只做桌面体验，不重复实现设计逻辑）。文件保留作历史背景，勿据此施工。
 - `docs/plan-lan-share.md`：内网分享规划（建议 0.4.x）——export_html + 内嵌 HTTP 服务，
   浏览器只读查看，免装 ddpView；serve-fresh-per-GET 设计，安全清单逐条锚定。
+  （其中对 deepdesign-core 拆分的引用随上条一并作废：这是纯壳层功能。）
 - `docs/versioning.md`：**版本号单一事实源**——`VERSION` 文件 + `sync-version.mjs` 同步的
   16 个下游面清单、鸿蒙 versionCode 约定、发布流程。改版本号前必读。
+- `CONTRIBUTING.md` / `SECURITY.md` / `.github/ISSUE_TEMPLATE/` / `.github/PULL_REQUEST_TEMPLATE.md`：
+  开源治理面——**架构边界与测试纪律在 CONTRIBUTING 里复述**，
+  改 AGENTS.md 的边界条款时要回来对账这两处。
 - `README.md`：架构速览与打包产物说明。

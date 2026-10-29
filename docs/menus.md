@@ -9,7 +9,7 @@
 ### deepDesign Studio（应用菜单）
 | 菜单项 | 说明 |
 |--------|------|
-| 关于 deepDesign Studio | 系统关于面板（版本动态读自 tauri.conf.json，当前 0.4.2-fix） |
+| 关于 deepDesign Studio | 系统关于面板（版本动态读自 tauri.conf.json，当前 0.5.0） |
 | 服务 | macOS 系统服务 |
 | 隐藏 / 隐藏其它 / 显示全部 | 系统窗口管理 |
 | 退出 deepDesign | `quit-app`（⌘Q）→ `quitApp()`：有未保存更改先弹原生确认，放弃后 `app_exit` 退出（预置 quit 走 terminate: 不触发关窗拦截，故自定义） |
@@ -31,10 +31,11 @@
 ### 视图
 | 菜单项 | 快捷键 | 动作 id → 前端函数 |
 |--------|--------|--------------------|
-| 线框图 | ⌘1 | `view-wireframe` → `setMode('wireframe')` |
-| 高保真 | ⌘2 | `view-hifi` → `setMode('hifi')` |
-| MBT 源码 | ⌘3 | `view-decl` → `setMode('decl')` |
-| 演示模式 | ⌘4 | `view-play` → `setMode('play')` |
+| 设计文档 | ⌘1 | `view-doc` → `setMode('doc')` |
+| 线框图 | ⌘2 | `view-wireframe` → `setMode('wireframe')` |
+| 高保真 | ⌘3 | `view-hifi` → `setMode('hifi')` |
+| MBT 源码 | ⌘4 | `view-decl` → `setMode('decl')` |
+| 演示模式 | ⌘5 | `view-play` → `setMode('play')` |
 | 适配窗口 | ⌘0 | `view-fit` → `zoomReset()` |
 
 ### 画板
