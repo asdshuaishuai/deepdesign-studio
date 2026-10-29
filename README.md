@@ -7,7 +7,7 @@
 （HumanGate / AgentGate）后回写同一文档。项目内的 **DESIGN.md** 是**视觉规范**（配色/字号/
 间距/圆角/规范清单），只约束一致性、不决定页面内容，随 DDP 一起持久化。
 
-**当前版本 v0.4.2-fix** — [官网](https://asdshuaishuai.github.io/deepdesign-studio/) · [下载（GitHub Releases）](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest) · [引擎官网](https://asdshuaishuai.github.io/moonviz/) · [生态官网](https://asdshuaishuai.github.io/deeporca-site/)
+**当前版本 v0.5.0** — [官网](https://asdshuaishuai.github.io/deepdesign-studio/) · [下载（GitHub Releases）](https://github.com/asdshuaishuai/deepdesign-studio/releases/latest) · [引擎官网](https://asdshuaishuai.github.io/moonviz/) · [生态官网](https://asdshuaishuai.github.io/deeporca-site/)
 
 **开源协议 MIT** — 本仓库与上游 [MoonViz 引擎](https://github.com/asdshuaishuai/moonviz) 均以 MIT 开源，欢迎 Fork / Star / 提 Issue。
 

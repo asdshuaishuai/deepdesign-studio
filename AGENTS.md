@@ -6,7 +6,7 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**一句话�
 回写同一份文档，`.ddp` 只是它的认证加密容器。项目级 **DESIGN.md**（设计规范文档）约束
 全局视觉一致性——配色/字体/间距/圆角/组件规范都从它派生，随 DDP 持久化。
 
-**当前版本：0.4.2-fix**（2026-10-11 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
+**当前版本：0.5.0**（2026-10-29 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
 详见 [docs/versioning.md](docs/versioning.md)。
 
 ## 分支纪律（用户决策）
@@ -611,7 +611,7 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   它把版本写进 16 个下游面（tauri.conf / Cargo.toml×2 / Cargo.lock×2 / APP_VER /
   鸿蒙 app.json5 + ArkTS chip + ohpm 包×3 + rawfile 镜像 / README / menus.md / AppStream）。
   `--check` 只校验漂移，`test_studio.cjs` 检查 M 已把它纳入测试门。
-- **每次发布后在 AGENTS.md 顶部「当前版本」处写明版本号与发布日期**（本次：0.4.1 / 2026-10-09），
+- **每次发布后在 AGENTS.md 顶部「当前版本」处写明版本号与发布日期**（本次：0.5.0 / 2026-10-29），
   并同步更新构建内版本号——即跑一次 `sync-version.mjs`，两边都是同一次改动的一部分。
 - **不要手改下游面的版本号**：手改会在下一次 `--check` 变红，也可能让某个产物悄悄停在旧版本
   （2026-10 的 v0.4.1 实测：鸿蒙包与 AppStream 停在 0.4.0，桌面显示 0.4.1，用户看到哪个
