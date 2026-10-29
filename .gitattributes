@@ -14,6 +14,11 @@
 /src-tauri/Cargo.toml     text eol=lf
 /src-tauri/Cargo.lock     text eol=lf
 /src-tauri/tauri.conf.json text eol=lf
+# test_studio.cjs 对 Rust 源码做切片断言（agentRs/hostRs）——2026-10-29 实测：
+# agent.rs 未钉 LF 时 Windows 检出 CRLF，{0,1400}? 魔法窗口被 \r 撑爆，
+# 「文档阶段工具面不含 moonviz_op」检查在 windows-latest 假阴性失败
+/src-tauri/src/agent.rs      text eol=lf
+/src-tauri/src/wasmtime_host.rs text eol=lf
 /rust-core/Cargo.toml     text eol=lf
 /rust-core/Cargo.lock     text eol=lf
 /ohos/AppScope/app.json5  text eol=lf

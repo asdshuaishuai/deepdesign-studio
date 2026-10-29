@@ -111,8 +111,10 @@ assert.deepEqual(stubMasking,[],
  * lib.rs 用 typeof 守卫兜底，所以漏映射时菜单静默失效，任何前端自测都发现不了。 */
 const libRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','lib.rs'),'utf8');
 // 后端源码只读一次：多个检查块共用（重复 readFileSync 纯浪费，且以后加断言不必再抄路径）
-const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8');
-const hostRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','wasmtime_host.rs'),'utf8');
+// EOL 归一：切片锚点全按 LF 书写，Windows 检出 CRLF（.gitattributes 未钉的文件）
+// 会让魔法窗口类断言假阴性——读取点统一归一，一处修复护住全文件
+const agentRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','agent.rs'),'utf8').replace(/\r\n/g,'\n');
+const hostRs=fs.readFileSync(path.join(__dirname,'src-tauri','src','wasmtime_host.rs'),'utf8').replace(/\r\n/g,'\n');
 const tauriConf=fs.readFileSync(path.join(__dirname,'src-tauri','tauri.conf.json'),'utf8');
 // id 允许大小写/数字/下划线：只收 [a-z-] 会让 "open_ddp2" 这类 id 静默逃过契约检查
 const menuIds=[...libRs.matchAll(/MenuItem::with_id\(\s*app,\s*"([A-Za-z0-9_-]+)"/g)].map(m=>m[1]);
