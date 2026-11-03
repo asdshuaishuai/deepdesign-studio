@@ -74,7 +74,7 @@ const INTERACTIVE_SURFACE=[
   // 原生菜单桥（Rust lib.rs 经 webview.eval 调用；有 typeof 守卫所以缺失时完全静默）
   'nativeMenuAction','openShortcuts','closeShortcuts',
   // 悬浮 Agent
-  'openAgentPop','closeAgentPop','sendAgent','trackAgent',
+  'openAgentPop','closeAgentPop','sendAgent','trackAgent','cancelAgentRun',
   // 交付导出（fmAct 以字符串分发，检查 A 扫不到——真身存在性由本清单锚定）
   'exportHtmlProto','exportSvg',
   // 文档级撤销/重做（原生菜单直调，typeof 守卫下缺失即静默）
@@ -91,7 +91,7 @@ const INTERACTIVE_SURFACE=[
 ];
 const SURFACE_CONSTS=['THINK_LABEL'];
 // 断言条目数：否则删一个名字会同时缩短清单与提示信息，防线静默变弱
-assert.equal(INTERACTIVE_SURFACE.length,39,'交互层清单条目数变了——增删都必须是有意的');
+assert.equal(INTERACTIVE_SURFACE.length,40,'交互层清单条目数变了——增删都必须是有意的');
 const missingConsts=SURFACE_CONSTS.filter(n=>!new RegExp('(const|let|var)\\s+'+n+'\\b').test(script));
 assert.deepEqual(missingConsts,[],`承重常量未定义：${missingConsts}`);
 const missingSurface=INTERACTIVE_SURFACE.filter(n=>!defined.has(n));

@@ -235,6 +235,22 @@ async fn confirm_discard(
 static DIRTY_WINDOWS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
 
+/// Agent run 取消登记（run id → 取消标志）：cancel_agent_run 置位，
+/// run_with_mode 在三个检查点（每轮循环 / LLM 响应后 / 每个工具执行前）读取。
+/// 进行中的 LLM 请求无法秒断——取消在当前步骤结束后生效（前端如实提示）。
+static RUN_CANCELS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u64, std::sync::Arc<std::sync::atomic::AtomicBool>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// 请求取消一次 agent run（幂等；run 不存在时返回 false）
+#[tauri::command]
+fn cancel_agent_run(run: u64) -> bool {
+    if let Some(flag) = RUN_CANCELS.lock().unwrap().get(&run) {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        return true;
+    }
+    false
+}
+
 /// 前端脏态同步（见 DIRTY_WINDOWS）。window 由 Tauri 注入（调用方窗口）。
 #[tauri::command]
 fn set_project_dirty(dirty: bool, window: tauri::Window) {
@@ -358,6 +374,7 @@ pub fn run() {
             save_text_file,
             confirm_discard,
             set_project_dirty,
+            cancel_agent_run,
             app_exit,
             set_menu_language,
             list_ddp_projects,
@@ -561,9 +578,15 @@ async fn invoke_fx_sdk(
             journal_append(dir, file, &v);
         }
     };
-    let result =
-        agent::run_with_mode(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress), max_steps, mode)
+    let result = {
+        // 取消登记：cancel_agent_run 按 run id 置位；run 结束（含取消）后移除
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        RUN_CANCELS.lock().unwrap().insert(run_id, flag.clone());
+        let out = agent::run_with_mode(&EngineHost, instruction, mbt_b64, &key, model, base_url, thinking, Some(&progress), max_steps, mode, Some(&flag))
             .await;
+        RUN_CANCELS.lock().unwrap().remove(&run_id);
+        out
+    };
     if let (Some(dir), Some(file)) = (&journal, &journal_file) {
         journal_append(
             dir,

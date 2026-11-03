@@ -16,6 +16,7 @@
 //! {ok, mbt_b64, render, ops[], stopReason, text}。
 
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::EngineHost;
@@ -1932,7 +1933,7 @@ pub async fn run_with_steps(
     progress: Option<&(dyn Fn(Value) + Send + Sync)>,
     max_steps: usize,
 ) -> Value {
-    run_with_mode(host, instruction, mbt_b64, api_key, model, base_url, thinking, progress, max_steps, None).await
+    run_with_mode(host, instruction, mbt_b64, api_key, model, base_url, thinking, progress, max_steps, None, None).await
 }
 
 /// 带阶段模式的 run。`mode` 决定系统提示词与工具面：
@@ -1949,6 +1950,7 @@ pub async fn run_with_mode(
     progress: Option<&(dyn Fn(Value) + Send + Sync)>,
     max_steps: usize,
     mode: Option<&str>,
+    cancel: Option<&Arc<std::sync::atomic::AtomicBool>>,
 ) -> Value {
     let doc_mode = doc_phase(mode);
     let max_steps = max_steps.clamp(MAX_STEPS_MIN, MAX_STEPS_MAX);
@@ -1967,11 +1969,23 @@ pub async fn run_with_mode(
     // 不跟随重定向：safe_base_url 只审计首跳，reqwest 默认会跟 10 跳且剥离名单
     // 不含 x-api-key（跨主机泄 key）/不拦 https→http 降级（泄 bearer）。
     // API 端点不应重定向——真发生时把 3xx 亮给用户，而不是静默带凭据跟跳。
-    let Ok(client) = reqwest::Client::builder()
+    // 本机地址绕过代理直连：reqwest 0.12 在 macOS 会读取系统代理（scutil），
+    // 代理工具开启时 loopback 的 mock/本地 LLM 请求被拦为 502（2026-10-31 实测）——
+    // 回环地址永远不需要代理。
+    let loopback = {
+        let h = reqwest::Url::parse(&base)
+            .ok()
+            .and_then(|u| u.host_str().map(String::from))
+            .unwrap_or_default();
+        h == "127.0.0.1" || h == "localhost" || h == "[::1]"
+    };
+    let mut client_builder = reqwest::Client::builder()
         .timeout(LLM_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-    else {
+        .redirect(reqwest::redirect::Policy::none());
+    if loopback {
+        client_builder = client_builder.no_proxy();
+    }
+    let Ok(client) = client_builder.build() else {
         return json!({"ok": false, "error": "client_build_failed", "ops": state.ops, "text": ""});
     };
 
@@ -2014,6 +2028,7 @@ pub async fn run_with_mode(
     let mut review_done = false;
     let mut last_preview = std::time::Instant::now();
     let mut preview_seq: u64 = 0;
+    let mut cancelled = false;
 
     // ── 闲置画板清扫（开始）：清上一轮运行遗留的空占位画板 ──
     // 新项目（mbt None）与单画板文档天然跳过（总数 ≤1 不动）。
@@ -2025,6 +2040,15 @@ pub async fn run_with_mode(
     loop {
         if step >= max_steps {
             break;
+        }
+        // 取消检查点 ①：每轮循环开始——取消后不再发起 LLM 请求。
+        // 语义与中途失败同构：已完成部分保留，stopReason=cancelled
+        // 供前端区分「用户取消」与异常终止。
+        if let Some(c) = cancel {
+            if c.load(std::sync::atomic::Ordering::Relaxed) {
+                cancelled = true;
+                break;
+            }
         }
         step += 1;
         // 上下文管理（请求侧收缩；messages 本体完整保留作轨迹/journal）：
@@ -2081,6 +2105,13 @@ pub async fn run_with_mode(
                 return partial;
             }
         };
+        // 取消检查点 ②：LLM 响应已到、尚未执行任何工具——立即停止。
+        if let Some(c) = cancel {
+            if c.load(std::sync::atomic::Ordering::Relaxed) {
+                cancelled = true;
+                break;
+            }
+        }
         let Some(msg) = resp
             .pointer("/choices/0/message")
             .and_then(|v| v.as_object().cloned())
@@ -2203,6 +2234,13 @@ pub async fn run_with_mode(
         // MiniMax 多轮 tool 对话要求完整回传 assistant 消息以保留推理链。
         messages.push(Value::Object(msg));
         for call in tool_calls {
+            // 取消检查点 ③：每个工具执行前——多个工具同轮时取消立即生效
+            if let Some(c) = cancel {
+                if c.load(std::sync::atomic::Ordering::Relaxed) {
+                    cancelled = true;
+                    break;
+                }
+            }
             let id = call.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let name = call.pointer("/function/name").and_then(|v| v.as_str()).unwrap_or("");
             let args_raw = call.pointer("/function/arguments").and_then(|v| v.as_str()).unwrap_or("{}");
@@ -2308,8 +2346,13 @@ pub async fn run_with_mode(
         }
     }
 
+    // 用户取消：终态事件已在 finish_cancelled 内发出，这里直接返回部分结果。
+    // 必须先于 max_turns / doc_not_written 兜底——取消不是这两种异常。
+    if cancelled {
+        return finish_cancelled(&mut state, &emit).await;
+    }
+
     // 跑满步数：尽力返回当前状态。
-    // 文档阶段（prd/ui）走的是另一条兜底：模型跑了很久却始终没交出期望的那份文档，
     // 必须如实报 doc_not_written 并把**已经写出来的**文档交回（否则前端只能显示
     // fxsdk_failed，用户拿不到任何已产出的内容）。
     if doc_mode {
@@ -2357,6 +2400,28 @@ pub async fn run_with_mode(
 
 /// 中途失败的部分状态返回：零操作 → 纯失败；有已提交工作 → ok:true +
 /// partial_error 说明，前端照常应用 mbt_b64/render 并提示部分完成。
+/// 取消收尾（用户主动中断）：与中途失败同构——已完成部分保留（ok 反映
+/// mbt 有无，partial_error=cancelled 供前端辨识）；stopReason=cancelled
+/// 让前端区分「用户取消」与异常终止。终态事件照发（轨迹二元卡契约）。
+async fn finish_cancelled(
+    state: &mut EngineState<'_>,
+    emit: &(dyn Fn(&str, Value) + Send + Sync + '_),
+) -> Value {
+    emit(
+        "done",
+        json!({"stopReason": "cancelled", "ops": state.ops.len()}),
+    );
+    let mut v = finish_partial(state, "cancelled").await;
+    if let Some(o) = v.as_object_mut() {
+        o.insert("stopReason".into(), json!("cancelled"));
+        if state.mbt.is_some() {
+            // 取消不是失败：已提交的工作有效（与中途失败的 ok 语义一致）
+            o.insert("ok".into(), json!(true));
+        }
+    }
+    v
+}
+
 async fn finish_partial(state: &mut EngineState<'_>, error: &str) -> Value {
     if state.mbt.is_none() && state.ops.is_empty() {
         return json!({"ok": false, "error": error, "ops": [], "text": ""});
@@ -2456,10 +2521,18 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Value {
         Protocol::OpenAi => format!("{}/models", base.trim_end_matches('/')),
         Protocol::Anthropic => format!("{base_no_v1}/v1/models"),
     };
-    let client = reqwest::Client::builder()
+    // 同 chat client：loopback 绕过代理（macOS 系统代理会拦本机请求，2026-10-31 实测）
+    let lhost = reqwest::Url::parse(&base)
+        .ok()
+        .and_then(|u| u.host_str().map(String::from))
+        .unwrap_or_default();
+    let mut client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none()) // 同 chat client：不跟重定向
-        .build();
+        .redirect(reqwest::redirect::Policy::none()); // 同 chat client：不跟重定向
+    if lhost == "127.0.0.1" || lhost == "localhost" || lhost == "[::1]" {
+        client = client.no_proxy();
+    }
+    let client = client.build();
     let Ok(client) = client else {
         return json!({"ok": false, "error": "client_build_failed"});
     };
@@ -3406,9 +3479,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         })]).await;
         let out = run_with_mode(
             &ENGINE, "写 PRD 和 UI 文档", None, "sk-test", "mock-model",
-            &format!("http://127.0.0.1:{port}"), "auto", None, 30, Some("both"),
-        )
-        .await;
+            &format!("http://127.0.0.1:{port}"), "auto", None, 30, Some("both"), None,
+        ).await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(
@@ -3433,9 +3505,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         .await;
         let out2 = run_with_mode(
             &ENGINE, "写两份文档", None, "sk-test", "mock-model",
-            &format!("http://127.0.0.1:{port2}"), "auto", None, 30, Some("both"),
-        )
-        .await;
+            &format!("http://127.0.0.1:{port2}"), "auto", None, 30, Some("both"), None,
+        ).await;
         mock2.abort();
         assert_eq!(out2["ok"], json!(false), "{out2}");
         assert_eq!(out2["error"], json!("doc_not_written"), "{out2}");
@@ -3474,9 +3545,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let progress = move |v: Value| ev2.lock().unwrap().push(v);
         let out = run_with_mode(
             &ENGINE, "写一份 PRD", None, "sk-test", "mock-model",
-            &format!("http://127.0.0.1:{port}"), "auto", Some(&progress), 30, Some("prd"),
-        )
-        .await;
+            &format!("http://127.0.0.1:{port}"), "auto", Some(&progress), 30, Some("prd"), None,
+        ).await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(out["stopReason"], json!("done"));
@@ -3693,6 +3763,27 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         );
     }
 
+    /// 取消能力（2026-10-31 用户要求）：取消标志置位后，run 不得发起任何
+    /// LLM 请求，立即以 stopReason=cancelled 返回——已完成部分保留。
+    #[tokio::test]
+    async fn cancel_flag_stops_run_before_llm_call() {
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let (port, mock, bodies) = spawn_mock_llm(vec![serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": "不应被调用"}}]
+        })]).await;
+        let out = run_with_mode(
+            &ENGINE, "建登录页", None, "sk-test", "mock-model",
+            &format!("http://127.0.0.1:{port}"), "auto", None, 30, None,
+            Some(&cancel),
+        ).await;
+        mock.abort();
+        assert_eq!(out["stopReason"], json!("cancelled"), "{out}");
+        assert_eq!(bodies.lock().unwrap().len(), 0, "取消后不得发起 LLM 请求");
+        // 零提交：ok=false 且 error=cancelled（诚实区分于静默成功）
+        assert_eq!(out["ok"], json!(false), "{out}");
+        assert_eq!(out["error"], json!("cancelled"), "{out}");
+    }
+
     /// 思考轨迹契约（2026-10-26 起文档阶段、2026-10-27 起全模式）：模型的思考
     /// （reasoning_content；Anthropic 侧经 normalize 的 thinking 块同理）必须以
     /// assistant_thinking 事件**完整**下发——轨迹面板要能读到全量思考。
@@ -3712,7 +3803,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let out = run_with_mode(
             &ENGINE, "写一份 PRD", None, "sk-test", "mock-model",
             &format!("http://127.0.0.1:{port}"), "auto", Some(&progress), 30, Some("prd"),
-        ).await;
+         None,
+    ).await;
         mock.abort();
         assert_eq!(out["ok"], json!(true), "{out}");
         assert_eq!(out["stopReason"], json!("done"));
@@ -3747,7 +3839,8 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let out2 = run_with_mode(
             &ENGINE, "建一个登录页", None, "sk-test", "mock-model",
             &format!("http://127.0.0.1:{port2}"), "auto", Some(&progress2), 30, None,
-        ).await;
+         None,
+    ).await;
         mock2.abort();
         assert_eq!(out2["ok"], json!(true), "{out2}");
         let evs2 = events2.lock().unwrap();
