@@ -433,8 +433,14 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     &&/generate_works_as_first_op_on_empty_project/.test(agentRs),
     'generate 不是空项目的合法首 op（genUI 在建画布阶段失效）——请同步检查 T；'
     +'真实事故：种子引导只认 template/create 时 generate 开会话失败，模型退回逐 place 叠重叠');
-  assert(/\*\*`generate <intent> \[as <name>\]`\*\*/.test(agentRs)&&/### Why not hand-place a screen/.test(agentRs),
+  assert(/\*\*`generate <intent> \[as <name>\] spec=<json>`\*\*/.test(agentRs)&&/### Why not hand-place a screen/.test(agentRs),
     '提示词未把 generate 写成建页默认路径（会退回逐 place 叠重叠）——请同步检查 T');
+  // 引擎 #24（破坏性契约）：generate 必须带 Agent 自己写的设计规范（spec=），
+  // 无 spec 时引擎回 design_spec_required + 草案；提示词必须教这条重试路径，
+  // 否则 genUI 首选通道在真实 run 里全灭、模型退回逐个 place。
+  assert(/DESIGN SPEC FIRST/.test(agentRs)&&/design_spec_required/.test(agentRs)
+    &&/spec=<json>/.test(agentRs),
+    '#24 契约缺失：提示词未教 generate 的 spec= 入参与 design_spec_required 重试路径');
   // 自检必须真的把结果**报出来**，而不是只在代码里跑一遍就完（偏差被静默等于没做）。
   // 锚定实际的两条 toast 模板：有偏差时报条数与页面，无偏差时报通过。
   assert(/function auditBuiltBoards\(\)/.test(script)&&/const issues=await auditBuiltBoards\(\)/.test(script),

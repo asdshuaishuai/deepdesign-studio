@@ -56,7 +56,7 @@ empty_state(空状态) | web_landing(Web落地页 1280x800) | web_login(Web登�
 web_dashboard(Web仪表盘 1280x800) | pc_app(PC桌面 1280x800) | adaptive_landing(自适应落地页)
 login_v2(登录页v2)";
 
-const INSTRUCTIONS: &str = r#"You are the embedded design agent of deepDesign Studio, a visual prototyping editor.
+const INSTRUCTIONS: &str = r##"You are the embedded design agent of deepDesign Studio, a visual prototyping editor.
 You operate as a product designer, not a command executor: interpret what the user wants to
 ACHIEVE, decide which screens the experience needs, build them, connect them, and verify the result.
 The single source of truth is one MoonBit literate .mbt.md document; every operation you issue is
@@ -91,15 +91,32 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 
 ## Build loop — GENERATE FIRST (this is the default path)
 The engine has deterministic page generation. Use it; do NOT hand-place a whole screen.
+0. DESIGN SPEC FIRST (required since engine #24). `generate` runs on an explicit design
+   spec YOU write — palette/typography/spacing/radius as ONE compact JSON:
+   `{"v":1,"palette":{"primary":"#..","background":"#..","surface":"#..","text":"#..",
+   "muted":"#..","danger":"#..","success":"#.."},"typography":{"h1":32,"h2":24,"body":14},
+   "spacing":[4,8,12,16,24,32],"radius":{"sm":8,"md":12,"lg":16}}`
+   - The project design brief above (色彩令牌/字体层级/间距/圆角) is the source of truth:
+     serialize it into the spec and pass it on EVERY generate call in this run.
+   - If you have no brief, call `generate` once WITHOUT spec: the engine replies
+     `{"ok":false,"error":"design_spec_required","design_spec_draft":{...}}`. Take the
+     draft, adjust its palette/type to the request's domain, and retry with `spec=`.
+   - Hard rules inside the spec: no pure black (#000) or near-black backgrounds/selected
+     colors unless explicitly required; scene text/background contrast ≥ 4.5 (body).
+   - Radius vocabulary: 0 (square) / 6/8/12/16 (rounded) / height÷2 (pill or circle).
+     NEVER use an oversized radius on a wide box — it renders as an extreme ellipse.
 1. PLAN: choose screens. For each screen pick the closest intent phrase, then:
-   **`generate <intent> [as <name>]`** — ONE call builds a complete, norm-compliant page
-   (template instantiation + token colors + auto_fix self-healing + quality score).
+   **`generate <intent> [as <name>] spec=<json>`** — ONE call builds a complete,
+   norm-compliant page (template instantiation + token colors + auto_fix self-healing +
+   quality score). The same spec must be reused for every generate call.
    Intent examples: "登录页" / "首页 列表" / "个人主页" / "仪表盘 dark" / "设置页".
    Combine screens in one call with "+": `generate "登录+注册"` also wires the
    navigation flow between neighbours automatically (max 4 segments).
    Add " as <name>" to control the artboard id (ASCII snake_case, e.g. `as home`).
 2. READ THE ENVELOPE. `generate` returns {artboard, template, page_hint, theme_applied,
    autofix{fixes,detail}, missing{page_type,missing[]}, score{total,grade,...}, next}.
+   - `design_spec_required` → write the spec (step 0) and retry; do NOT fall back to
+     hand-placing the page.
    - `score.grade` A/B are good; C/D means the intent did not match a template well —
      consider regenerating with a clearer intent, or refine with ops afterwards.
    - `missing[]` lists what the page type expects but lacks: `autofill <artboard>` materializes
@@ -139,7 +156,10 @@ self-heals norms. Hand placement is for *targeted additions*, not for building p
 1. Make the minimal ops. 2. Report what changed.
 
 ## Operation grammar (one op per moonviz_op call, no newlines)
-  generate <intent> [as <name>]        ← PREFERRED: builds a whole page deterministically
+  generate <intent> [as <name>] [spec=<json>]
+      ← PREFERRED: builds a whole page deterministically. spec is the design spec
+      YOU write (compact JSON; see Build loop step 0) — required since engine #24.
+      Without spec the engine returns design_spec_required + a draft; retry with spec=.
       (intent may contain spaces and "+" to combine screens, e.g. "登录+注册";
        "as <name>" sets the artboard id. Returns score/missing/autofix report.)
   | autofill <artboard>                ← materialize the missing[] report (idempotent)
@@ -215,7 +235,7 @@ self-heals norms. Hand placement is for *targeted additions*, not for building p
   debt — do NOT retry it; build the screen with "create" + "place"/"update" instead.
 - keep ops gate-clean (violations → mbt_gate_block rejection, not tolerated debt). All changes go through moonviz_op only.
 - never leave an empty placeholder artboard behind: if you create a board you end up not filling, delete-artboard it
-  before finishing. The workspace is swept for empty boards before and after every run regardless."#;
+  before finishing. The workspace is swept for empty boards before and after every run regardless."##;
 
 fn instructions() -> String {
     INSTRUCTIONS.replace("__TEMPLATES__", ENGINE_TEMPLATES)
@@ -694,6 +714,37 @@ fn b64_encode(s: &str) -> String {
     BASE64.encode(s.as_bytes())
 }
 
+/// generate 参数解析（上游 #24 规范驱动生成）：
+/// `<intent> [as <name>] [spec=<json>]` → (intent, name, spec)。
+/// spec 是紧凑 JSON 设计规范（palette/typography/spacing/radius…），由 **Agent
+/// 自己书写**：项目已有 DESIGN.md 时把 designBrief 里的令牌序列化为 spec；
+/// 无规范时引擎回 `design_spec_required` + `design_spec_draft`，Agent 以草案
+/// 为起点调整后重试。spec= 之后允许任意 JSON 空白——宿主用三段式分隔符传递
+/// （见 generate_call_op），不依赖空白切分。
+fn parse_generate_args(args: &str) -> (String, String, String) {
+    let rest = args.trim();
+    let (head, spec) = match rest.rfind(" spec=") {
+        Some(i) => (
+            rest[..i].trim().to_string(),
+            rest[i + " spec=".len()..].trim().to_string(),
+        ),
+        None => (rest.to_string(), String::new()),
+    };
+    let (intent, name) = match head.rsplit_once(" as ") {
+        Some((a, b)) if !b.trim().is_empty() && !b.contains(' ') => {
+            (a.trim().to_string(), b.trim().to_string())
+        }
+        _ => (head.clone(), String::new()),
+    };
+    (intent, name, spec)
+}
+
+/// 宿主内部三段式 generate op（unit separator 分隔）：引擎 session_generate_in
+/// 三槽语义 = in:spec / arg:intent / arg2:name。spec 可含换行与任意空白。
+fn generate_call_op(intent: &str, name: &str, spec: &str) -> String {
+    format!("{intent}\u{1f}{name}\u{1f}{spec}")
+}
+
 impl<'a> EngineState<'a> {
     fn new(host: &'a EngineHost, mbt_b64: Option<&str>) -> Result<Self, String> {
         Ok(Self {
@@ -743,9 +794,14 @@ impl<'a> EngineState<'a> {
         {
             let seed = seed_doc(SEED_BOARD, 24, 24);
             let mut r = if op.split_whitespace().next() == Some("generate") {
-                // generate 是 session 管道专属动词：先建会话（种子文档），再走 session_generate
-                let args = op["generate".len()..].trim().to_string();
-                self.call("session_generate", &seed, &args).await
+                // generate 是 session 管道专属动词：先建会话（种子文档），再走
+                // session_generate（#24 起 spec 走 in 槽，三段式 op 传递）
+                let (intent, name, spec) = parse_generate_args(&op["generate".len()..]);
+                if intent.is_empty() {
+                    return json!({"ok": false, "error": "generate_usage: generate <intent> [as <name>] spec=<json>"});
+                }
+                self.call("session_generate", &seed, &generate_call_op(&intent, &name, &spec))
+                    .await
             } else {
                 self.call("apply_agent_op", &seed, op).await
             };
@@ -869,11 +925,13 @@ impl<'a> EngineState<'a> {
         // **建画布的首选通道**：一次调用产出整页，比逐个 place 快两个数量级；
         // 重叠/溢出由引擎自愈兜底（逐 place 让模型自己算坐标，必然叠出重叠）。
         if op.split_whitespace().next() == Some("generate") {
-            let args = op["generate".len()..].trim();
-            if args.is_empty() {
-                return json!({"ok": false, "error": "generate_usage: generate <intent> [as <name>]"});
+            let (intent, name, spec) = parse_generate_args(&op["generate".len()..]);
+            if intent.is_empty() {
+                return json!({"ok": false, "error": "generate_usage: generate <intent> [as <name>] spec=<json>"});
             }
-            let r = self.call("session_generate", &mbt, args).await;
+            let r = self
+                .call("session_generate", &mbt, &generate_call_op(&intent, &name, &spec))
+                .await;
             if !(r.get("ok") == Some(&json!(true)) && r.get("mbt").and_then(|v| v.as_str()).is_some()) {
                 return r;
             }
@@ -1195,7 +1253,7 @@ fn tools_typed() -> Vec<ChatCompletionTools> {
     vec![
         tool(
             "moonviz_op",
-            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): generate (PREFERRED for whole pages — intent to page, self-healing, scored)/autofill/template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, extract-design-system <ab>, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
+            "Execute one MoonViz MUTATING design operation (validated by the engine gates, committed to .mbt.md): generate (PREFERRED for whole pages — intent + design spec to page, self-healing, scored; spec=<compact-json> is REQUIRED since engine #24 and must be the spec you write)/autofill/template/create/duplicate/delete-artboard/place/move/update/delete/copy/reorder/flip/group/ungroup/align/resize-canvas/responsive/restyle/constrain/interact/uninteract/state/set-state/flow/theme/token/fix. Also supports READ-ONLY inspection ops routed via the engine session API (no commit): list, flows, list-templates, list-components, list-tokens, list-themes, lint <ab>, critique <ab>, query <ab>, infer <ab>, spec <ab>, missing <ab>, states <ab>, interactions <ab>, export-svg <ab>, export-html, extract-design-system <ab>, tap <ab> <x> <y>, benchmark. Exceptions without wasm exports: list-tools, doc-json.",
             json!({
                 "type": "object",
                 "properties": {"op": {"type": "string", "description": "One operation string, e.g. \"update login title text=\\\"Sign in\\\"\""}},
@@ -2456,12 +2514,20 @@ fn rebase_via(r: &Value) -> bool {
 
 async fn rebase_apply_one(host: &EngineHost, cur: &str, op: &str) -> Result<Value, String> {
     let head = op.split_whitespace().next().unwrap_or("");
-    let (fn_name, args) = match head {
-        "generate" => ("session_generate", op["generate".len()..].trim()),
-        "constrain" => ("session_constrain", op["constrain".len()..].trim()),
-        _ => ("session_apply_agent", op),
+    let (fn_name, args): (&str, String) = match head {
+        // #24：generate 的记录形如 `<intent> [as <name>] spec=<json>`——必须与
+        // 实时路由同解析（三段式），直接把尾巴丢给宿主会让 spec= 混进 intent。
+        "generate" => {
+            let (intent, name, spec) = parse_generate_args(&op["generate".len()..]);
+            ("session_generate", generate_call_op(&intent, &name, &spec))
+        }
+        "constrain" => (
+            "session_constrain",
+            op["constrain".len()..].trim().to_string(),
+        ),
+        _ => ("session_apply_agent", op.to_string()),
     };
-    host.call(fn_name, cur, args).await
+    host.call(fn_name, cur, &args).await
 }
 
 pub async fn rebase_ops(host: &EngineHost, latest_mbt: &str, ops: &[String]) -> Value {
@@ -2583,6 +2649,39 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Value {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// 引擎 #24 的 design spec 样例（紧凑 JSON，与 DESIGN.md 载荷同 schema）。
+    /// 测试里的 generate 必须带 spec——引擎已把「无 spec」变成显式失败
+    /// （design_spec_required + 草案），不再静默用内置规范。
+    const TEST_SPEC: &str = r##"{"v":1,"palette":{"primary":"#123456","background":"#FFFFFF","surface":"#F6F7F9","text":"#1A1C1E","muted":"#6B7280","danger":"#DC2626","success":"#16A34A"},"typography":{"h1":32,"h2":24,"body":14},"radius":{"sm":8,"md":12,"lg":16}}"##;
+
+    /// generate 参数解析（#24）：spec= 是可含空白的 JSON，`as <name>` 仍生效。
+    #[test]
+    fn generate_args_parse_spec_and_name() {
+        let (i, n, s) = parse_generate_args("登录页 as home");
+        assert_eq!((i.as_str(), n.as_str(), s.as_str()), ("登录页", "home", ""));
+        let (i, n, s) = parse_generate_args(r#"登录页 as home spec={"v":1}"#);
+        assert_eq!((i.as_str(), n.as_str(), s.as_str()), ("登录页", "home", r#"{"v":1}"#));
+        // spec 内的空白不得被当作 as/name 的分界
+        let (i, n, s) = parse_generate_args(r#"首页 列表 as home spec={"v": 1, "palette": {}}"#);
+        assert_eq!(i, "首页 列表");
+        assert_eq!(n, "home");
+        assert_eq!(s, r#"{"v": 1, "palette": {}}"#);
+        // 无名 spec
+        let (i, n, s) = parse_generate_args(r#"设置页 spec={"v":1}"#);
+        assert_eq!((i.as_str(), n.as_str()), ("设置页", ""));
+        assert_eq!(s, r#"{"v":1}"#);
+    }
+
+    /// 三段式 op 契约：intent␟name␟spec（宿主按此装载 in/arg/arg2 三槽）。
+    #[test]
+    fn generate_call_op_is_three_part() {
+        let op = generate_call_op("登录页", "home", r#"{"v":1}"#);
+        let mut parts = op.split('\u{1f}');
+        assert_eq!(parts.next(), Some("登录页"));
+        assert_eq!(parts.next(), Some("home"));
+        assert_eq!(parts.next(), Some(r#"{"v":1}"#));
+    }
 
     /// wire 契约：类型层 tools 序列化必须保留 "type":"function" 判别字段
     /// （裸 ChatCompletionTool 不带 tag；SDK 升级若改变 wire 形状，此处必红）。
@@ -3992,10 +4091,10 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             .and_then(|v| v.as_str())
             .expect("canonical 回传")
             .to_string();
-        // run 的 op 流里全是 generate（新主路径）+ 一条 constrain
+        // run 的 op 流里全是 generate（新主路径，含 #24 spec）+ 一条 constrain
         let ops = vec![
-            "generate 首页 列表 as home".to_string(),
-            "generate 个人主页 as profile".to_string(),
+            format!("generate 首页 列表 as home spec={TEST_SPEC}"),
+            format!("generate 个人主页 as profile spec={TEST_SPEC}"),
             "constrain rb2 居中".to_string(),
         ];
         let out = rebase_ops(&ENGINE, &latest, &ops).await;
@@ -4149,7 +4248,9 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         engine_ready().await;
         let _engine_gate = engine_test_gate();
         let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
-        let r = state.moonviz_op("generate 登录页 as home").await;
+        let r = state
+            .moonviz_op(&format!("generate 登录页 as home spec={TEST_SPEC}"))
+            .await;
         assert_eq!(r["ok"], json!(true), "generate 应能作为空项目的首个 op：{r}");
         assert!(
             state.mbt.as_deref().is_some_and(|m| m.contains("home")),
@@ -4172,7 +4273,9 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         engine_ready().await;
         let _engine_gate = engine_test_gate();
         let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
-        let r = state.moonviz_op("generate 登录页 as home").await;
+        let r = state
+            .moonviz_op(&format!("generate 登录页 as home spec={TEST_SPEC}"))
+            .await;
         assert_eq!(r["ok"], json!(true), "{r}");
         assert_eq!(r["artboard"], json!("home"), "报告里的 artboard 字段应保留：{r}");
         assert_eq!(r["template"], json!("login"), "报告里的 template 字段应保留：{r}");
@@ -4180,6 +4283,33 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(r["missing"]["page_type"].as_str().is_some(), "报告里应有缺失分析：{r}");
         assert!(r.get("autofix").is_some(), "报告里应有自愈统计：{r}");
         assert!(r.get("mbt").is_none(), "mbt 本体应剥除（与常规 generate 路由一致）");
+    }
+
+    /// #24 契约：generate 无 spec 必须显式失败并带可编辑草案（不再静默用引擎
+    /// 内置规范）；带 spec 后成功，且生成结果真的采用 spec 主色——规范驱动的
+    /// 判据是「换 spec 颜色就变」，而不是信封字段存在。
+    #[tokio::test]
+    async fn generate_requires_design_spec_and_applies_it() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
+        let no_spec = state.moonviz_op("generate 登录页 as home").await;
+        assert_eq!(no_spec["ok"], json!(false), "无 spec 应显式失败：{no_spec}");
+        assert_eq!(no_spec["error"], json!("design_spec_required"), "{no_spec}");
+        assert!(
+            no_spec["design_spec_draft"]["palette"]["primary"].as_str().is_some(),
+            "应随信封回传可编辑草案：{no_spec}"
+        );
+        assert!(state.mbt.is_none(), "spec 缺失不得提交任何画布变更");
+        let ok = state
+            .moonviz_op(&format!("generate 登录页 as home spec={TEST_SPEC}"))
+            .await;
+        assert_eq!(ok["ok"], json!(true), "{ok}");
+        let canon = state.mbt.clone().unwrap_or_default();
+        assert!(
+            canon.to_lowercase().contains("#123456"),
+            "生成应采用 spec 主色 #123456：{canon}"
+        );
     }
 
     /// 生成式 UI 宿主契约：`generate` 是建画布的首选通道（一次调用产出整页，
@@ -4193,14 +4323,28 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let _engine_gate = engine_test_gate();
         // 引擎要求文档至少一个视觉块——空串开会话会 session_open_failed:-1
         let seed = seed_doc("sd", 390, 844);
-        // 空格意图 + 显式命名
-        let r = ENGINE.call("session_generate", &seed, "登录页 as gen_login").await.unwrap();
+        // 空格意图 + 显式命名（#24：generate 必须带 spec——三段式 op 直喂宿主）
+        let r = ENGINE
+            .call(
+                "session_generate",
+                &seed,
+                &format!("登录页\u{1f}gen_login\u{1f}{TEST_SPEC}"),
+            )
+            .await
+            .unwrap();
         assert_eq!(r["ok"], json!(true), "generate 应成功：{r}");
         assert_eq!(r["artboard"], json!("gen_login"), "as <name> 应指定画板 id：{r}");
         assert!(r["mbt"].as_str().is_some_and(|m| m.contains("gen_login")), "信封应回传 canonical");
         assert!(r["score"]["total"].as_i64().is_some_and(|v| v > 0), "应带质量评分：{r}");
         // 组合意图：多页 + 自动导航（同样要有种子文档才能开会话）
-        let multi = ENGINE.call("session_generate", &seed, "登录+注册").await.unwrap();
+        let multi = ENGINE
+            .call(
+                "session_generate",
+                &seed,
+                &format!("登录+注册\u{1f}\u{1f}{TEST_SPEC}"),
+            )
+            .await
+            .unwrap();
         assert_eq!(multi["ok"], json!(true), "组合意图应成功：{multi}");
         let canon = multi["mbt"].as_str().unwrap_or("");
         assert!(canon.matches("<!-- moonviz:artboard").count() >= 2, "组合意图应产出多块画板");
@@ -4221,11 +4365,25 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         let _engine_gate = engine_test_gate();
         let seed = seed_doc("sd", 390, 844);
         // 先带名生成一页，把 name 写进 arg2 槽
-        let named = ENGINE.call("session_generate", &seed, "登录页 as named_page").await.unwrap();
+        let named = ENGINE
+            .call(
+                "session_generate",
+                &seed,
+                &format!("登录页\u{1f}named_page\u{1f}{TEST_SPEC}"),
+            )
+            .await
+            .unwrap();
         assert_eq!(named["artboard"], json!("named_page"), "首次应使用显式名字：{named}");
         let after_named = named["mbt"].as_str().unwrap_or("").to_string();
         // 再无名生成：不得写到 named_page 上（那就是静默覆盖），应新增一页
-        let anon = ENGINE.call("session_generate", &after_named, "首页 列表").await.unwrap();
+        let anon = ENGINE
+            .call(
+                "session_generate",
+                &after_named,
+                &format!("首页 列表\u{1f}\u{1f}{TEST_SPEC}"),
+            )
+            .await
+            .unwrap();
         assert_eq!(anon["ok"], json!(true), "无名 generate 应成功：{anon}");
         let got = anon["artboard"].as_str().unwrap_or("");
         assert_ne!(got, "named_page", "无名 generate 继承了残留 name（会把新页覆盖到旧页上）");
