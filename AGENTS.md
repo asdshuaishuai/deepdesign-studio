@@ -645,3 +645,6 @@ inspector 永久空态），`renderStage` 每次渲染都在 `bindStageSvg` 处�
   开源治理面——**架构边界与测试纪律在 CONTRIBUTING 里复述**，
   改 AGENTS.md 的边界条款时要回来对账这两处。
 - `README.md`：架构速览与打包产物说明。
+- `docs/plan-client-0.6.md`：**客户端 v0.6 路线（2026-11-04 定稿，下一次迭代按此施工）**——
+  设计规范工作台与 Style Profile、内网只读分享、安全与分发（Developer ID 签名 / OS keychain）、
+  按引擎节奏接入（组件库 / 动效 / 原型测试 / 协作 / 全局撤销 / DDP v2）、明确不做（A2UI）。
