@@ -193,6 +193,10 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .center{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--cvs);position:relative}
 .canvas-tail{height:32px;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--tail-bg);border-bottom:var(--bd);font-size:11px;color:var(--tx2);font-family:ui-monospace,'SF Mono',Menlo,monospace;-webkit-font-smoothing:antialiased;flex-shrink:0}
 .canvas-tail b{color:var(--tx);font-weight:600}
+/* 设计稿工作区右上角的自动修复（对齐文档页「生成原型」的主按钮位置）；
+   只在 线稿/高保真（design-active）出现——文档/源码/演示模式没有可修的画布 */
+.canvas-tail #tail-fix{height:22px;font-size:11px;padding:0 9px;border-radius:6px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-weight:600;letter-spacing:0;margin-right:0;flex-shrink:0}
+body:not(.design-active) #tail-fix{display:none!important}
 .canvas-scroll{flex:1;overflow:auto;position:relative;
   background-image:radial-gradient(circle,rgba(0,0,0,.065) 1px,transparent 1px);background-size:22px 22px}
 .ctools{position:sticky;top:12px;left:12px;z-index:20;display:inline-flex;align-items:center;gap:2px;padding:4px;border-radius:var(--r-lg);box-shadow:var(--sh-pop);margin:12px 0 0 12px;background:rgba(255,255,255,.9);backdrop-filter:blur(16px);border:1px solid rgba(0,0,0,.07);width:max-content}
@@ -281,7 +285,22 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .ap-send:disabled{background:rgba(0,0,0,.1);color:var(--tx3)}
 
 /* ---------- 右栏 ---------- */
-.right{width:360px;background:rgba(255,255,255,.92);border-left:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
+.right{width:440px;background:rgba(255,255,255,.92);border-left:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
+/* 右栏 Agent 交互模块（指令输入 + 轨迹同栏）：轨迹滚动、头部与输入条常驻。
+   rpanel 默认整栏滚动——这里改成分区布局，输入条永远贴底不被长轨迹推走。 */
+#rp-track{padding:0;overflow:hidden;display:flex;flex-direction:column}
+#rp-track #tl-body{flex:1;overflow-y:auto;padding:9px 10px}
+#rp-track .gp-thread{width:auto;max-width:none;margin:8px 10px 0;flex-shrink:0;box-shadow:none;border-radius:var(--r-lg)}
+#rp-track .canvas-hint{flex-shrink:0;margin:7px 10px 0;text-align:center;font-size:10px}
+#rp-track > .promptbar{width:auto;max-width:none;flex-shrink:0;border-radius:0;border:none;border-top:1px solid rgba(0,0,0,.07);box-shadow:none;background:transparent;backdrop-filter:none;padding:8px 10px 10px}
+/* 面板内输入条收窄：min-width:280px 是给旧居中 dock 的，440px 面板里会溢出 */
+#rp-track .pmain{gap:6px;padding:4px 4px 4px 10px}
+#rp-track .pmain input{min-width:0;line-height:32px}
+#rp-track .pmain .go{height:32px;padding:0 12px;font-size:12px;gap:5px}
+/* 快捷 chips 在窄栏里换行（横向滚动会被裁切得像坏了）；label 省掉给输入让位 */
+#rp-track .pchips{flex-wrap:wrap;overflow:visible;row-gap:5px}
+#rp-track .pchips .lbl{display:none}
+#rp-track .pchip{height:26px;padding:0 10px;font-size:11.5px}
 .rtabs{display:flex;border-bottom:var(--bd);font-size:12px;background:rgba(0,0,0,.02)}
 .track-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:11px;color:var(--tx3);border-bottom:var(--bd);flex-shrink:0}
 .track-head .tbtn{font-size:10.5px;padding:3px 8px}
@@ -993,6 +1012,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <span id="tail-info"></span>
       <span style="flex:1"></span>
       <span id="tail-rev"></span>
+      <button class="tbtn pri" id="tail-fix" onclick="runAutoFix()" title="AI 自动修复当前画板（引擎 fix：规范/叠放/可读性一次清偿）">✨ AI 自动修复</button>
     </div>
     <div class="canvas-scroll" id="canvas-scroll">
       <div class="ctools">
@@ -1001,7 +1021,6 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         <button class="ctool" data-tool="text" title="文本 (T)"><svg class="ic" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
         <button class="ctool" data-tool="link" title="连接交互（先点源按钮，再点目标画板）"><svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/></svg></button>
         <div style="width:1px;height:16px;background:rgba(0,0,0,.1);margin:0 3px"></div>
-        <button class="ctool magic" onclick="runAutoFix()" title="AI 自动修复（引擎 fix）"><svg class="ic" viewBox="0 0 24 24"><path d="M15 4V2M15 10V8M11.5 6.5H9.5M20.5 6.5h-2M17.7 3.8l-1.4 1.4M17.7 9.2l-1.4-1.4M12.3 3.8l1.4 1.4M12.3 9.2l1.4-1.4"/><path d="M4 20l5-1 9-9-4-4-9 9z"/></svg></button>
         <button class="ctool" onclick="zoomFit()" title="适配窗口"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
       <div class="czoom">
@@ -1072,37 +1091,13 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         </div>
       </div>
     </div>
-    <div class="canvas-dock">
-      <div class="gp-thread" id="gp-thread">
-        <div class="gt-head">🤖 Agent 需要确认</div>
-        <div class="gt-body" id="gp-thread-body"></div>
-        <div class="gt-hint">在下方输入你的回答，再次点击「一键生成」继续</div>
-      </div>
-      <div class="canvas-hint" id="canvas-hint">选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流</div>
-      <div class="promptbar">
-        <div class="pchips">
-          <span class="lbl">快捷</span>
-          <button class="pchip" onclick="usePrompt('生成 Web 登录页')">+ Web 登录页</button>
-          <button class="pchip" onclick="usePrompt('生成手机登录页')">+ 手机登录</button>
-          <button class="pchip" onclick="usePrompt('生成仪表盘页面')">+ 仪表盘</button>
-          <button class="pchip" onclick="usePrompt('做一个微信风格的社交应用原型：聊天列表、会话页、发现页、我的页面，相互可跳转')">💬 微信社交</button>
-          <button class="pchip" onclick="usePrompt('一键修复')">⚡ 自动修复</button>
-        </div>
-        <div class="pmain">
-          <svg class="ic" style="color:var(--purple)" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>
-          <input id="gp-input" placeholder="描述意图（如：生成 Web 登录页 / 一键修复 / 深色主题）…" onkeydown="if(event.key==='Enter')runGlobalPrompt()">
-          <span class="kbd">⌘K</span>
-          <button class="go" id="gp-send" onclick="runGlobalPrompt()"><svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>一键生成</button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- ================= 右栏 ================= -->
   <div class="right">
     <div class="rtabs">
       <button class="rtab on" id="rt-insp" onclick="switchRight('insp')"><svg class="ic" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1.5 14h5M9.5 8h5M17.5 16h5"/></svg>属性</button>
-      <button class="rtab" id="rt-track" onclick="switchRight('track')"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>Agent 追踪</button>
+      <button class="rtab" id="rt-track" onclick="switchRight('track')"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>Agent 交互</button>
 
     </div>
     <div class="rpanel" id="rp-insp">
@@ -1114,11 +1109,25 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </div>
     </div>
     <div class="rpanel" id="rp-track" style="display:none">
-      <div class="track-head"><span>Agent 运行留痕</span><button class="tbtn" id="trace-cancel" style="display:none;color:#d97a1a" onclick="cancelAgentRun()" title="中断当前任务——已完成部分保留">请求取消</button><button class="tbtn" onclick="clearTrack()" title="清空追踪记录">清空</button></div>
+      <div class="track-head"><span>Agent 交互</span><button class="tbtn" id="trace-cancel" style="display:none;color:#d97a1a" onclick="cancelAgentRun()" title="中断当前任务——已完成部分保留">请求取消</button><button class="tbtn" onclick="clearTrack()" title="清空追踪记录">清空</button></div>
       <div id="tl-body">
         <div class="empty-insp">
           <svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>
-          <div>Agent 修改实时留痕：<br>指令 → 计划 → 引擎命令</div>
+          <div>指令 → 计划 → 引擎命令，<br>每一步实时留痕；在下方直接下指令</div>
+        </div>
+      </div>
+      <div class="gp-thread" id="gp-thread">
+        <div class="gt-head">🤖 Agent 需要确认</div>
+        <div class="gt-body" id="gp-thread-body"></div>
+        <div class="gt-hint">在下方输入你的回答，再次点击「一键生成」继续</div>
+      </div>
+      <div class="canvas-hint" id="canvas-hint">选择元素后可用悬浮 Agent 修改 · 连接工具建立交互流</div>
+      <div class="promptbar">
+        <div class="pmain">
+          <svg class="ic" style="color:var(--purple)" viewBox="0 0 24 24"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg>
+          <input id="gp-input" placeholder="描述意图（如：生成 Web 登录页 / 一键修复 / 深色主题）…" onkeydown="if(event.key==='Enter')runGlobalPrompt()">
+          <span class="kbd">⌘K</span>
+          <button class="go" id="gp-send" onclick="runGlobalPrompt()"><svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>一键生成</button>
         </div>
       </div>
     </div>
@@ -2780,7 +2789,7 @@ document.addEventListener('keydown',async e=>{
     if(e.metaKey||e.ctrlKey||e.altKey)return; // Windows 无原生菜单：⌘S/⌘5 等组合在演示中照常可用
     return;
   }
-  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();$('gp-input').focus();return;}
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();switchRight('track');$('gp-input').focus();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveProject();return;}
   if((e.metaKey||e.ctrlKey)&&(e.key==='='||e.key==='+')){e.preventDefault();zoomIn();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='-'){e.preventDefault();zoomOut();return;}
@@ -3728,6 +3737,20 @@ function designBrief(){
   if(s.radius&&Object.keys(s.radius).length)lines.push('圆角：'+Object.entries(s.radius).map(([k,v])=>`${k}=${v}`).join(' · '));
   if(Array.isArray(s.rules)&&s.rules.length)lines.push('引擎规范（必须遵守）：\n'+s.rules.map(r=>'- '+r).join('\n'));
   if(s.notes)lines.push('引擎基线：'+s.notes);
+  // 引擎 #24：generate 必须带设计规范（无 spec 会被 design_spec_required 拒绝）。
+  // 这里直接给出可粘贴的紧凑 JSON——Agent「自己写规范」= 基于本项目 DESIGN.md
+  // 的令牌做取舍/微调后作为 spec= 传入，而不是让引擎用内置规范代劳。
+  try{
+    const spec={v:1};
+    if(s.palette&&Object.keys(s.palette).length)spec.palette=s.palette;
+    if(s.typography&&Object.keys(s.typography).length)spec.typography=s.typography;
+    if(Array.isArray(s.spacing)&&s.spacing.length)spec.spacing=s.spacing;
+    if(s.radius&&Object.keys(s.radius).length)spec.radius=s.radius;
+    if(s.components&&Object.keys(s.components).length)spec.components=s.components;
+    if(Array.isArray(s.rules)&&s.rules.length)spec.rules=s.rules;
+    const specJson=JSON.stringify(spec);
+    if(specJson.length>8)lines.push('引擎 generate spec（作为 spec= 参数传入，可按需求微调）：'+specJson);
+  }catch(_){/* 规范不可序列化时退回纯文本摘要，不阻塞生成 */}
   return lines.join('\n');
 }
 /* ① 一句话 → PRD（唯一产物；不再自动串 UI 说明） */
