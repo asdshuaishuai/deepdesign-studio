@@ -39,7 +39,7 @@ async fn studio_two_phase_real_llm_e2e() {
 
     // ── 阶段 1：PRD ──
     let r1 = agent::run_with_mode(
-        &host, IDEA, None, &key, &model, &base, "auto", Some(&progress), 120, Some("prd"),
+        &host, IDEA, None, &key, &model, &base, "auto", Some(&progress), 120, Some("prd"), None,
     )
     .await;
     let prd = r1.pointer("/docs/prd").and_then(|v| v.as_str()).unwrap_or("");
@@ -54,7 +54,7 @@ async fn studio_two_phase_real_llm_e2e() {
     // ── 阶段 2：UI 设计文档 ──
     let ui_instr = format!("【已确认的 PRD】\n{prd}\n\n请据此产出 UI 设计文档。");
     let r2 = agent::run_with_mode(
-        &host, &ui_instr, None, &key, &model, &base, "auto", Some(&progress), 120, Some("ui"),
+        &host, &ui_instr, None, &key, &model, &base, "auto", Some(&progress), 120, Some("ui"), None,
     )
     .await;
     let ui = r2.pointer("/docs/ui").and_then(|v| v.as_str()).unwrap_or("");
@@ -70,7 +70,7 @@ async fn studio_two_phase_real_llm_e2e() {
         "【PRD】\n{prd}\n\n【UI 设计文档（逐条落实）】\n{ui}\n\n请严格按上述文档建出完整可交互原型。"
     );
     let r3 = agent::run_with_mode(
-        &host, &build_instr, None, &key, &model, &base, "auto", Some(&progress), 500, None,
+        &host, &build_instr, None, &key, &model, &base, "auto", Some(&progress), 500, None, None,
     )
     .await;
     let ops = r3["ops"].as_array().map(|a| a.len()).unwrap_or(0);
