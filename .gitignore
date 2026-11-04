@@ -5,3 +5,11 @@ src-tauri/gen/
 dist/
 rust-core/.cargo/
 frontend/vendor/ENGINE_LOCAL
+# 本地工具与构建残留
+.DS_Store
+__pycache__/
+.playwright-mcp/
+.commandcode/
+.zcode/plans/
+vendor/moonviz-ddp/Cargo.lock
+vendor/moonviz-ddp/target/
