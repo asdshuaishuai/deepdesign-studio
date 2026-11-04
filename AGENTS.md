@@ -159,8 +159,12 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 不受影响）。删除标记文件即恢复纯 Release 锚定。
 
 **当前工作状态：本地 SDK 模式已启用**（`ENGINE_LOCAL` → `../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm`，
-引擎 dev 0.1.9-fix-2，含 `generate` 生成式 UI / norms v2 / 动效系统 / `session_spec` /
-`session_extract_design_system`）。契约探针已扩到 **28 session API**——新增能力进 wasm 面时
+引擎 dev 线已含上游 #22–#28 修复与新契约：SVG 圆角钳制 rx=ry=min(r,min(w,h)/2)、
+视觉可读性硬标准（对比度 4.5/3.0、纯黑深底禁令、不可见/选中态检测）、空文档合法初始态、
+交互/mock 数据 QA（无去向/占位符/空壳/非库组件）、叠放与热区/交互冲突硬门、
+`session_snapshot` 原子快照（revision/seq/canonical/render/delta）、
+`session_generate_spec` 规范驱动生成 + `design_spec_required` 草案）。
+契约探针已扩到 **30 session API**——新增能力进 wasm 面时
 必须同步 `scripts/sync-engine.mjs` 的 `SESSION_EXPORTS`，否则本地构建的新导出无人守门。
 生产打包仍走 `--release`（硬性忽略本地源）。
 

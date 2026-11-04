@@ -65,12 +65,15 @@ const IN_FACE_EXPORTS = [
   'session_history_in', 'session_generate_in',
 ];
 
-// session API（28 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
+// session API（30 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
 // 导出 SVG/交互运行时等）。agent.rs 的只读 op 路由依赖这组导出。
 // session_count（泄漏可测）与 session_open_project_json（save→open 回灌）
 // 是 engine-v0.1.1-session 新增（上游 issues #1/#4B）。
 // session_generate（生成式 UI：确定性意图→模板→自愈→评分）是引擎 dev 线新增，
 // 宿主经 op 串 `generate <intent>` 或直调导出两条路径都可达。
+// session_snapshot / session_generate_spec（引擎 dev 线 #24/#28）：原子快照
+// （revision/seq/canonical/render/delta/animations）与规范驱动生成——均无文本
+// 入参，不在 `_in` 槽面内。
 const SESSION_EXPORTS = [
   'session_open', 'session_close', 'session_apply_agent', 'session_apply_human',
   'session_export_svg', 'session_lint', 'session_critique', 'session_auto_fix',
@@ -79,7 +82,7 @@ const SESSION_EXPORTS = [
   'session_infer_missing', 'session_extract_design_system', 'session_generate_responsive',
   'session_benchmark', 'session_save', 'session_component_compile_b64',
   'session_library_snapshot', 'session_tap', 'session_count', 'session_open_project_json',
-  'session_history', 'session_generate',
+  'session_history', 'session_generate', 'session_snapshot', 'session_generate_spec',
 ];
 
 // 组件描述词典（本地展示文案，前端面板 tooltip 与 agent list_components 共用）。
@@ -300,10 +303,11 @@ async function contractProbe(exports, wasmBytes) {
     slotLoad('in_reset', 'in_push', seedDoc('__seed', 390, 844));
     const rIn = JSON.parse(readStr(exports.validate_mbt_in()));
     if (rIn.ok !== true) fail(`_in 契约面实跑失败：validate_mbt_in → ${JSON.stringify(rIn).slice(0, 120)}`);
-    // b) 空输入：空槽直接调（引擎 catch→空串→诚实 ok:false,不得腐坏）
+    // b) 空输入：空槽直接调 —— 自 #27 起空文档是**合法初始态**（validate ok、
+    // 零视觉块），不再是错误；此处锚定新契约（反向断言：引擎不得把空态报成错）。
     exports.in_reset();
     const rEmpty = JSON.parse(readStr(exports.validate_mbt_in()));
-    if (rEmpty.ok !== false) fail(`_in 空输入应诚实报错：${JSON.stringify(rEmpty).slice(0, 120)}`);
+    if (rEmpty.ok !== true) fail(`_in 空输入应为合法初始态（#27）：${JSON.stringify(rEmpty).slice(0, 120)}`);
     // c0) arg 槽 + apply 实跑(生产生命线):in=mbt, arg=op → apply_human_op_in
     slotLoad('in_reset', 'in_push', seedDoc('__seed', 390, 844));
     slotLoad('arg_reset', 'arg_push', 'place __seed button probe_b - 10 10');
