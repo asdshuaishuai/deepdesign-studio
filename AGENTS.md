@@ -6,7 +6,7 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**一句话�
 回写同一份文档，`.ddp` 只是它的认证加密容器。项目级 **DESIGN.md**（设计规范文档）约束
 全局视觉一致性——配色/字体/间距/圆角/组件规范都从它派生，随 DDP 持久化。
 
-**当前版本：0.5.0**（2026-10-29 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
+**当前版本：0.5.0-fix**（2026-11-04 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
 详见 [docs/versioning.md](docs/versioning.md)。
 
 ## 分支纪律（用户决策）
@@ -158,15 +158,17 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 忽略本地源**——标记在场时醒目告警并使用 Release 锚定引擎（CI 全新检出无标记，
 不受影响）。删除标记文件即恢复纯 Release 锚定。
 
-**当前工作状态：本地 SDK 模式已启用**（`ENGINE_LOCAL` → `../moonviz-dev/_build/wasm/release/build/wasm/wasm.wasm`，
-引擎 dev 线已含上游 #22–#28 修复与新契约：SVG 圆角钳制 rx=ry=min(r,min(w,h)/2)、
+**当前工作状态：Release 锚定（engine-v0.1.11，2026-11-04 发布）**。0.1.11 已带上
+上游 #22–#28 全部修复与新契约：SVG 圆角钳制 rx=ry=min(r,min(w,h)/2)、
 视觉可读性硬标准（对比度 4.5/3.0、纯黑深底禁令、不可见/选中态检测）、空文档合法初始态、
 交互/mock 数据 QA（无去向/占位符/空壳/非库组件）、叠放与热区/交互冲突硬门、
 `session_snapshot` 原子快照（revision/seq/canonical/render/delta）、
-`session_generate_spec` 规范驱动生成 + `design_spec_required` 草案）。
-契约探针已扩到 **30 session API**——新增能力进 wasm 面时
-必须同步 `scripts/sync-engine.mjs` 的 `SESSION_EXPORTS`，否则本地构建的新导出无人守门。
-生产打包仍走 `--release`（硬性忽略本地源）。
+`session_generate_spec` 规范驱动生成 + `design_spec_required` 草案。
+客户端据此把种子画板改为**能力探测**（`validate_mbt("")` → `EMPTY_DOC_OK`）：正式引擎
+零种子直达，旧引擎自动回退 24×24 种子兜底。契约探针 **30 session API**——新增能力进
+wasm 面时必须同步 `scripts/sync-engine.mjs` 的 `SESSION_EXPORTS`。
+本地集成模式机制保留（`--local` + `ENGINE_LOCAL` 标记），当前**未启用**；生产打包
+`--release` 硬性忽略本地源。
 
 规范线现状（**已随 engine-v0.1.9 重出构建全量发布**，2026-10-11）：
 `core/norms.mbt`（按钮不卡文案：文案宽+24 留白、高 ≥ 字号+20；圆角档：按钮族 8、

@@ -1369,7 +1369,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
 
 <script>
 'use strict';
-const APP_VER='0.5.0';
+const APP_VER='0.5.0-fix';
 let agentThread={pending:null}; // agent 澄清上下文（提问 → 用户回答 → 续跑）；置于测试切片起点
 const IS_TAURI=!!(window.__TAURI__&&window.__TAURI__.core);
 /* 平台检测：WebView2('Win32')/WKWebView('MacIntel')/WebKitGTK('Linux x86_64')
@@ -1670,6 +1670,9 @@ function engSlotLoad(reset,push,text){
   }
 }
 let engineBytes=null;
+/* 引擎能力开关（#27）：true = 引擎接受空文档（dev 线），空项目零种子直达；
+ * false = release 0.1.10 仍拒空文档，走种子画板兜底。loadEngine 内探测一次。 */
+let EMPTY_DOC_OK=false;
 // 内存棘轮回收：引擎的 bump 堆只增不减（实测 ~250 次变更 op 后线性内存达数百 MB），
 // 长会话必然 OOM。超过阈值时用缓存的 wasm 字节重建实例（毫秒级）——引擎是
 // 无状态的（每次调用传完整 canonical 文本），重建零语义影响。
@@ -1791,6 +1794,12 @@ function loadEngine(){
       if(!r.ok)throw new Error('wasm fetch HTTP '+r.status);
       engineBytes=await r.arrayBuffer();   // 缓存字节供回收重建
       engineExports=new WebAssembly.Instance(new WebAssembly.Module(engineBytes),{}).exports;
+      // #27 能力探测：空文档是否合法初始态（同一份 wasm，探测一次即可）
+      try{
+        engSlotLoad('in_reset','in_push','');
+        const vr=JSON.parse(engReadStr(engineExports.validate_mbt_in()));
+        EMPTY_DOC_OK=!!(vr&&vr.ok===true);
+      }catch(_){EMPTY_DOC_OK=false;}
     }catch(err){engineFailed=String(err&&err.message||err);const d=$('eng-dot');if(d)d.classList.add('bad');}
   })();
   return engineReady;
@@ -1866,6 +1875,8 @@ function seedDoc(id,w,h){
   return `---\nmoonviz:\n  format: visual-document\n  revision: 1\n  entry: ${id}\n---\n\n# ${id}\n\n<!-- moonviz:artboard ${id} -->\n\`\`\`mbt\nfn visual_${id}() -> @decl.Prototype {\n  let page = @decl.prototype(name="${id}", width=${w}.0, height=${h}.0)\n  page\n}\n\`\`\`\n`;
 }
 async function bootstrapFirstBoard(cmd,id,w,h){
+  // 引擎接受空文档（#27，dev 线）：create/template 直接在空文档上落首板，零种子
+  if(EMPTY_DOC_OK)return engApply('human','',`${cmd} ${id} ${w} ${h}`);
   if(cmd==='create')return engRender(seedDoc(id,w,h));
   let r=await engApply('human',seedDoc(SEED_BOARD,24,24),`${cmd} ${id} ${w} ${h}`);
   if(!r.ok)return r;
@@ -2422,10 +2433,13 @@ function layerIcon(n){
  * 待引擎补 inspect 类导出后恢复（渲染逻辑见 git 历史的 loadAudit）。 */
 async function runAutoFix(){
   if(!baseCmd){toast('先创建画板');return;}
-  const before=mbtRevision;
+  // 判「有没有债」必须比 canonical **文本**，不能比 mbtRevision：
+  // 引擎的 fix 可能改文档而不递增 revision（实测按钮 40→52 加宽后 revision 不变），
+  // 旧实现因此把已生效的修复误报成「没有需要修复的视觉债」。
+  const before=mbtText;
   const ok=await runOp(`fix ${active}`,'agent');
   if(!ok){toast('修复执行失败，详见状态栏');return;}
-  if(mbtRevision===before){toast('当前画板没有需要修复的视觉债');return;}
+  if(mbtText===before){toast('当前画板没有需要修复的视觉债');return;}
   trackAgent('一键自动修复',[`fix ${active}`]);
 }
 function clearTrack(){const b=$('tl-body');if(!b)return;b.replaceChildren();toast('追踪记录已清空');}
@@ -3847,7 +3861,7 @@ async function buildFromDocs(){
     activePreviewRun=runId;
     // 空文档起跑先播种最小文档：read_mbt/flows 不再 no_mbt_loaded 报错，
     // agent 拿得到文档上下文；__seed 单节点板会被收尾闲置清扫自动清掉
-    if(!mbtText)mbtText=seedDoc('__seed',24,24);
+    if(!mbtText&&!EMPTY_DOC_OK)mbtText=seedDoc('__seed',24,24);
     // 即刻切到线框图：生成原型的主秀是画布——preview 帧边跑边把画板长出来，
     // 用户看着原型出现，而不是盯着文档覆盖层干等跑完才见分晓（2026-10-27 用户要求：
     // 「直接同步到线稿/高保真模块……同步的可交互原型 UI 生成」）。右侧追踪照常可见。
@@ -5816,7 +5830,7 @@ function toggleAllTpl(){
   for(const[tid,,device]of TPLS){
     const[w,h]=TPL_SIZE[device];
     try{
-      const r=await engApply('human',seedDoc(SEED_BOARD,24,24),`template ${tid} __t_${tid} ${w} ${h}`);
+      const r=await engApply('human',EMPTY_DOC_OK?'':seedDoc(SEED_BOARD,24,24),`template ${tid} __t_${tid} ${w} ${h}`);
       const art=r.ok&&r.artboards&&r.artboards.find(a=>a.id==='__t_'+tid);
       if(art&&art.svg&&art.svg.length>50){
         // 一次引擎调用填两处：精选大卡（th-tpl-，3 张）与展开网格（th-tpla-，全集）

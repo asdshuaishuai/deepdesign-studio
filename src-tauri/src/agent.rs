@@ -714,6 +714,22 @@ fn b64_encode(s: &str) -> String {
     BASE64.encode(s.as_bytes())
 }
 
+/// 引擎能力探测（上游 #27）：引擎是否接受空文档为合法初始态。
+/// dev 线（含 #27）返回 true → 空项目零种子直达；release 0.1.10 返回 false →
+/// 保留 24×24 种子画板兜底。wasm 编译期嵌入、行为不随运行变化，进程内缓存一次。
+static EMPTY_DOC_CAP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+async fn engine_accepts_empty_doc(host: &EngineHost) -> bool {
+    if let Some(v) = EMPTY_DOC_CAP.get() {
+        return *v;
+    }
+    let v = matches!(
+        host.call("validate_mbt", "", "").await,
+        Ok(ref j) if j.get("ok") == Some(&json!(true))
+    );
+    let _ = EMPTY_DOC_CAP.set(v);
+    v
+}
+
 /// generate 参数解析（上游 #24 规范驱动生成）：
 /// `<intent> [as <name>] [spec=<json>]` → (intent, name, spec)。
 /// spec 是紧凑 JSON 设计规范（palette/typography/spacing/radius…），由 **Agent
@@ -792,7 +808,13 @@ impl<'a> EngineState<'a> {
                 Some("template") | Some("create") | Some("generate")
             )
         {
-            let seed = seed_doc(SEED_BOARD, 24, 24);
+            // 能力探测：dev 引擎（#27）接受空文档 → seed 为空串，零种子直达；
+            // release 0.1.10 仍拒绝空文档 → 用 24×24 种子画板引导首板。
+            let seed = if engine_accepts_empty_doc(self.host).await {
+                String::new()
+            } else {
+                seed_doc(SEED_BOARD, 24, 24)
+            };
             let mut r = if op.split_whitespace().next() == Some("generate") {
                 // generate 是 session 管道专属动词：先建会话（种子文档），再走
                 // session_generate（#24 起 spec 走 in 槽，三段式 op 传递）
@@ -822,9 +844,19 @@ impl<'a> EngineState<'a> {
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            r = self.call("apply_agent_op", &committed, &format!("delete-artboard {SEED_BOARD}")).await;
-            if r.get("ok") != Some(&json!(true)) {
-                return json!({"ok": false, "error": format!("seed_cleanup_failed:{op}")});
+            if !seed.is_empty() {
+                r = self.call("apply_agent_op", &committed, &format!("delete-artboard {SEED_BOARD}")).await;
+                if r.get("ok") != Some(&json!(true)) {
+                    return json!({"ok": false, "error": format!("seed_cleanup_failed:{op}")});
+                }
+            } else {
+                // 零种子路径：r 已是终态信封（含 mbt/revision/artboards）
+                r = json!({
+                    "ok": true,
+                    "mbt": committed,
+                    "revision": r.get("revision").cloned().unwrap_or(json!(0)),
+                    "artboards": r.get("artboards").cloned().unwrap_or(json!([])),
+                });
             }
             self.mbt = r.get("mbt").and_then(|v| v.as_str()).map(String::from);
             self.rendered_mbt = self.mbt.clone();
@@ -2437,6 +2469,42 @@ pub async fn run_with_mode(
         });
     }
 
+    // 收尾审查已入场但预算耗尽：主体构建在进入审查前就由模型自行宣告完成
+    // （review 只在「无工具调用的终态文本」后注入），此时按 done 收尾——
+    // 报 max_turns 会让前端弹红色「步数耗尽」，与实际交付状态不符。
+    // 真·预算耗尽（未进审查）仍走下面的 max_turns 分支。
+    if review_done {
+        let cleanup = if state.mbt.is_some() {
+            sweep_idle_artboards(&mut state, &emit, &mut seq).await
+        } else {
+            vec![]
+        };
+        let cleanup_json: Vec<Value> = cleanup.iter().map(|s| json!(s)).collect();
+        state.ensure_render().await;
+        let boards_n = artboard_ids(state.mbt.as_deref().unwrap_or("")).len();
+        let text = "[收尾审查] 审查阶段步数用尽——主体构建已完成，已保留全部成果。";
+        emit("assistant_text", json!({"text": text}));
+        emit(
+            "done",
+            json!({"stopReason": "done", "ops": state.ops.len(), "boards": boards_n, "cleanup": cleanup_json}),
+        );
+        eprintln!(
+            "[agent] run end: stop=done (review budget exhausted) ops={}",
+            state.ops.len()
+        );
+        return json!({
+            "ok": state.mbt.is_some(),
+            "mbt_b64": state.mbt.as_ref().map(|m| b64_encode(m)),
+            "render": state.last_render.clone(),
+            "ops": state.ops,
+            "revision": state.revision,
+            "stopReason": "done",
+            "boards": boards_n,
+            "cleanup": cleanup_json,
+            "text": text,
+        });
+    }
+
     // 轨迹终态事件必须显式发出——此前该路径零事件，前端时间线既不知道运行已结束、
     // 更无法分辨正常/异常（stopReason 只存在于返回契约，实时轨迹看不到）
     state.ensure_render().await;
@@ -3414,6 +3482,58 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             .expect("轨迹缺 done 终态事件——步数耗尽路径在时间线上静默");
         assert_eq!(term["stopReason"], json!("max_turns"));
         assert_eq!(term["ops"], out["ops"].as_array().map(|a| json!(a.len())).unwrap_or(json!(0)));
+    }
+
+    /// 收尾审查已入场后步数耗尽：主体构建已被模型宣告完成（审查只在终态文本后
+    /// 注入），此时必须按 done 收尾，而不是红色 max_turns——否则用户看到
+    /// 「步数耗尽」会以为交付失败，实际原型完整且已保留。
+    #[tokio::test]
+    async fn review_budget_exhaustion_reports_done_not_max_turns() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let tool_call_round = serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "moonviz_op",
+                 "arguments": "{\"op\": \"template login lg\"}"}}
+            ]}}]
+        });
+        let final_text_round = serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": "已完成登录页 lg。"}}]
+        });
+        // 第 1 轮落一个 op；第 2 轮模型宣告完成 → 触发收尾审查（step 跳到 max-48）；
+        // 之后一直调工具直到预算耗尽 → 走「审查耗尽按 done」分支。
+        let mut rounds = vec![tool_call_round.clone(), final_text_round];
+        rounds.extend(std::iter::repeat(tool_call_round).take(70));
+        let (port, mock, _bodies) = spawn_mock_llm(rounds).await;
+        let events: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+        let progress = |v: Value| {
+            if let Ok(mut ev) = events.lock() {
+                ev.push(v);
+            }
+        };
+        let out = run_with_steps(
+            &ENGINE,
+            "建一个登录页",
+            None,
+            "sk-test",
+            "mock-model",
+            &format!("http://127.0.0.1:{port}"),
+            "auto",
+            Some(&progress),
+            60,
+        )
+        .await;
+        mock.abort();
+        let _ = mock.await;
+        assert_eq!(out["stopReason"], json!("done"), "审查耗尽应按 done 收尾：{out}");
+        assert!(
+            out["text"].as_str().is_some_and(|t| t.contains("审查阶段步数用尽")),
+            "应如实说明审查阶段步数用尽：{out}"
+        );
+        assert!(out["ops"].as_array().is_some_and(|a| !a.is_empty()), "已提交 op 必须保留：{out}");
+        let ev = events.lock().unwrap();
+        let term = ev.iter().find(|e| e["type"] == json!("done")).expect("缺 done 终态事件");
+        assert_eq!(term["stopReason"], json!("done"), "终态事件也必须是 done：{term}");
     }
 
     /// 可复用 mock LLM：按顺序回放脚本化响应体，读完整请求后返回。
