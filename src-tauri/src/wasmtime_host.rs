@@ -101,6 +101,10 @@ enum SlotPlan {
     Arg(String),
     /// arg + arg2 槽：constrain 的 artboard + intent
     Arg2(String, String),
+    /// in + arg + arg2 三槽：generate（#24 起 in=design spec, arg=intent, arg2=name）。
+    /// **in 槽必须显式装载（含空串）**：会话 open 时 in 槽装的是整篇 mbt，
+    /// 不重置就会被引擎当 spec 解析（garbage spec → 静默错误裁决）。
+    Spec3(String, String, String),
     /// arg 槽 artboard + x/y 直参（tap）
     Tap(f64, f64, String),
 }
@@ -381,27 +385,45 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                     parts.iter().skip(1).copied().collect::<Vec<_>>().join(" "),
                 ),
             ),
-            // 生成式 UI：宿主收到的 op 已是**剥掉动词的前缀**（agent 路由层切掉
-            // "generate" 后才 call），形如 `<intent> [as <name>]`。
-            // 两点硬约束：
+            // 生成式 UI：宿主收到的 op 形如 `<intent> [as <name>]`，或 #24 的三段式
+            // `<intent>\u{1f}<name>\u{1f}<spec>`（agent 路由层构造；spec 允许任意
+            // JSON 空白，故不用裸 op 字符串携带）。两点硬约束：
             //  1. 绝不能 skip(1)——那会把意图的第一个词当动词丢掉
             //     （"登录页 as gen_login" → "页 as gen_login"）；
-            //  2. **无名分支必须显式清空 arg2 槽**。arg2 是 wasm 实例级状态，不会
-            //     随会话/项目重置；`SlotPlan::Arg` 只写 arg 槽，残留的 name 会让引擎
-            //     把新页写到上一页的名字上（静默覆盖），或把上一次 constrain 的意图
-            //     当画板名（造出垃圾画板）。所以两条分支统一走 Arg2，name 缺省为空串。
+            //  2. **arg2 与 in 槽都必须显式装载**（含空串）。arg2 是实例级状态，
+            //     残留的 name 会静默覆盖上一页；in 槽在会话 open 时装的是整篇
+            //     mbt，不重置会被 #24 的 generate 当 design spec 解析。
             "session_generate" => {
                 let rest = op.trim();
-                match rest.rsplit_once(" as ") {
-                    Some((intent, name)) if !name.trim().is_empty() && !name.contains(' ') => (
-                        "session_generate_in".to_string(),
-                        SlotPlan::Arg2(intent.trim().to_string(), name.trim().to_string()),
-                    ),
-                    _ => (
-                        "session_generate_in".to_string(),
-                        SlotPlan::Arg2(rest.to_string(), String::new()),
-                    ),
-                }
+                let (intent, name, spec) = if let Some((intent_name, spec)) =
+                    rest.rsplit_once('\u{1f}')
+                {
+                    match intent_name.split_once('\u{1f}') {
+                        Some((intent, name)) => (
+                            intent.trim().to_string(),
+                            name.trim().to_string(),
+                            spec.to_string(),
+                        ),
+                        None => (intent_name.trim().to_string(), String::new(), spec.to_string()),
+                    }
+                } else {
+                    match rest.rsplit_once(" as ") {
+                        Some((intent, name))
+                            if !name.trim().is_empty() && !name.contains(' ') =>
+                        {
+                            (
+                                intent.trim().to_string(),
+                                name.trim().to_string(),
+                                String::new(),
+                            )
+                        }
+                        _ => (rest.to_string(), String::new(), String::new()),
+                    }
+                };
+                (
+                    "session_generate_in".to_string(),
+                    SlotPlan::Spec3(spec, intent, name),
+                )
             }
             "session_lint" | "session_critique" | "session_spec" | "session_query_nodes"
             | "session_states" | "session_interactions" | "session_infer_page_type"
@@ -424,6 +446,12 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
             SlotPlan::Arg2(a, b) => {
                 load_slot(e, "arg_reset", "arg_push", a).inspect_err(|_| evict_session(e))?;
                 load_slot(e, "arg2_reset", "arg2_push", b).inspect_err(|_| evict_session(e))?;
+            }
+            SlotPlan::Spec3(spec, intent, name) => {
+                // #24：in=spec（空串也必须装载——覆盖 open 时残留的 mbT）
+                load_slot(e, "in_reset", "in_push", spec).inspect_err(|_| evict_session(e))?;
+                load_slot(e, "arg_reset", "arg_push", intent).inspect_err(|_| evict_session(e))?;
+                load_slot(e, "arg2_reset", "arg2_push", name).inspect_err(|_| evict_session(e))?;
             }
             SlotPlan::Tap(x, y, ab) => {
                 load_slot(e, "arg_reset", "arg_push", ab).inspect_err(|_| evict_session(e))?;
