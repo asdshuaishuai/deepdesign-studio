@@ -62,10 +62,10 @@ const IN_FACE_EXPORTS = [
   'session_generate_responsive_in', 'session_infer_missing_in', 'session_infer_page_type_in',
   'session_interactions_in', 'session_lint_in', 'session_open_project_json_in',
   'session_query_nodes_in', 'session_spec_in', 'session_states_in', 'session_tap_in',
-  'session_history_in', 'session_generate_in',
+  'session_history_in', 'session_generate_in', 'session_event_in',
 ];
 
-// session API（30 个）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
+// session API（31 个，0.2 新增 session_event 手势面）：有状态句柄，覆盖 CLI/MCP 的会话型能力（lint/critique/
 // 导出 SVG/交互运行时等）。agent.rs 的只读 op 路由依赖这组导出。
 // session_count（泄漏可测）与 session_open_project_json（save→open 回灌）
 // 是 engine-v0.1.1-session 新增（上游 issues #1/#4B）。
@@ -83,6 +83,7 @@ const SESSION_EXPORTS = [
   'session_benchmark', 'session_save', 'session_component_compile_b64',
   'session_library_snapshot', 'session_tap', 'session_count', 'session_open_project_json',
   'session_history', 'session_generate', 'session_snapshot', 'session_generate_spec',
+  'session_event',
 ];
 
 // 组件描述词典（本地展示文案，前端面板 tooltip 与 agent list_components 共用）。

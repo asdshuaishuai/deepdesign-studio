@@ -84,6 +84,9 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   sibling rect (no_sibling_overlap rejects them): before each place, reserve a
   non-intersecting slot; when you know a node's final size, pass [w] [h] inline
   (place supports trailing width/height — one op, gate sees the final bbox).
+- place's trailing k=v pairs apply to USER components only (moonviz#29: they are
+  silently dropped for built-in ones). For built-in components set text/fill/etc.
+  with a follow-up `update` op — never rely on `place … text=…`.
 - Tiny precision nodes (battery/status icons, switches) occupy small rects
   inside bars — place them FIRST, then place larger siblings around them.
 - Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")

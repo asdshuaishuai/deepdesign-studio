@@ -158,17 +158,25 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 忽略本地源**——标记在场时醒目告警并使用 Release 锚定引擎（CI 全新检出无标记，
 不受影响）。删除标记文件即恢复纯 Release 锚定。
 
-**当前工作状态：Release 锚定（engine-v0.1.11，2026-11-04 发布）**。0.1.11 已带上
-上游 #22–#28 全部修复与新契约：SVG 圆角钳制 rx=ry=min(r,min(w,h)/2)、
-视觉可读性硬标准（对比度 4.5/3.0、纯黑深底禁令、不可见/选中态检测）、空文档合法初始态、
-交互/mock 数据 QA（无去向/占位符/空壳/非库组件）、叠放与热区/交互冲突硬门、
-`session_snapshot` 原子快照（revision/seq/canonical/render/delta）、
-`session_generate_spec` 规范驱动生成 + `design_spec_required` 草案。
-客户端据此把种子画板改为**能力探测**（`validate_mbt("")` → `EMPTY_DOC_OK`）：正式引擎
-零种子直达，旧引擎自动回退 24×24 种子兜底。契约探针 **30 session API**——新增能力进
-wasm 面时必须同步 `scripts/sync-engine.mjs` 的 `SESSION_EXPORTS`。
-本地集成模式机制保留（`--local` + `ENGINE_LOCAL` 标记），当前**未启用**；生产打包
-`--release` 硬性忽略本地源。
+**当前工作状态：本地集成模式（引擎 dev 0.2 预发布测引入，2026-11-10 启用）**。
+`ENGINE_LOCAL` 标记在场，`--dev` 跑法持续使用 `../moonviz-dev` 本地构建
+（dev@10211c8，moon test 336/336 绿）；生产打包 `--release` 仍硬性忽略本地源。
+0.2 能力面已真机探针验证（`/tmp/probe02.mjs`，30/30）：spec `style: apple|harmony`
+美学预设（frontmatter `theme:` 回写）+ palette 覆盖、`spec_violations` 信封、
+`design_spec_required` 草案、`flow … <transition>` 分板过渡（`unknown_transition`
+拒绝）、`session_event` 手势面（long_press/swipe/focus/key，31 session API——
+`SESSION_EXPORTS`/`IN_FACE_EXPORTS` 已同步）、导出 a11y（lang/aria-label/
+reduced-motion/焦点环）。**已提引擎 issue**：#29（place k=v 对内置组件静默丢弃，
+提示词已教「内置组件用 update 改属性」）、#30（motion= 写读断裂——decltext 序列化有、
+generic_node 读面无，回灌即丢）、#31（validate 与 load 分叉——缺逗号语法错误
+validate 放行、load 清空整板）。0.1.11 已带上上游 #22–#28 全部修复与新契约：
+SVG 圆角钳制 rx=ry=min(r,min(w,h)/2)、视觉可读性硬标准（对比度 4.5/3.0、纯黑深底
+禁令、不可见/选中态检测）、空文档合法初始态、交互/mock 数据 QA、叠放与热区/
+交互冲突硬门、`session_snapshot` 原子快照、`session_generate_spec` 规范驱动生成 +
+`design_spec_required` 草案。客户端据此把种子画板改为**能力探测**
+（`validate_mbt("")` → `EMPTY_DOC_OK`）：正式引擎零种子直达，旧引擎自动回退
+24×24 种子兜底。新增能力进 wasm 面时必须同步 `scripts/sync-engine.mjs` 的
+`SESSION_EXPORTS`。
 
 规范线现状（**已随 engine-v0.1.9 重出构建全量发布**，2026-10-11）：
 `core/norms.mbt`（按钮不卡文案：文案宽+24 留白、高 ≥ 字号+20；圆角档：按钮族 8、
@@ -397,7 +405,14 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
 - 同时在本仓库做**登记性缓解**（提示词禁令/可用配方、登记性测试、诚实降级文案），
   并在代码注释或本文件引用 issue 编号——上游修复会让登记性测试变红，驱动本侧回收
   （例：`AGENT_GATE_DEBT` 清单对应 #14）；
-- 已提交的引擎 issue 台账（**0.1.6-fix 已修 #19；0.1.6 已修 #17/#18；0.1.5-fix-2 已修 #12/#13/#14/#15**）：
+- 已提交的引擎 issue 台账（**0.1.6-fix 已修 #19；0.1.6 已修 #17/#18；0.1.5-fix-2 已修
+  #12/#13/#14/#15；0.2 dev 测引入期在案 #29/#30/#31**）：
+  #29（place k=v 对内置组件静默丢弃——真实 run 里 `place … text=…` 看似成功实则全落空，
+  本侧缓解：INSTRUCTIONS 教内置组件改属性一律走 update，上游修复后可回收该教学）、
+  #30（motion= 写读断裂——decltext 序列化有 motion、decl.mbt::generic_node 读面无参数，
+  节点动效经整篇提交/重开即丢；客户端暂不教 motion 写入，等读面补齐）、
+  #31（validate_mbt 与文档加载解析分叉——缺逗号语法错误 validate ok、load 清空整板，
+  宿主以 validate 为闸时坏文档会静默通过）。
   #19（session_constrain 成功信封不回传 canonical，键控缓存宿主取不回变更→已修：constrain/
   auto_fix/tap/generate_responsive/component_compile 全部改文档面信封带 canonical，本侧
   SESSION_EVICT 机制整体移除、constrain 已接线）、
