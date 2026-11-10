@@ -2074,13 +2074,15 @@ function renderStage(){
   }
   $('empty-state').style.display='none';
   bindFlowTargetCapture();
-  // 清掉已删除画板的缓存与 DOM
+  // 清掉已删除画板的缓存与 DOM（wrap 引用直接 remove，不走选择器）
   const alive=new Set(ids);
-  for(const [id] of stageCache){
+  for(const [id,ent] of stageCache){
     if(!alive.has(id)){
       stageCache.delete(id);
-      const old=stage.querySelector('[data-frame="'+escAttr(id)+'"]');
-      if(old){if(boardDrag&&boardDrag.id===id){if(boardDragRaf){cancelAnimationFrame(boardDragRaf);boardDragRaf=0;}boardDrag=null;gestureActive=false;}old.remove();}
+      if(ent.wrap&&ent.wrap.isConnected){
+        if(boardDrag&&boardDrag.id===id){if(boardDragRaf){cancelAnimationFrame(boardDragRaf);boardDragRaf=0;}boardDrag=null;gestureActive=false;}
+        ent.wrap.remove();
+      }
     }
   }
   for(const id of ids){
@@ -2088,13 +2090,14 @@ function renderStage(){
     const isActive=id===active;
     const s=frameScale(sess)*(isActive?1:0.82);
     const sourceSvg=isActive?currentSvg:(sess.svg||'');
-    // 渲染键：svg/显示尺寸/激活态/模式任一变化才重建该板
-    const key=sourceSvg+'\u0000'+Math.round(sess.w*s)+'x'+Math.round(sess.h*s)+'\u0000'+(isActive?'a':'p')+'\u0000'+(mode==='play'?'y':'n');
+    // 渲染键：svg/显示尺寸（含精确 s）/激活态/模式任一变化才重建该板
+    const key=sourceSvg+'\u0000'+Math.round(sess.w*s)+'x'+Math.round(sess.h*s)+'\u0000'+s.toFixed(4)+'\u0000'+(isActive?'a':'p')+'\u0000'+(mode==='play'?'y':'n');
     const ent=stageCache.get(id);
     if(ent&&ent.key===key)continue; // 未变：整体复用，零 DOM 变更
     if(boardDrag&&boardDrag.id===id){if(boardDragRaf){cancelAnimationFrame(boardDragRaf);boardDragRaf=0;}boardDrag=null;gestureActive=false;}
-    stage.querySelector('[data-frame="'+escAttr(id)+'"]')?.remove();
-    stageCache.set(id,{key});
+    // **原位替换**：insertBefore 到旧位置再删旧节点——appendChild 会把重建的板
+    // 挪到网格末尾（切换活动板=点击的那块板跳走，视觉顺序错乱）
+    const oldWrap=(ent&&ent.wrap&&ent.wrap.isConnected)?ent.wrap:null;
     const wrap=document.createElement('div');
     wrap.className='frame-wrap'+(isActive?' active':'');
     wrap.dataset.frame=id;
@@ -2103,7 +2106,9 @@ function renderStage(){
     wrap.style.width=Math.round(sess.w*s)+'px';
     wrap.innerHTML=`<div class="frame-chrome"><div class="fc-dots"><i></i><i></i><i></i></div><span class="fc-name">${escHtml(id)}</span><span class="fc-size">${sess.w} × ${sess.h}</span></div>
       <div class="frame-body" id="fb-${escAttr(id)}" style="height:${Math.round(sess.h*s)}px"></div>`;
-    stage.appendChild(wrap);
+    if(oldWrap)stage.insertBefore(wrap,oldWrap);else stage.appendChild(wrap);
+    oldWrap?.remove();
+    stageCache.set(id,{key,wrap});
     const chrome=wrap.querySelector('.frame-chrome');
     chrome.addEventListener('contextmenu',ev=>{ev.preventDefault();ev.stopPropagation();artboardMenu(ev.clientX,ev.clientY,id);});
     const off=boardOffsets[id];
@@ -3107,7 +3112,8 @@ function traceDelta(el,text,box){
   el.__tm=setTimeout(()=>{
     el.__tm=0;el.__last=performance.now();
     const b=el.__buf;el.__buf='';
-    if(b){el.textContent+=b;scrollTraceFollow(box,el);}
+    // 直播行可能已被终态收口删除（doc_written）：陈旧 flush 不得再走跟随
+    if(b&&el.isConnected){el.textContent+=b;scrollTraceFollow(box,el);}
   },wait);
 }
 /* 直播行收口（done/failed）：思考直播行**收缩不删除**——完整内容保留在折叠里，
