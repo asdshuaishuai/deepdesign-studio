@@ -4168,11 +4168,15 @@ async function validateMbtNow(){
     // 诚实化：结构通过 ≠ 无债——顺手跑 session lint 把视觉债数量亮给用户，不给假绿灯。
     const check=await engValidate(text);
     if(!check.ok){toast('MBT 校验失败：'+String(check.error||'unknown').slice(0,80),'err');return;}
+    // 引擎 #31：validate 信封带 artboards[{id,nodes}]——「ok 但全零节点」不再不可见
+    // （空文档是合法初始态，故不阻断；亮提示让用户知道提交的是无视觉内容骨架）
+    const totalNodes=Array.isArray(check.artboards)?check.artboards.reduce((s,a)=>s+((a&&a.nodes)|0),0):-1;
     const result=await engRender(text);
     if(!mbtResult(result)){toast('MBT 渲染失败：'+String(result&&result.error||'unknown').slice(0,80));return;}
     let debtNote='';
     try{const l=await ENGINE.call('session_lint',text,active||'');const n=l&&l.data&&Array.isArray(l.data)?l.data.length:0;
       if(n)debtNote=`（${n} 项视觉债——「校验并渲染」只验结构，AgentGate 级清偿请用 ⌘F 自动修复）`;}catch(_){ }
+    if(totalNodes===0)debtNote=(debtNote?debtNote+' ':'')+'（注意：文档没有任何可见节点）';
     applyMbtResult(result,{acceptDraft:$('decl-text').value===text});toast('MBT 已校验并由引擎重新渲染'+debtNote);setStatus('agent','校验并渲染 ✓',true,'');
   }catch(err){toast('MBT 校验失败：'+String(err).slice(0,80));}
 }

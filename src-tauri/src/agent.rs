@@ -84,9 +84,11 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
   sibling rect (no_sibling_overlap rejects them): before each place, reserve a
   non-intersecting slot; when you know a node's final size, pass [w] [h] inline
   (place supports trailing width/height — one op, gate sees the final bbox).
-- place's trailing k=v pairs apply to USER components only (moonviz#29: they are
-  silently dropped for built-in ones). For built-in components set text/fill/etc.
-  with a follow-up `update` op — never rely on `place … text=…`.
+- place's trailing k=v pairs NOW apply to built-in components too (moonviz#29 fixed:
+  text/fill/stroke/radius/opacity/font_size/weight/shadow/motion land on the node;
+  unknown keys are rejected with place_unknown_key instead of being silently dropped).
+  motion= accepts the node-safe entrance preset `fade_in` only (moonviz#30: writable
+  via place and update, round-trips through canonical, shows in export).
 - Tiny precision nodes (battery/status icons, switches) occupy small rects
   inside bars — place them FIRST, then place larger siblings around them.
 - Two modes: BUILD requests get the full loop below; TWEAK requests ("make the button green")
@@ -4484,6 +4486,51 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(
             canon.to_lowercase().contains("#123456"),
             "生成应采用 spec 主色 #123456：{canon}"
+        );
+    }
+
+    /// #29/#30/#31 修复回收锚定（引擎 e4977c2，2026-11-10）：
+    /// place k=v 落内置节点（含 motion）、query 输出 motion、update motion 写面、
+    /// validate 信封带 artboards（宿主辨「ok 但板空」）。上游回归时此测变红，
+    /// 驱动提示词缓解重新登记（AGENTS.md issue 台账）。
+    #[tokio::test]
+    async fn place_kv_motion_roundtrip_after_upstream_fix() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
+        let g = state
+            .moonviz_op(&format!("generate 登录页 as home spec={TEST_SPEC}"))
+            .await;
+        assert_eq!(g["ok"], json!(true), "{g}");
+        let p = state
+            .moonviz_op("place home button m1 - 20 720 120 44 text=开始 motion=fade_in")
+            .await;
+        assert_eq!(p["ok"], json!(true), "place k=v 应对内置组件生效（#29）：{p}");
+        let q = state.moonviz_op("query home").await;
+        let inner = q.get("result").unwrap_or(&q);
+        let nodes = inner
+            .get("data")
+            .or_else(|| inner.get("nodes"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let m1 = nodes
+            .iter()
+            .find(|n| n.get("id").and_then(|x| x.as_str()) == Some("m1"))
+            .cloned()
+            .unwrap_or(json!({}));
+        assert_eq!(m1["text"], json!("开始"), "text 应落节点（#29）：{m1}");
+        assert_eq!(m1["style"]["motion"], json!("fade_in"), "query 应输出 motion（#30）：{m1}");
+        let u = state.moonviz_op("update home m1 motion=fade_in").await;
+        assert_eq!(u["ok"], json!(true), "update motion= 写面（#30）：{u}");
+        let bad = state.moonviz_op("place home button m2 - 160 720 120 44 notakey=1").await;
+        assert_eq!(bad["ok"], json!(false), "未知键应显式拒绝：{bad}");
+        // validate 信封带 artboards[{id,nodes}]（#31 宿主可见性）
+        let mbt = state.mbt.clone().unwrap_or_default();
+        let v = ENGINE.call("validate_mbt", &mbt, "").await.unwrap();
+        assert!(
+            v["artboards"].is_array() && v["artboards"][0]["nodes"].as_i64().is_some_and(|n| n > 0),
+            "validate 信封应带 artboards 节点计数（#31）：{v}"
         );
     }
 

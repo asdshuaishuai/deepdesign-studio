@@ -166,11 +166,14 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 `design_spec_required` 草案、`flow … <transition>` 分板过渡（`unknown_transition`
 拒绝）、`session_event` 手势面（long_press/swipe/focus/key，31 session API——
 `SESSION_EXPORTS`/`IN_FACE_EXPORTS` 已同步）、导出 a11y（lang/aria-label/
-reduced-motion/焦点环）。**客户端接入面（2026-11-10）**：宿主 `session_event`
+reduced-motion/焦点环）。**上游 #29/#30/#31 已修并回收（e4977c2，2026-11-10）**：
+探针翻转锚定修复后 **37/37**（place k=v 内置生效/motion 写读查导全链/validate
+artboards 可见性），Rust 回收锚定 `place_kv_motion_roundtrip_after_upstream_fix`。
+**客户端接入面（2026-11-10）**：宿主 `session_event`
 槽计划（arg=画板/in=spec）+ `SESSION_MUTATING` 9 项（信封带 mbt 实证）；
 agent `event` 只读路由（READONLY_OPS 23）+ 提示词 0.2 教学（spec style 预设、
 flow transition 词表 push/pop/modal_present/modal_dismiss/sheet_present/fade/none、
-event 手势验收；**不教 motion 写入**——等 #30 读面补齐）；generate 的
+event 手势验收；#30 修复后 motion=fade_in 教学已开放）；generate 的
 `spec_violations` 计数随 tool_end 进轨迹；前端 `designBrief` 透传 style、
 `designFromEngine` 从 frontmatter `theme:` 派生 style。**已提引擎 issue**：#29（place k=v 对内置组件静默丢弃，
 提示词已教「内置组件用 update 改属性」）、#30（motion= 写读断裂——decltext 序列化有、
@@ -411,14 +414,17 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
 - 同时在本仓库做**登记性缓解**（提示词禁令/可用配方、登记性测试、诚实降级文案），
   并在代码注释或本文件引用 issue 编号——上游修复会让登记性测试变红，驱动本侧回收
   （例：`AGENT_GATE_DEBT` 清单对应 #14）；
-- 已提交的引擎 issue 台账（**0.1.6-fix 已修 #19；0.1.6 已修 #17/#18；0.1.5-fix-2 已修
-  #12/#13/#14/#15；0.2 dev 测引入期在案 #29/#30/#31**）：
-  #29（place k=v 对内置组件静默丢弃——真实 run 里 `place … text=…` 看似成功实则全落空，
-  本侧缓解：INSTRUCTIONS 教内置组件改属性一律走 update，上游修复后可回收该教学）、
-  #30（motion= 写读断裂——decltext 序列化有 motion、decl.mbt::generic_node 读面无参数，
-  节点动效经整篇提交/重开即丢；客户端暂不教 motion 写入，等读面补齐）、
-  #31（validate_mbt 与文档加载解析分叉——缺逗号语法错误 validate ok、load 清空整板，
-  宿主以 validate 为闸时坏文档会静默通过）。
+- 已提交的引擎 issue 台账（**0.2 dev e4977c2 已修 #29/#30/#31（2026-11-10，客户端已回收
+  验证）；0.1.6-fix 已修 #19；0.1.6 已修 #17/#18；0.1.5-fix-2 已修 #12/#13/#14/#15**）：
+  #29（place k=v 对内置组件静默丢弃→已修：内置分支预检+edit 同语义落节点，未知键
+  `place_unknown_key` 显式拒绝；本侧缓解教学已回收，提示词改教「k=v 生效+motion=fade_in
+  白名单」）、#30（motion= 写读断裂→实为两层：canonical 保留本就成立、缺口在
+  query_nodes 不输出+edit 词表缺 motion 键→都已补，非法预设前置拒绝；本侧已开放
+  motion=fade_in 教学，探针/Rust 回收锚定 `place_kv_motion_roundtrip_after_upstream_fix`）、
+  #31（validate ok / load 清板分叉→真相：缺逗号文档**合法**（MoonBit 接受空格分隔标签
+  参数），validate 与 load 一致、节点存活（垃圾引号 id 由导出转义兜底）；真修复是
+  validate 信封补 `artboards[{id,nodes}]`——宿主可见「ok 但板空」；本侧前端「校验并
+  渲染」已消费该字段亮零节点提示）。
   #19（session_constrain 成功信封不回传 canonical，键控缓存宿主取不回变更→已修：constrain/
   auto_fix/tap/generate_responsive/component_compile 全部改文档面信封带 canonical，本侧
   SESSION_EVICT 机制整体移除、constrain 已接线）、
