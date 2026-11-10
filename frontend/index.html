@@ -1565,6 +1565,12 @@ function designRestore(mbt){
  * 规则来自引擎当前 norms 基线——保证"文档描述的就是引擎实际执行的规范" */
 async function designFromEngine(artboard){
   const out={v:1,generated:new Date().toISOString().slice(0,10),palette:{},typography:{},spacing:{},radius:{},rules:[],notes:''};
+  // 0.2 美学预设：canonical frontmatter theme: apple|harmony → DESIGN.md style 键
+  // （生成基线沿用当次生成的美学体系，后续 spec= 透传回引擎）
+  try{
+    const tm=String(mbtText||'').match(/^  theme:\s*(apple|harmony)\s*$/m);
+    if(tm)out.style=tm[1];
+  }catch(_){}
   try{
     const t=await engSessionInspect('session_extract_design_system',artboard||active);
     if(t&&t.ok&&t.data){
@@ -3184,7 +3190,9 @@ function ensureTraceListener(){
       const line=document.getElementById('tlstep-'+p.run+'-'+p.seq);
       if(line){
         line.className='tl-line '+(p.ok?'tl-ok':'tl-err');
-        line.innerHTML=(p.ok?'✓ ':'✗ ')+escHtml(line.dataset.op||'')+(p.ms?` <span class="tl-ms">${p.ms}ms</span>`:'')+(p.error?` <span class="tl-err-msg">${escHtml(p.error)}</span>`:'');
+        // 0.2 规范符合性：generate 信封的 spec_violations 计数（Rust 随 tool_end 下发）
+        const sv=(p.spec_violations|0);
+        line.innerHTML=(p.ok?'✓ ':'✗ ')+escHtml(line.dataset.op||'')+(p.ms?` <span class="tl-ms">${p.ms}ms</span>`:'')+(p.error?` <span class="tl-err-msg">${escHtml(p.error)}</span>`:'')+(p.ok&&sv?` <span class="tl-err-msg" title="生成结果与设计规范的偏差条数">规范偏差 ${sv}</span>`:'');
       }
       return;
     }
@@ -3756,6 +3764,9 @@ function designBrief(){
   // 的令牌做取舍/微调后作为 spec= 传入，而不是让引擎用内置规范代劳。
   try{
     const spec={v:1};
+    // 0.2 美学预设：DESIGN.md 载荷 style 键（apple|harmony）→ spec.style 直传；
+    // palette 同名角色仍覆盖它（引擎语义：style 给气质、palette 给微调）
+    if(s.style==='apple'||s.style==='harmony')spec.style=s.style;
     if(s.palette&&Object.keys(s.palette).length)spec.palette=s.palette;
     if(s.typography&&Object.keys(s.typography).length)spec.typography=s.typography;
     if(Array.isArray(s.spacing)&&s.spacing.length)spec.spacing=s.spacing;

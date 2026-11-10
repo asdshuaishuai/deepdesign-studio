@@ -166,7 +166,13 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 `design_spec_required` 草案、`flow … <transition>` 分板过渡（`unknown_transition`
 拒绝）、`session_event` 手势面（long_press/swipe/focus/key，31 session API——
 `SESSION_EXPORTS`/`IN_FACE_EXPORTS` 已同步）、导出 a11y（lang/aria-label/
-reduced-motion/焦点环）。**已提引擎 issue**：#29（place k=v 对内置组件静默丢弃，
+reduced-motion/焦点环）。**客户端接入面（2026-11-10）**：宿主 `session_event`
+槽计划（arg=画板/in=spec）+ `SESSION_MUTATING` 9 项（信封带 mbt 实证）；
+agent `event` 只读路由（READONLY_OPS 23）+ 提示词 0.2 教学（spec style 预设、
+flow transition 词表 push/pop/modal_present/modal_dismiss/sheet_present/fade/none、
+event 手势验收；**不教 motion 写入**——等 #30 读面补齐）；generate 的
+`spec_violations` 计数随 tool_end 进轨迹；前端 `designBrief` 透传 style、
+`designFromEngine` 从 frontmatter `theme:` 派生 style。**已提引擎 issue**：#29（place k=v 对内置组件静默丢弃，
 提示词已教「内置组件用 update 改属性」）、#30（motion= 写读断裂——decltext 序列化有、
 generic_node 读面无，回灌即丢）、#31（validate 与 load 分叉——缺逗号语法错误
 validate 放行、load 清空整板）。0.1.11 已带上上游 #22–#28 全部修复与新契约：

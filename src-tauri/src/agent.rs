@@ -108,6 +108,12 @@ The engine has deterministic page generation. Use it; do NOT hand-place a whole 
      colors unless explicitly required; scene text/background contrast ≥ 4.5 (body).
    - Radius vocabulary: 0 (square) / 6/8/12/16 (rounded) / height÷2 (pill or circle).
      NEVER use an oversized radius on a wide box — it renders as an extreme ellipse.
+   - Optional aesthetic preset `"style":"apple"|"harmony"` (engine 0.2): sets the
+     design-language baseline (layering/hairline/pill semantics); palette keys you
+     provide override the same-name roles on top of it. Pick by request's flavor
+     (iOS-like → apple; HarmonyOS-like → harmony); omit to keep the current theme.
+   - The envelope's `spec_violations[]` are spec-vs-result deviations: non-empty
+     means fix the named nodes (update) and re-critique before finishing.
 1. PLAN: choose screens. For each screen pick the closest intent phrase, then:
    **`generate <intent> [as <name>] spec=<json>`** — ONE call builds a complete,
    norm-compliant page (template instantiation + token colors + auto_fix self-healing +
@@ -183,7 +189,9 @@ self-heals norms. Hand placement is for *targeted additions*, not for building p
   | resize-canvas <artboard> <w> <h> | responsive <artboard>  (adds _tablet/_desktop variants)
   | interact <artboard> <node> <trigger> <action>  | uninteract <artboard> <node>
   | state <artboard> <node> <state_name> k=v ...   | set-state <node> <state_name> [toggle]
-  | flow <from_artboard> <to_artboard> <node>
+  | flow <from_artboard> <to_artboard> <node> [transition]   (transition optional:
+      push|pop|modal_present|modal_dismiss|sheet_present|fade|none; default push;
+      unknown name → unknown_transition)
   | unflow <from_artboard> <to_artboard> <node>   (delete one navigation edge)
   | theme <name>  (light|dark|high_contrast|sepia|nord|sunset)
   | token <name> <value>   (override ONE COLOR token, e.g. token primary #FF5722)
@@ -204,6 +212,10 @@ self-heals norms. Hand placement is for *targeted additions*, not for building p
   session API — they inspect but never commit): list | flows | list-templates | list-components
   | list-tokens | list-themes | lint <ab> | critique <ab> | query <ab> | infer <ab> | spec <ab>
   | missing <ab> | states <ab> | interactions <ab> | export-svg <ab> | export-html | tap <ab> <x> <y>
+  | event <ab> <spec>   (engine-0.2 gesture runtime — verify non-tap interactions you
+      wired: long_press:<x>:<y>:<ms> | swipe:left|right|up|down | focus:<node> |
+      blur:<node> | scroll_end | key:<key> | key_enter | keyboard_enter; returns
+      {ok,changes[],current} — use it after interact to prove the trigger navigates)
   | list-ops (registry of valid mutating op names — check here before inventing syntax)
   | extract-design-system <ab> (color/size token usage analysis with confidence — ground
     theme/token decisions before restyling).
@@ -671,15 +683,16 @@ fn thinking_extra_body(model: &str, level: &str, protocol: Protocol) -> Option<V
 /// 现已转回路由白名单语义（本注释处的预言成真）。变更类 op 绝不能入表——
 /// 入表会被只读分支拦下而非提交。list-tools/doc-json 无对应 wasm 导出，
 /// 路由时保持诚实报错（见 moonviz_op 的 unavailable 分支）。
-const READONLY_OPS: [&str; 22] = [
+const READONLY_OPS: [&str; 23] = [
     // 无参清点类（list-ops：变更 op 注册表，与 SKILL/INSTRUCTIONS 推荐一致）
     "list", "list-templates", "list-components", "list-tools", "list-tokens", "list-themes",
     "list-ops", "flows", "benchmark",
     // 需 <artboard> 的检视类
     "lint", "critique", "query", "infer", "spec", "missing", "doc-json", "states",
     "interactions", "export-svg", "export-html", "extract-design-system",
-    // 需 <artboard> <x> <y> 的模拟类
-    "tap",
+    // 模拟类：tap 需 <artboard> <x> <y>；event 需 <artboard> <spec>（0.2 手势：
+    // long_press/swipe/focus/blur/scroll_end/key——运行时可改状态，信封带 mbt）
+    "tap", "event",
 ];
 
 fn is_readonly_op(op: &str) -> bool {
@@ -911,6 +924,8 @@ impl<'a> EngineState<'a> {
                 // engine-v0.1.6 新增：设计系统提取（颜色/尺寸 token 用量+置信度）
                 "extract-design-system" => ("session_extract_design_system", true),
                 "tap" => ("session_tap", true),
+                // 0.2 手势事件（session_event）：非 tap 交互的运行时验收通道
+                "event" => ("session_event", true),
                 "benchmark" => ("session_benchmark", true),
                 // 直调导出（无状态）
                 "list-templates" => ("list_templates", false),
@@ -2396,6 +2411,15 @@ pub async fn run_with_mode(
             if let Some(e) = &err {
                 ev["error"] = json!(e);
             }
+            // 0.2 规范符合性：generate 信封的 spec_violations[] 随轨迹下发
+            // （前端终态卡/轨迹行可直接呈现「规范偏差 N 条」；模型消息里本来就有）
+            if name == "moonviz_op" {
+                if let Some(sv) = result.get("spec_violations").and_then(|v| v.as_array()) {
+                    if !sv.is_empty() {
+                        ev["spec_violations"] = json!(sv.len());
+                    }
+                }
+            }
             emit("tool_end", ev);
             // 同步渲染预览：moonviz_op 成功提交后节流推送最新 canonical（≥1.5s 一次），
             // 前端 wasm 渲染为画布预览——不落事实源（终态回灌收口）；实现层能力，引擎无感
@@ -3130,6 +3154,10 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(is_readonly_op("export-html login"));
         // engine-v0.1.6：设计系统提取（颜色/尺寸 token 用量分析）
         assert!(is_readonly_op("extract-design-system login"));
+        // 模拟类：tap 与 0.2 手势 event（session_event，信封带 mbt）
+        assert!(is_readonly_op("tap login 10 20"));
+        assert!(is_readonly_op("event login long_press:80:82:800"));
+        assert!(is_readonly_op("event login swipe:left"));
         // 变更类绝不入表：入表会导致走 load 管道而静默丢弃变更
         assert!(!is_readonly_op("fix login"));
         // constrain 是变更 op（0.1.6-fix/#19 起走 session_constrain 特判路由）——
@@ -4360,6 +4388,30 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
         assert!(tokens.get("colors").is_some(), "list_tokens 应返回颜色分组：{tokens}");
         let themes = ENGINE.call("list_themes", "", "").await.unwrap();
         assert!(themes.as_array().is_some_and(|a| a.len() >= 5), "list_themes 应返回 6 主题");
+    }
+
+    /// 0.2 手势事件宿主契约：`event` 只读路由 → session_event（arg=artboard、
+    /// in=事件 spec 两槽）；信封属 SESSION_MUTATING（运行时可改状态）——带 mbt
+    /// 与宿主补的 artboards 索引；非法 spec 走引擎 unknown_event（不抛）。
+    #[tokio::test]
+    async fn session_event_host_contract() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let seed = seed_doc("sd", 390, 844);
+        // 合法 spec：ok + mbt（canonical 前移信封）+ 宿主补的 artboards
+        let ev = ENGINE.call("session_event", &seed, "sd swipe:left").await.unwrap();
+        assert_eq!(ev["ok"], json!(true), "session_event 应返回 ok 信封：{ev}");
+        assert!(ev["changes"].is_array(), "changes 应为数组：{ev}");
+        assert!(ev["current"].as_str().is_some(), "应带运行时 current：{ev}");
+        assert!(ev["mbt"].as_str().is_some_and(|m| !m.is_empty()), "SESSION_MUTATING 信封应带 canonical：{ev}");
+        assert!(ev["artboards"].is_array(), "宿主应补画板索引：{ev}");
+        // 非法 spec：引擎显式 unknown_event，宿主原样透传
+        let bad = ENGINE.call("session_event", &seed, "sd nonsense:1").await.unwrap();
+        assert_eq!(bad["ok"], json!(false), "{bad}");
+        assert_eq!(bad["error"], json!("unknown_event"), "{bad}");
+        // 参数不足：宿主侧显式报错（不得开会话）
+        let few = ENGINE.call("session_event", &seed, "sd").await;
+        assert!(few.is_err(), "缺 spec 应宿主报错：{few:?}");
     }
 
     /// 空项目首 op 是 generate 时必须能落地（genUI 第一公民的**前提**）。

@@ -74,7 +74,7 @@ fn arity(fn_name: &str) -> Option<usize> {
 /// 0.1.6-fix/#19 起全部"改文档面"信封都带 canonical——apply 双门之外，
 /// auto_fix/constrain（此前改而不报，只能弃缓存）/tap（交互可改文档状态）/
 /// generate_responsive/component_compile_b64 一并纳入。
-const SESSION_MUTATING: [&str; 8] = [
+const SESSION_MUTATING: [&str; 9] = [
     "session_apply_agent",
     "session_apply_human",
     "session_auto_fix",
@@ -84,9 +84,14 @@ const SESSION_MUTATING: [&str; 8] = [
     "session_component_compile_b64",
     // 生成式 UI：意图 → 模板实例化 → 自愈，必然改文档
     "session_generate",
+    // 0.2 手势事件：long_press/swipe/focus/key 驱动运行时（导航/状态），信封带
+    // mbt（canonical 前移）——与 tap 同类「模拟可改文档状态」
+    "session_event",
 ];
 /// session_tap 需要的最小 op 参数（artboard + x + y）
 const SESSION_TAP_MIN_ARGS: usize = 3;
+/// session_event 需要的最小 op 参数（artboard + 事件 spec）
+const SESSION_EVENT_MIN_ARGS: usize = 2;
 
 struct Session {
     handle: i32,
@@ -107,6 +112,9 @@ enum SlotPlan {
     Spec3(String, String, String),
     /// arg 槽 artboard + x/y 直参（tap）
     Tap(f64, f64, String),
+    /// arg 槽 artboard + in 槽事件 spec（session_event：long_press/swipe/focus/key，
+    /// spec 冒号分隔单 token，`<ab> <spec>` 两段）
+    EventSpec(String, String),
 }
 
 struct Engine {
@@ -361,6 +369,12 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                 parts.len()
             ));
         }
+        if fn_name == "session_event" && parts.len() < SESSION_EVENT_MIN_ARGS {
+            return Err(format!(
+                "op_missing_args:{fn_name} 需要 {SESSION_EVENT_MIN_ARGS} 个参数（<artboard> <spec>），得到 {}",
+                parts.len()
+            ));
+        }
         let parse_xy = |s: Option<&&str>| -> Result<f64, String> {
             let raw = s.copied().unwrap_or("");
             raw.parse()
@@ -377,6 +391,15 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                 "session_tap_in".to_string(),
                 // op 形如 `tap <ab> <x> <y>`：artboard 走 arg 槽，x/y 是第 2/3 个 token
                 SlotPlan::Tap(parse_xy(parts.get(1))?, parse_xy(parts.get(2))?, parts.first().copied().unwrap_or("").to_string()),
+            ),
+            "session_event" => (
+                "session_event_in".to_string(),
+                // op 形如 `event <ab> <spec>`：artboard 走 arg 槽、spec 走 in 槽
+                // （引擎 session_event_in 读 g_arg+g_in；spec 形如 long_press:80:82:800）
+                SlotPlan::EventSpec(
+                    parts.first().copied().unwrap_or("").to_string(),
+                    parts.iter().skip(1).copied().collect::<Vec<_>>().join(" "),
+                ),
             ),
             "session_constrain" => (
                 "session_constrain_in".to_string(),
@@ -457,6 +480,10 @@ fn dispatch(mut e: &mut Engine, fn_name: &str, mbt: &str, op: &str) -> Result<Va
                 load_slot(e, "arg_reset", "arg_push", ab).inspect_err(|_| evict_session(e))?;
                 let mut vals = vec![Val::I32(handle), Val::F64(f64::to_bits(*x)), Val::F64(f64::to_bits(*y))];
                 return finish_session_call(e, fn_name, &in_name, handle, &mut vals);
+            }
+            SlotPlan::EventSpec(ab, spec) => {
+                load_slot(e, "arg_reset", "arg_push", ab).inspect_err(|_| evict_session(e))?;
+                load_slot(e, "in_reset", "in_push", spec).inspect_err(|_| evict_session(e))?;
             }
         }
         return finish_session_call(e, fn_name, &in_name, handle, &mut vec![Val::I32(handle)]);
