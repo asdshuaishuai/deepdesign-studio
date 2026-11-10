@@ -212,8 +212,9 @@ body:not(.design-active) #tail-fix{display:none!important}
 .czoom .pct{font-family:ui-monospace;font-weight:600;color:var(--tx);min-width:56px;text-align:center;font-size:11.5px}
 .czoom .fit{width:auto;padding:0 9px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--tx3);letter-spacing:.03em}
 .czoom .fit:hover{color:var(--acc-tx)}
-/* 多 Frame 并排 */
-.stage{position:relative;display:flex;align-items:flex-start;gap:96px;padding:56px 64px 48px;min-width:max-content;min-height:100%}
+/* 多 Frame 网格换行：宽度只占容器 100%，装不下的画板自动换行（4 板→2×2、5-6 板→3 列，
+ * 列数由 frameScale 的 ceil(√n) 公式配合）；不再 min-width:max-content 一行排开挤成小块 */
+.stage{position:relative;display:flex;flex-wrap:wrap;align-items:flex-start;align-content:flex-start;gap:64px 96px;padding:56px 64px 48px;width:100%;min-height:100%}
 .frame-wrap{flex-shrink:0;display:flex;flex-direction:column;transition:width .22s cubic-bezier(.25,.1,.25,1),box-shadow .18s ease,border-color .18s ease}
 .frame-chrome{width:100%;display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f0f1f5;border:1px solid rgba(0,0,0,.09);border-bottom:none;border-radius:var(--r-lg) var(--r-lg) 0 0;cursor:pointer;user-select:none}
 .frame-wrap.active .frame-chrome{background:#fff;border-color:rgba(0,122,255,.45);border-bottom:none}
@@ -289,7 +290,7 @@ body:not(.design-active) #tail-fix{display:none!important}
 /* 右栏 Agent 交互模块（指令输入 + 轨迹同栏）：轨迹滚动、头部与输入条常驻。
    rpanel 默认整栏滚动——这里改成分区布局，输入条永远贴底不被长轨迹推走。 */
 #rp-track{padding:0;overflow:hidden;display:flex;flex-direction:column}
-#rp-track #tl-body{flex:1;overflow-y:auto;padding:9px 10px}
+#rp-track #tl-body{flex:1;overflow-y:auto;padding:9px 10px;overflow-anchor:none}
 #rp-track .gp-thread{width:auto;max-width:none;margin:8px 10px 0;flex-shrink:0;box-shadow:none;border-radius:var(--r-lg)}
 #rp-track .canvas-hint{flex-shrink:0;margin:7px 10px 0;text-align:center;font-size:10px}
 #rp-track > .promptbar{width:auto;max-width:none;flex-shrink:0;border-radius:0;border:none;border-top:1px solid rgba(0,0,0,.07);box-shadow:none;background:transparent;backdrop-filter:none;padding:8px 10px 10px}
@@ -430,7 +431,7 @@ body[data-mode="dark"] .tl-final.abnormal{color:#FECACA;background:linear-gradie
 #doc-stage .doc-foot input{flex:1;border:1px solid var(--panel-line,rgba(0,0,0,.12));border-radius:10px;padding:0 13px;height:38px;font-size:12.5px;background:var(--panel-input,#fff);color:var(--tx);outline:none}
 #doc-stage .doc-foot input:focus{border-color:var(--acc-tx);box-shadow:0 0 0 3px rgba(0,122,255,.1)}
 /* PRD 编辑器：C 位可编辑区（外部产品文档可直接粘贴进来） */
-#doc-stage #doc-pane-prd{display:flex;flex-direction:column;padding:0;overflow:hidden}
+#doc-stage #doc-pane-prd{display:flex;flex-direction:column;padding:0;overflow:hidden;overflow-anchor:none}
 #doc-stage .doc-prd-toolbar{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--panel-line,rgba(0,0,0,.08));background:rgba(0,0,0,.018);flex-shrink:0}
 #doc-stage .doc-mode-label{font-size:11px;color:var(--tx3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #doc-stage #doc-prd-text{flex:1;width:100%;border:none;outline:none;resize:none;padding:16px 20px;font-family:ui-monospace;font-size:12px;line-height:1.75;background:transparent;color:var(--tx)}
@@ -2046,27 +2047,54 @@ function frameScale(sess){
   const h=$('canvas-scroll').clientHeight-200;
   // 演示模式只显示活动画板：分母取 1，否则多板项目演示画板被缩成一小块
   const n=mode==='play'?1:Math.max(1,Object.keys(sessions).length);
-  const availW=($('canvas-scroll').clientWidth-120)/n;
+  // 网格换行布局：列数=ceil(√n)（4 板→2×2、5-6 板→3 列），可用宽度按列分摊
+  // （减去列间 gap）——多板不再挤一行等宽缩小，而是换行 + 每板拿到更大可读宽度
+  const cols=n>1?Math.ceil(Math.sqrt(n)):1;
+  const availW=($('canvas-scroll').clientWidth-120-96*(cols-1))/cols;
   return Math.min(zoom, Math.max(0.18, Math.min(h/sess.h, availW/sess.w)));
 }
 /* 纯同步渲染（无 await 突变点）：曾有一对 renderGeneration 计数器/async 标记，
  * 是「异步作废守卫」的半成品——但判定逻辑从未存在，计数器只写不读（死存储），已删。 */
+/* 工作区增量重建缓存：id → 渲染键（svg 全文+显示尺寸+激活态+模式）。
+ * Agent 预览每 ~900ms 一帧，但绝大多数帧只有活动板的 svg 变了——键未变的板
+ * 整体复用（DOM/监听器/滚动位置全保留），画布不再整面闪、无谓重排即抖动的
+ * 主要来源（2026-11-10 用户反馈「工作区渲染严重抖动」）。 */
+const stageCache=new Map();
 function renderStage(){
   const stage=$('stage');
-  if(boardDragRaf){cancelAnimationFrame(boardDragRaf);boardDragRaf=0;}
-  boardDrag=null; // DOM 即将整体重建：旧 capture 随元素失效，残留的拖拽态会造成幽灵拖拽
   // 滚动位置保留：innerHTML='' 会使滚动内容塌缩、scrollTop 钳 0——Agent 预览期间
   // 每 900ms 重建一次，用户平移过的画布会被反复弹回左上角
   const scroller=$('canvas-scroll'),keepSx=scroller?scroller.scrollLeft:0,keepSy=scroller?scroller.scrollTop:0;
-  bindFlowTargetCapture();
   const ids=Object.keys(sessions);
-  if(!ids.length){stage.innerHTML='';$('empty-state').style.display='flex';return;}
+  if(!ids.length){
+    stage.innerHTML='';stageCache.clear();
+    if(boardDragRaf){cancelAnimationFrame(boardDragRaf);boardDragRaf=0;}
+    boardDrag=null;gestureActive=false;
+    $('empty-state').style.display='flex';return;
+  }
   $('empty-state').style.display='none';
-  stage.innerHTML='';
+  bindFlowTargetCapture();
+  // 清掉已删除画板的缓存与 DOM
+  const alive=new Set(ids);
+  for(const [id] of stageCache){
+    if(!alive.has(id)){
+      stageCache.delete(id);
+      const old=stage.querySelector('[data-frame="'+escAttr(id)+'"]');
+      if(old){if(boardDrag&&boardDrag.id===id){if(boardDragRaf){cancelAnimationFrame(boardDragRaf);boardDragRaf=0;}boardDrag=null;gestureActive=false;}old.remove();}
+    }
+  }
   for(const id of ids){
     const sess=sessions[id];
     const isActive=id===active;
     const s=frameScale(sess)*(isActive?1:0.82);
+    const sourceSvg=isActive?currentSvg:(sess.svg||'');
+    // 渲染键：svg/显示尺寸/激活态/模式任一变化才重建该板
+    const key=sourceSvg+'\u0000'+Math.round(sess.w*s)+'x'+Math.round(sess.h*s)+'\u0000'+(isActive?'a':'p')+'\u0000'+(mode==='play'?'y':'n');
+    const ent=stageCache.get(id);
+    if(ent&&ent.key===key)continue; // 未变：整体复用，零 DOM 变更
+    if(boardDrag&&boardDrag.id===id){if(boardDragRaf){cancelAnimationFrame(boardDragRaf);boardDragRaf=0;}boardDrag=null;gestureActive=false;}
+    stage.querySelector('[data-frame="'+escAttr(id)+'"]')?.remove();
+    stageCache.set(id,{key});
     const wrap=document.createElement('div');
     wrap.className='frame-wrap'+(isActive?' active':'');
     wrap.dataset.frame=id;
@@ -2141,7 +2169,6 @@ function renderStage(){
       if(!isActive)switchSession(id);
     };
     const body=$('fb-'+id);
-    const sourceSvg=isActive?currentSvg:(sess.svg||'');
     if(sourceSvg){
       body.innerHTML=sanitizeSvg(sourceSvg).replace('<svg ','<svg preserveAspectRatio="xMidYMid meet" ');
       const svg=body.querySelector('svg');
@@ -3057,10 +3084,31 @@ function traceLiveLine(box,id,summary){
   }
   return el.querySelector('.tl-full');
 }
-/* 直播跟随：仅当阅读者停在底部附近才自动滚动（往上翻阅时不抢滚动条） */
-function scrollTraceFollow(box){
+/* 直播跟随（终端式）：跟随**直播行本身**——行尾在视口内（含下方 80px 余量）就
+ * scrollIntoView(nearest) 保持行尾可见，随流式增长平滑下移；用户往上翻阅（行尾
+ * 已滚出视口）时不抢滚动条。旧「贴面板底部」策略与直播行位于轨迹块顶部的布局
+ * 相互拉扯（贴底↔内容在顶），是输出轨迹抖动的来源之一（2026-11-10 用户反馈）。 */
+function scrollTraceFollow(box,liveEl){
   const sc=box.closest('.rpanel')||box.parentElement;
-  if(sc&&sc.scrollHeight-sc.scrollTop-sc.clientHeight<120)sc.scrollTop=sc.scrollHeight;
+  if(!sc)return;
+  if(liveEl&&liveEl.isConnected){
+    const r=liveEl.getBoundingClientRect(),sr=sc.getBoundingClientRect();
+    if(r.bottom<sr.bottom+80)liveEl.scrollIntoView({block:'nearest'});
+    return;
+  }
+  if(sc.scrollHeight-sc.scrollTop-sc.clientHeight<120)sc.scrollTop=sc.scrollHeight;
+}
+/* 直播增量合帧：110ms 最小间隔批量刷 DOM——SSE 分片频率远高于人眼可读刷新率，
+ * 每分片一次 textContent 追加 = 每分片一次整列表重排（轨迹抖动另一来源） */
+function traceDelta(el,text,box){
+  el.__buf=(el.__buf||'')+text;
+  if(el.__tm)return;
+  const wait=Math.max(0,110-(performance.now()-(el.__last||0)));
+  el.__tm=setTimeout(()=>{
+    el.__tm=0;el.__last=performance.now();
+    const b=el.__buf;el.__buf='';
+    if(b){el.textContent+=b;scrollTraceFollow(box,el);}
+  },wait);
 }
 /* 直播行收口（done/failed）：思考直播行**收缩不删除**——完整内容保留在折叠里，
  * 摘要从「思考中…」变「思考」；撰写直播行由 doc_written 删除（终态行接替） */
@@ -3073,17 +3121,23 @@ function collapseLiveLines(runId){
     if(s)s.textContent='💭 '+L('思考');
   }
 }
-/* 文档直播渲染：rAF 合帧的 renderDocStage（渲染视图 innerHTML + 目录实时长）。
- * 流式期间面板恒滚到底部——用户就是在看它写。 */
-let liveRenderRaf=0;
+/* 文档直播渲染：rAF 合帧 + 150ms 最小间隔的 renderDocStage（渲染视图 innerHTML +
+ * 目录实时长）——SSE 分片可到每秒几十个，rAF 只能合到每帧一次，整面板 innerHTML
+ * 重建 + 恒滚底每帧都做就是持续抖动；150ms（≈6.7 帧/秒）是「看着在流式写」与
+ * 「不抖」的平衡点。流式期间面板仍恒滚到底部——用户就是在看它写。 */
+let liveRenderRaf=0,liveRenderTimer=0,liveRenderLast=0;
 function scheduleLiveRender(){
-  if(liveRenderRaf)return;
-  liveRenderRaf=requestAnimationFrame(()=>{
-    liveRenderRaf=0;
-    renderDocStage();
-    const pane=$('doc-pane-prd');
-    if(pane&&liveDocRun)pane.scrollTop=pane.scrollHeight;
-  });
+  if(liveRenderRaf||liveRenderTimer)return;
+  const wait=Math.max(0,150-(performance.now()-liveRenderLast));
+  liveRenderTimer=setTimeout(()=>{
+    liveRenderTimer=0;
+    liveRenderRaf=requestAnimationFrame(()=>{
+      liveRenderRaf=0;liveRenderLast=performance.now();
+      renderDocStage();
+      const pane=$('doc-pane-prd');
+      if(pane&&liveDocRun)pane.scrollTop=pane.scrollHeight;
+    });
+  },wait);
 }
 function traceOpen(runId,label,continuation){
   currentAgentRunId=runId;
@@ -3150,8 +3204,7 @@ function ensureTraceListener(){
     if(p.type==='assistant_thinking'){appendTraceLine(box,'💭 '+p.text,'tl-think');return;}
     if(p.type==='thinking_delta'){
       const full=traceLiveLine(box,'tl-think-live-'+p.run,'💭 '+L('思考中…'));
-      full.textContent+=p.text;
-      scrollTraceFollow(box);
+      traceDelta(full,p.text,box);
       return;
     }
     // 文档正文增量：轨迹直播行 + **实时渲染**（markdown 对用户不可见——
@@ -3159,8 +3212,7 @@ function ensureTraceListener(){
     // 想看原文点「编辑」，2026-10-27 用户要求）
     if(p.type==='doc_delta'){
       const full=traceLiveLine(box,'tl-doc-live-'+p.run,'📝 '+L('撰写中…'));
-      full.textContent+=p.text;
-      scrollTraceFollow(box);
+      traceDelta(full,p.text,box);
       if(liveDocRun===p.run){
         studioDocs.prd=(studioDocs.prd||'')+p.text;
         if(PRD_EDITING){

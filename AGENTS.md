@@ -484,6 +484,20 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
   审查证实不可达后已删，2026-10-11）。热区清单=出边 flow ∪ 引擎 `session_interactions` 导出
   （含 builtin back），返回判定单源于引擎。
 - 拖拽、内联编辑、连接模式等交互最终都要落成一条引擎 op，不要在前端本地改 `nodes` 数组了事。
+- **工作区网格布局与抖动治理（2026-11-10 用户反馈「多板一行挤 + webview 抖动」）**：
+  ① `.stage` flex-wrap 网格（宽 100%，不再 min-width:max-content 一行排开）；
+  `frameScale` 列数公式 **cols=ceil(√n)**（4 板→2×2、5-6 板→3 列），可用宽按列分摊
+  （减列间 gap），多板换行 + 自适应缩放而非一行等宽缩小。② `stageCache` 渲染键
+  增量重建：键=svg 全文+显示尺寸+激活态+模式，未变的板**整体复用**（DOM/监听器
+  保留）——Agent 预览每 ~900ms 只重建活动板一块，画布不再整面闪（工作区抖动
+  根因即整面 innerHTML 重建）。③ 轨迹抖动两条治理：直播跟随改**终端式**
+  （`scrollTraceFollow(box, liveEl)`——直播行尾在视口内就 scrollIntoView(nearest)
+  平滑跟随，用户上翻不抢滚动条；旧「贴面板底部」与直播行在轨迹块顶部的布局
+  相互拉扯）；直播增量 **`traceDelta` 110ms 合帧**（SSE 分片频率 ≫ 人眼可读刷新率，
+  每分片一次 textContent 追加 = 每分片一次整列表重排）。④ 文档直播渲染
+  `scheduleLiveRender` 在 rAF 之上加 **150ms 最小间隔**（整面板 innerHTML 重建 +
+  恒滚底每帧都做即持续抖动）；`#tl-body`/`#doc-pane-prd` 设 `overflow-anchor:none`
+  （手动跟随与浏览器滚动锚定不打架）。
 
 ## 测试的脆弱点
 
