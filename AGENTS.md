@@ -158,9 +158,13 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 忽略本地源**——标记在场时醒目告警并使用 Release 锚定引擎（CI 全新检出无标记，
 不受影响）。删除标记文件即恢复纯 Release 锚定。
 
-**当前工作状态：本地集成模式（引擎 dev 0.2 预发布测引入，2026-11-10 启用）**。
+**当前工作状态：本地集成模式（引擎 dev 0.2 预发布测引入，2026-11-10 启用；2026-11-12
+适配 moonc 0.10.20 工具链升级）**。
 `ENGINE_LOCAL` 标记在场，`--dev` 跑法持续使用 `../moonviz-dev` 本地构建
-（dev@10211c8，moon test 336/336 绿）；生产打包 `--release` 仍硬性忽略本地源。
+（dev@a6af848，moonc 0.10.20 + moon 0.1.20261104，moon test 338/338 绿；
+工具链升级为引擎侧 substring→slice 弃用 API 迁移，产物 ABI 兼容——契约探针
+31 session API / 0.2 探针 37/37 / cargo 58 / test_studio 40 全绿复验，wasm
+784K→806K）；生产打包 `--release` 仍硬性忽略本地源。
 0.2 能力面已真机探针验证（`/tmp/probe02.mjs`，30/30）：spec `style: apple|harmony`
 美学预设（frontmatter `theme:` 回写）+ palette 覆盖、`spec_violations` 信封、
 `design_spec_required` 草案、`flow … <transition>` 分板过渡（`unknown_transition`
