@@ -96,6 +96,17 @@ validated by the engine (AgentGate) and committed immediately, so the user watch
 
 ## Build loop — GENERATE FIRST (this is the default path)
 The engine has deterministic page generation. Use it; do NOT hand-place a whole screen.
+
+### PROJECT MAP + LIVE STATE (context layering — trust these before re-reading)
+- The 2nd system message (PROJECT MAP) is generated from the real document at run start:
+  every board (size, node ids), all flows, theme. It is your base map of the WHOLE
+  project — do NOT call read_mbt just to find out what exists; ids there are authoritative.
+- Every moonviz_op result carries a trailing `state` field (rev, per-board node counts,
+  flow count) — the LIVE truth after your last op. Older `state` fields are stale history;
+  always trust the most recent one.
+- read_mbt WITHOUT arguments returns a refreshed compact OUTLINE; read_mbt
+  {"artboard":"x"} returns that board's source only. Read per board when you need exact
+  coordinates/styles — never re-read the whole document for a single tweak.
 0. DESIGN SPEC FIRST (required since engine #24). `generate` runs on an explicit design
    spec YOU write — palette/typography/spacing/radius as ONE compact JSON:
    `{"v":1,"palette":{"primary":"#..","background":"#..","surface":"#..","text":"#..",
@@ -717,6 +728,9 @@ struct EngineState<'a> {
     /// 成功变更 op 计数——终态信封带出为 revision，前端状态栏 rev 显示与
     /// runAutoFix 的「无变化」判定都依赖它（终态此前不带 revision，rev 显示被清零）。
     revision: u64,
+    /// flow 边数缓存（实时状态卡用）：结构类 op（flow/interact/generate/create…）
+    /// 后经 session_flows 刷新，其余 op 沿用——避免每 op 一次额外 host 直调。
+    flows: Option<usize>,
 }
 
 fn b64_decode(s: &str) -> Result<String, String> {
@@ -791,6 +805,7 @@ impl<'a> EngineState<'a> {
             rendered_mbt: None,
             ops: Vec::new(),
             revision: 0,
+            flows: None,
         })
     }
 
@@ -1060,6 +1075,107 @@ impl<'a> EngineState<'a> {
         }
     }
 
+    /// 单画板的节点 id 序列（session_query_nodes 顺序=绘制顺序）。
+    /// host 调用失败 → 空 vec（地图降级为无 id，不阻塞）。
+    async fn board_ids(&self, ab: &str) -> Vec<String> {
+        let Some(mbt) = &self.mbt else { return vec![] };
+        let r = self.host.call("session_query_nodes", &mbt, ab).await.unwrap_or(json!({}));
+        r.get("data")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|n| n.get("id").and_then(|x| x.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// 项目地图（确定性文本，同文档 ⇒ 同字节）：全部画板的尺寸/节点 id + flows
+    /// + 主题色。前置缓存方案的核心层——run 起点构建一次、作为第二条 system
+    /// 消息注入（run 内字节稳定 ⇒ provider 前缀缓存整段命中），模型从此有了
+    /// 「整个项目的理解」而不必靠 read_mbt 全文拼图景。
+    async fn compose_project_map(&self) -> String {
+        let Some(mbt) = &self.mbt else {
+            return "PROJECT MAP: (empty project — create boards with `generate`).".into();
+        };
+        let mut out = String::from("PROJECT MAP (generated from the real document at run start; ids are authoritative):\n");
+        let arts = self
+            .host
+            .call("session_list_artboards", &mbt, "")
+            .await
+            .unwrap_or(json!({}));
+        let mut total_ids = 0usize;
+        for ab in arts.get("data").and_then(|v| v.as_array()).map(|a| a.to_vec()).unwrap_or_default() {
+            let id = ab.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+            let w = ab.get("width").and_then(|v| v.as_i64()).unwrap_or(0);
+            let h = ab.get("height").and_then(|v| v.as_i64()).unwrap_or(0);
+            let ids = self.board_ids(ab.get("id").and_then(|v| v.as_str()).unwrap_or("?")).await;
+            total_ids += ids.len();
+            out.push_str(&format!("  {} {}x{} n={} ids: {}\n", id, w, h, ids.len(), cap_id_list(&ids)));
+        }
+        if total_ids == 0 {
+            out.push_str("  (no artboards yet)\n");
+        }
+        let flows = self.host.call("session_flows", &mbt, "").await.unwrap_or(json!({}));
+        let fdata = flows.get("data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        if fdata.is_empty() {
+            out.push_str("flows: (none wired yet)\n");
+        } else {
+            let items: Vec<String> = fdata
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}→{} {}",
+                        f.get("from").and_then(|v| v.as_str()).unwrap_or("?"),
+                        f.get("to").and_then(|v| v.as_str()).unwrap_or("?"),
+                        f.get("trigger").and_then(|v| v.as_str()).unwrap_or("tap")
+                    )
+                })
+                .collect();
+            out.push_str(&format!("flows({}): {}\n", fdata.len(), items.join("; ")));
+        }
+        // 主题/主色从 frontmatter 提取（无引擎调用；canonical 键值即真源）
+        let theme = find_frontmatter_value(mbt, "theme").unwrap_or_default();
+        let primary = find_frontmatter_value(mbt, "primary").unwrap_or_default();
+        if !theme.is_empty() || !primary.is_empty() {
+            out.push_str(&format!("theme: {} {}\n", theme, primary));
+        }
+        out
+    }
+
+    /// read_mbt 无参 → 大纲（与项目地图同源合成，but 现查现新——run 中途的
+    /// 结构变化即时可见；1-2KB 替代整份 canonical）。
+    async fn read_mbt_outline(&self) -> Value {
+        match &self.mbt {
+            Some(_) => json!({
+                "ok": true,
+                "outline": self.compose_project_map().await,
+                "note": "outline mode: boards with node ids + flows. Need exact coords/styles of one board? call read_mbt with {\"artboard\":\"<id>\"} — far smaller than the full document.",
+            }),
+            None => json!({"ok": false, "error": "no_mbt_loaded"}),
+        }
+    }
+
+    /// read_mbt {"artboard":id} → 仅该画板的源码段（含其视觉函数；剥 check 围栏）。
+    async fn read_mbt_artboard(&self, ab: &str) -> Value {
+        let Some(mbt) = &self.mbt else {
+            return json!({"ok": false, "error": "no_mbt_loaded"});
+        };
+        match artboard_section(mbt, ab) {
+            Some(sec) => json!({
+                "ok": true,
+                "artboard": ab,
+                "mbt": sec,
+                "note": "single-artboard source (check fences stripped); the rest of the document is untouched",
+            }),
+            None => json!({
+                "ok": false,
+                "error": format!("unknown_artboard:{ab}"),
+                "hint": "call read_mbt with no arguments for the outline of existing boards",
+            }),
+        }
+    }
+
     /// 终态 render 兜底（移植自 JS 桥）：无 apply 渲染的会话（只读尝试/零变更）
     /// 用 render_mbt 补齐，保证前端 applyMbtResult 拿到的不是 null。
     async fn ensure_render(&mut self) {
@@ -1135,6 +1251,65 @@ fn strip_mbt_check_blocks(mbt: &str) -> String {
     out
 }
 
+/// id 列表封顶：每画板最多列 40 个 id，超出以 …+k 收尾（确定性截断——同输入
+/// 同输出，保住项目地图/大纲的前缀字节稳定性）。
+fn cap_id_list(ids: &[String]) -> String {
+    const MAX: usize = 40;
+    if ids.len() <= MAX {
+        return ids.join(" ");
+    }
+    format!("{} …+{}", ids[..MAX].join(" "), ids.len() - MAX)
+}
+
+/// frontmatter 顶层键值提取（`  theme: apple` / `    primary: "#.."）——
+/// 主题/主色进项目地图不走引擎调用，canonical 键值即真源。
+fn find_frontmatter_value(mbt: &str, key: &str) -> Option<String> {
+    let end = mbt.find("\n---").unwrap_or(mbt.len());
+    let head = &mbt[..end.min(mbt.len())];
+    for line in head.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix(key) {
+            let rest = rest.trim_start_matches(':').trim();
+            if !rest.is_empty() {
+                return Some(rest.trim_matches('"').to_string());
+            }
+        }
+    }
+    None
+}
+
+/// canonical 中单画板源码段提取：从 `<!-- moonviz:artboard <id> -->` 标记起、
+/// 至下一个画板标记/文档尾。剥 check 围栏（与全文 read_mbt 同语义）。
+fn artboard_section(mbt: &str, ab: &str) -> Option<String> {
+    let key = format!("<!-- moonviz:artboard {ab} -->");
+    let start = mbt.find(&key)?;
+    let rest = &mbt[start..];
+    let end = rest[key.len()..]
+        .find("<!-- moonviz:artboard ")
+        .map(|i| i + key.len())
+        .unwrap_or(rest.len());
+    Some(strip_mbt_check_blocks(rest[..end].trim_end()))
+}
+
+/// 实时状态卡（追加式上下文的「尾」）：每条 mutating op 的 tool 结果携带，
+/// 模型永远在**最新 token 位置**看到全局真相——rev/各板节点数/flow 数。
+/// 前缀缓存友好：历史消息不改写，新状态只出现在新消息尾部。
+fn compose_state_line(arts: &Value, revision: u64, flows: Option<usize>) -> String {
+    let mut boards: Vec<String> = Vec::new();
+    if let Some(arr) = arts.as_array() {
+        for ab in arr {
+            if let (Some(id), Some(n)) = (
+                ab.get("id").and_then(|v| v.as_str()),
+                ab.get("nodes").and_then(|v| v.as_i64()),
+            ) {
+                boards.push(format!("{id}:{n}"));
+            }
+        }
+    }
+    let fl = flows.map(|n| n.to_string()).unwrap_or_else(|| "?".into());
+    format!("rev={} boards=[{}] flows={}", revision, boards.join(","), fl)
+}
+
 /// L0：检视类结果的体积上限（超限头尾截断，保 [truncated] 标记）。
 const READONLY_RESULT_CAP: usize = 12 * 1024;
 
@@ -1186,7 +1361,9 @@ fn supersede_stale_tool_results(messages: &[Value]) -> Vec<Value> {
         }
         let c = m.get("content")?.as_str()?;
         let v: Value = serde_json::from_str(c).ok()?;
-        if v.get("mbt").is_some() {
+        if v.get("mbt").is_some() || v.get("outline").is_some() {
+            // read_mbt 两种形态（全文 / 大纲）同属一类去 supersede——最新一份
+            // 才是当前真相，旧的占位化
             Some("read_mbt")
         } else if v.get("components").is_some() {
             Some("list_components")
@@ -1314,8 +1491,11 @@ fn tools_typed() -> Vec<ChatCompletionTools> {
         ),
         tool(
             "read_mbt",
-            "Read the current canonical .mbt.md source of truth (node ids, flows, all screens).",
-            json!({"type": "object", "properties": {}}),
+            "Read the document. NO argument = compact OUTLINE (boards with sizes + node ids + flows + theme — refreshed NOW, ~1-2KB). With {\"artboard\":\"<id>\"} = that board's source only (exact coords/styles). Avoid re-reading whole docs for a single tweak.",
+            json!({
+                "type": "object",
+                "properties": {"artboard": {"type": "string", "description": "Optional artboard id — omit for the outline"}},
+            }),
         ),
         tool(
             "list_components",
@@ -1359,8 +1539,11 @@ fn tools_typed_doc() -> Vec<ChatCompletionTools> {
         ),
         tool(
             "read_mbt",
-            "Read the current canonical .mbt.md source of truth (node ids, flows, all screens).",
-            json!({"type": "object", "properties": {}}),
+            "Read the document. NO argument = compact OUTLINE (boards with sizes + node ids + flows + theme). With {\"artboard\":\"<id>\"} = that board's source only.",
+            json!({
+                "type": "object",
+                "properties": {"artboard": {"type": "string", "description": "Optional artboard id — omit for the outline"}},
+            }),
         ),
         tool(
             "list_components",
@@ -2146,6 +2329,18 @@ pub async fn run_with_mode(
     if state.mbt.is_some() && !doc_mode {
         let _ = sweep_idle_artboards(&mut state, &emit, &mut seq).await;
     }
+    // ── 项目地图（前置缓存方案的「稳定中层」）──
+    // 清扫之后、循环之前确定性构建一次；作为第二条 system 消息注入——run 内
+    // 字节稳定（provider 前缀缓存整段命中，跨轮零重付），模型自此拥有整个
+    // 项目的结构与 id 图景（2026-11-12 用户反馈「每次都感觉记忆有点低」的
+    // 跨 run 失忆根因：此前没有任何项目级理解层，全靠 read_mbt 全文拼图）。
+    // 文档阶段不注入（画布结构无意义）。
+    if !doc_mode {
+        let map = state.compose_project_map().await;
+        if !map.is_empty() {
+            messages.insert(1, json!({"role": "system", "content": map}));
+        }
+    }
 
     loop {
         if step >= max_steps {
@@ -2393,7 +2588,14 @@ pub async fn run_with_mode(
                             json!({"ok": true, "kind": kind, "chars": md.chars().count()})
                         }
                     }
-                    "read_mbt" => state.read_mbt().await,
+                    "read_mbt" => {
+                        let ab = args.get("artboard").and_then(|v| v.as_str()).unwrap_or("");
+                        if ab.is_empty() {
+                            state.read_mbt_outline().await
+                        } else {
+                            state.read_mbt_artboard(ab).await
+                        }
+                    }
                     "list_components" => state.list_components().await,
                     other => json!({"ok": false, "error": format!("unknown_tool:{other}")}),
                 },
@@ -2437,6 +2639,26 @@ pub async fn run_with_mode(
                 "tool_call_id": id,
                 "content": serde_json::to_string(&result).unwrap_or_else(|_| "{}".into()),
             }));
+            // 实时状态卡（追加式上下文的「尾」）：mutating op 的信封带宿主富集的
+            // artboards 索引——就地换算成 rev/各板节点数的一行 state 附加进 tool
+            // 内容。模型在最新 token 位置永远看得到全局真相，无须 read_mbt 对账；
+            // 结构类 op 后顺带刷新 flow 计数（其余 op 沿用缓存值）。历史消息
+            // 不改写——旧 state 自然变陈旧史，前缀缓存全程命中。
+            if name == "moonviz_op" {
+                if let Some(arts) = result.get("artboards") {
+                    let head = trace_op.split_whitespace().next().unwrap_or("");
+                    const FLOW_OPS: [&str; 8] = ["flow", "unflow", "interact", "uninteract", "generate", "create", "duplicate", "delete-artboard"];
+                    let mut wire = result.clone();
+                    if FLOW_OPS.contains(&head) {
+                        let fl = state.host.call("session_flows", state.mbt.as_deref().unwrap_or(""), "").await.unwrap_or(json!({}));
+                        state.flows = fl.get("data").and_then(|v| v.as_array()).map(|a| a.len());
+                    }
+                    wire["state"] = json!(compose_state_line(arts, state.revision, state.flows));
+                    if let Some(last) = messages.last_mut() {
+                        last["content"] = json!(serde_json::to_string(&wire).unwrap_or_else(|_| "{}".into()));
+                    }
+                }
+            }
         }
         // ── 文档阶段收尾：write_doc 成功即任务完成，不再进主循环 ──
         // 不等模型自己给总结（它没有再调工具的理由，多等一轮纯浪费 token）：
@@ -4532,6 +4754,65 @@ assert_eq(page.check().length(), 0)\n}\n```\n";
             v["artboards"].is_array() && v["artboards"][0]["nodes"].as_i64().is_some_and(|n| n > 0),
             "validate 信封应带 artboards 节点计数（#31）：{v}"
         );
+    }
+
+    /// 前置缓存方案三层锚定（2026-11-12「记忆低」反馈）：
+    /// ① 项目地图含全部板/节点 id 且**字节稳定**（同文档同字节 ⇒ run 内 system
+    ///    前缀缓存命中）；② read_mbt 无参=大纲、带板=单板源码段；
+    ///    ③ 状态卡格式确定性（rev/板节点数/flows）。
+    #[tokio::test]
+    async fn project_map_is_dense_and_byte_stable() {
+        engine_ready().await;
+        let _engine_gate = engine_test_gate();
+        let mut state = EngineState::new(&ENGINE, None).expect("空状态可建");
+        let g = state
+            .moonviz_op(&format!("generate 登录页 as home spec={TEST_SPEC}"))
+            .await;
+        assert_eq!(g["ok"], json!(true), "{g}");
+        let _ = state.moonviz_op("flow home home login_btn back").await; // 结构类 op 刷 flows
+        let m1 = state.compose_project_map().await;
+        let m2 = state.compose_project_map().await;
+        assert_eq!(m1, m2, "同文档 ⇒ 地图字节必须稳定（前缀缓存的前提）");
+        assert!(m1.contains("home"), "地图应含画板 id：{m1}");
+        assert!(m1.contains("ids:"), "地图应含节点 id 列表：{m1}");
+        assert!(m1.contains("login_btn"), "登录模板的 login_btn 应可见：{m1}");
+        assert!(m1.starts_with("PROJECT MAP"), "{m1}");
+        // 大纲 = 同源合成；单板读取 = 只含该板视觉函数
+        let ol = state.read_mbt_outline().await;
+        assert_eq!(ol["ok"], json!(true));
+        assert!(ol["outline"].as_str().is_some_and(|o| o.contains("home")), "{ol}");
+        let canon = state.mbt.clone().unwrap_or_default();
+        let sec = artboard_section(&canon, "home").expect("应能切出 home 段");
+        assert!(sec.contains("visual_home"), "{sec}");
+        assert_eq!(
+            sec.matches("moonviz:artboard ").count(),
+            1,
+            "单板段只应携带自己的画板标记：{sec}"
+        );
+        // 状态卡格式
+        let line = compose_state_line(&json!([{"id":"home","nodes":10},{"id":"set","nodes":8}]), 3, Some(1));
+        assert_eq!(line, "rev=3 boards=[home:10,set:8] flows=1");
+    }
+
+    /// supersede 必须把大纲结果与全文 read_mbt 同类对待（最新一份保留、旧的占位化
+    /// ——否则旧大纲与 read_mbt 各占一类，双份 stale 地图常驻上下文）。
+    #[test]
+    fn supersede_treats_outline_as_read_mbt() {
+        let mk_tool = |id: &str, body: Value| {
+            json!({"role": "tool", "tool_call_id": id, "content": serde_json::to_string(&body).unwrap()})
+        };
+        let mk_call = |id: &str| json!({"role":"assistant","tool_calls":[{"id":id,"type":"function","function":{"name":"read_mbt","arguments":"{}"}}]});
+        let messages = vec![
+            json!({"role": "system", "content": "sys"}),
+            mk_call("c1"),
+            mk_tool("c1", json!({"ok": true, "outline": "OLD OUTLINE"})),
+            mk_call("c2"),
+            mk_tool("c2", json!({"ok": true, "outline": "NEW OUTLINE"})),
+        ];
+        let shaped = supersede_stale_tool_results(&messages);
+        let old = shaped[2]["content"].as_str().unwrap();
+        assert!(old.contains("superseded") || old.len() < 60, "旧大纲应被占位化：{old}");
+        assert!(shaped[4]["content"].as_str().is_some_and(|c| c.contains("NEW OUTLINE")), "最新大纲原样保留：{}", shaped[4]["content"]);
     }
 
     /// 生成式 UI 宿主契约：`generate` 是建画布的首选通道（一次调用产出整页，

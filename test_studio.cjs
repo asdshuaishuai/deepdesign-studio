@@ -404,8 +404,9 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
  * 这是"文档阶段只产出文档"不变式的真正保障——提示词禁令可以被幻觉绕过，
  * 工具面缺失不能。 */
 {
-  assert(/fn tools_typed_doc\(\)[\s\S]{0,1400}?\n\}/.test(agentRs)
-    &&!/fn tools_typed_doc\(\)[\s\S]{0,1400}?"moonviz_op"/.test(agentRs),
+  // 窗口 2000：read_mbt 大纲模式描述加长后 doc 函数体超出 1400（2026-11-12 前置缓存方案）
+  assert(/fn tools_typed_doc\(\)[\s\S]{0,2000}?\n\}/.test(agentRs)
+    &&!/fn tools_typed_doc\(\)[\s\S]{0,2000}?"moonviz_op"/.test(agentRs),
     '文档阶段工具面含 moonviz_op——文档阶段必须结构上无法改画布——请同步检查 S');
   assert(/if doc_mode \{\s*json!\(\{"ok": false, "error": "doc_phase_readonly/.test(agentRs),
     '文档阶段缺少 moonviz_op 兜底拦截（提示词禁令不足以防护）——请同步检查 S');

@@ -387,6 +387,21 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
 - **轨迹文本呈现治理**：同一提示词不再于轨迹中重复全文——tl-user/续轮回答行/assistant 计划行
   均折叠（`<details class="tl-fold">`，120/80 字截断 + 悬停全文）；trackAgent 汇总卡截 90 字。
   画布 SVG 内的用户标签**不参与** kbd 本地化与轨迹折叠（显示文本与 mbt.md 源一致）。
+- **前置缓存上下文分层（2026-11-12，用户反馈「每次都感觉记忆有点低」）**：三类根因
+  （跨 run 无项目理解层 / 70% 悬崖改写历史 / read_mbt 全文拼图景）分三层治：
+  ① **项目地图**（`compose_project_map`）：run 起点（闲置清扫后）确定性构建一次——全部
+  画板尺寸/节点 id（cap 40/板）+ flows + frontmatter theme/primary，约 1-2KB，注入为
+  **第二条 system 消息**。run 内字节稳定 ⇒ provider 前缀缓存整段命中（同模式跨 run
+  也有 INSTRUCTIONS 层命中）；同文档必同字节由 `project_map_is_dense_and_byte_stable`
+  锚定。② **实时状态卡**：mutating op 的 tool 结果 JSON 附 `state` 字段
+  （`rev=N boards=[id:节点数] flows=M`，结构类 op 后经 session_flows 刷新 flows 缓存）
+  ——模型在**最新 token 位置**看到全局真相，历史不改写（append-only，前缀缓存全程
+  命中）。③ **read_mbt 分层**：无参=大纲（与地图同源合成、现查现新，`outline` 键）；
+  `{"artboard":id}`=单板源码段（`artboard_section` 按引擎标记切、剥 check 围栏）。
+  配套：supersede 把 `outline` 结果与 `mbt` 同类去陈旧；INSTRUCTIONS 新增
+  「PROJECT MAP + LIVE STATE」节教模型信任地图/按板细读；检查 S 的 1400 字符窗口
+  随 doc 工具面加长同步到 2000（moonviz_op 禁令本身未破）。test_studio 的窗口类
+  断言改提示词措辞时要回来对窗口宽度。
 - 返回契约（与已删除的 JS 桥一致，前端依赖）：`{ok, mbt_b64, render, ops[], stopReason, text}`，
   失败时额外带 `partial_error` 且 **`ok` 仍为 true**（已提交的工作不得丢失）。
 
