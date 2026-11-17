@@ -21,9 +21,10 @@ say(){ printf '\033[1;34m[install]\033[0m %s\n' "$*"; }
 die(){ printf '\033[1;31m[install:FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # 0) 停掉在跑实例（任何路径来源）
-if pgrep -f "deepdesign-studio" >/dev/null 2>&1; then
+if pgrep -f "deepdesign-studio|firelight" >/dev/null 2>&1; then
   say "停止运行中的实例…"
   pkill -f "deepdesign-studio" || true
+  pkill -f "Firelight 火光.app" || true
   sleep 1.5
 fi
 
@@ -38,7 +39,7 @@ done
 say "清点并注销全部 LaunchServices 注册…"
 if [ -x "$LSREG" ]; then
   # shellcheck disable=SC2013
-  "$LSREG" -dump 2>/dev/null | grep -i "path:" | grep -i "deepdesign" \
+  "$LSREG" -dump 2>/dev/null | grep -i "path:" | grep -iE "deepdesign|firelight" \
     | sed 's/^ *path: *//; s/ (0x[0-9a-f]*)$//' | sort -u | while IFS= read -r p; do
       say "  注销: $p"
       "$LSREG" -u "$p" >/dev/null 2>&1 || true

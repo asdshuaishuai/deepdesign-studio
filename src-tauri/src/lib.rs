@@ -1,4 +1,4 @@
-//! deepDesign Studio: Tauri 2 桌面应用
+//! Firelight 火光（原 deepDesign Studio）: Tauri 2 桌面应用
 //!
 //! 架构：
 //! - 前端 (纯静态): 多画板页签 + 拖拽画布 + **内嵌 wasm 引擎**（classic 标准产物，
@@ -56,7 +56,7 @@ async fn save_ddp(
         _ => app
             .dialog()
             .file()
-            .add_filter(filter_label.as_deref().unwrap_or("deepDesign 视觉文档"), &["ddp"])
+            .add_filter(filter_label.as_deref().unwrap_or("Firelight 视觉文档"), &["ddp"])
             .blocking_save_file()
             .map(|p| {
                 let mut s = p.to_string();
@@ -93,7 +93,7 @@ async fn open_ddp(
         _ => app
             .dialog()
             .file()
-            .add_filter(filter_label.as_deref().unwrap_or("deepDesign 视觉文档"), &["ddp"])
+            .add_filter(filter_label.as_deref().unwrap_or("Firelight 视觉文档"), &["ddp"])
             .blocking_pick_file()
             .and_then(|fp| fp.into_path().ok()),
     };
@@ -287,7 +287,7 @@ fn open_project_window(app: tauri::AppHandle, path: String) -> Result<(), String
         .collect();
     let url = format!("index.html?project={enc}");
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
-        .title("deepDesign Studio");
+        .title("Firelight 火光");
     // Windows：proj 窗必须显式自绘标题栏——tauri.windows.conf.json 只作用于启动的
     // main 窗，运行时建的窗不继承它，漏配会叠出「原生标题栏 + 自绘 topbar 窗控」双栏
     // （前端 IS_WIN 下 topbar 自带窗控与拖拽区）。macOS 保留原生标题栏：mac 的
@@ -522,7 +522,7 @@ async fn acp_close(
 }
 
 /// 导出 Figma 包：逐板 session_export_svg（矢量拖入即图层）+ query_nodes（几何/样式
-/// manifest）+ README → ~/Documents/deepDesign/deepDesign-figma-<ts>/。
+/// manifest）+ README → ~/Documents/Firelight/firelight-figma-<ts>/。
 /// Figma 端用 figma-plugin/（完全离线插件桥，与 figma-ops 项目零引用）。
 #[tauri::command]
 async fn export_figma_package(
@@ -562,8 +562,8 @@ async fn export_figma_package_inner(mbt_in: &str) -> Result<serde_json::Value, S
         .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
     let dir = PathBuf::from(home)
         .join("Documents")
-        .join("deepDesign")
-        .join(format!("deepDesign-figma-{ts}"));
+        .join("Firelight")
+        .join(format!("firelight-figma-{ts}"));
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir:{e}"))?;
     let mut manifest_boards: Vec<serde_json::Value> = Vec::new();
     for ab in &boards_in {
@@ -594,7 +594,7 @@ async fn export_figma_package_inner(mbt_in: &str) -> Result<serde_json::Value, S
     }
     let manifest = serde_json::json!({
         "exportedAt": ts as u64,
-        "generator": format!("deepDesign v{}", env!("CARGO_PKG_VERSION")),
+        "generator": format!("Firelight v{}", env!("CARGO_PKG_VERSION")),
         "boards": manifest_boards,
     });
     std::fs::write(
@@ -605,7 +605,7 @@ async fn export_figma_package_inner(mbt_in: &str) -> Result<serde_json::Value, S
     std::fs::write(
         dir.join("README.txt"),
         format!(
-            "deepDesign → Figma 导出包（{} 板）\n\n             1. Figma → Plugins → Development → Import plugin from manifest…\n             2. 选择本仓库 figma-plugin/manifest.json\n             3. 插件里「选择 deepdesign.json 导入」——逐板建真实可编辑图层\n             4. 反向：插件「导出当前页节点」→ deepDesign 文件菜单「导入 Figma 选区 JSON」\n\n             导出时间：{}\n",
+            "Firelight → Figma 导出包（{} 板）\n\n             1. Figma → Plugins → Development → Import plugin from manifest…\n             2. 选择本仓库 figma-plugin/manifest.json\n             3. 插件里「选择 deepdesign.json 导入」——逐板建真实可编辑图层\n             4. 反向：插件「导出当前页节点」→ 火光 文件菜单「导入 Figma 选区 JSON」\n\n             导出时间：{}\n",
             manifest_boards.len(),
             chrono_like_ts(ts)
         ),
@@ -943,7 +943,7 @@ fn menu_t(zh: &str) -> String {
             ("設計文件","设计文档"),("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
             ("示範模式","演示模式"),("新增畫板","新建画板"),("複製目前畫板","复制当前画板"),
             ("校驗並渲染","校验并渲染"),("自動修復（引擎還債）","自动修复（引擎还债）"),
-            ("設定…","设置…"),("結束 deepDesign","退出 deepDesign"),("快捷鍵與選單說明","快捷键与菜单说明"),
+            ("設定…","设置…"),("結束 Firelight","退出 Firelight"),("快捷鍵與選單說明","快捷键与菜单说明"),
         ],
         "zh-HK" => &[
             ("檔案","文件"),("編輯","编辑"),("檢視","视图"),("畫板","画板"),("說明","帮助"),
@@ -954,7 +954,7 @@ fn menu_t(zh: &str) -> String {
             ("設計文件","设计文档"),("線框圖","线框图"),("高傳真","高保真"),("MBT 原始碼","MBT 源码"),("適應視窗","适配窗口"),
             ("示範模式","演示模式"),("新增畫板","新建画板"),("複製目前畫板","复制当前画板"),
             ("校驗並渲染","校验并渲染"),("自動修復（引擎還債）","自动修复（引擎还债）"),
-            ("設定…","设置…"),("結束 deepDesign","退出 deepDesign"),("快捷鍵與選單說明","快捷键与菜单说明"),
+            ("設定…","设置…"),("結束 Firelight","退出 Firelight"),("快捷鍵與選單說明","快捷键与菜单说明"),
         ],
         "ja" => &[
             ("ファイル","文件"),("編集","编辑"),("表示","视图"),("ボード","画板"),("ヘルプ","帮助"),
@@ -965,7 +965,7 @@ fn menu_t(zh: &str) -> String {
             ("設計ドキュメント","设计文档"),("ワイヤーフレーム","线框图"),("ハイファイ","高保真"),("MBT ソース","MBT 源码"),("ウィンドウに合わせる","适配窗口"),
             ("デモモード","演示模式"),("新規ボード","新建画板"),("現在のボードを複製","复制当前画板"),
             ("検証して描画","校验并渲染"),("自動修復（エンジン負債解消）","自动修复（引擎还债）"),
-            ("設定…","设置…"),("deepDesign を終了","退出 deepDesign"),("ショートカットとメニューの説明","快捷键与菜单说明"),
+            ("設定…","设置…"),("Firelight を終了","退出 Firelight"),("ショートカットとメニューの説明","快捷键与菜单说明"),
         ],
         "ko" => &[
             ("파일","文件"),("편집","编辑"),("보기","视图"),("보드","画板"),("도움말","帮助"),
@@ -976,7 +976,7 @@ fn menu_t(zh: &str) -> String {
             ("디자인 문서","设计文档"),("와이어프레임","线框图"),("하이파이","高保真"),("MBT 소스","MBT 源码"),("창에 맞춤","适配窗口"),
             ("데모 모드","演示模式"),("새 보드","新建画板"),("현재 보드 복제","复制当前画板"),
             ("검증 후 렌더링","校验并渲染"),("자동 수정(엔진 부채 해소)","自动修复（引擎还债）"),
-            ("설정…","设置…"),("deepDesign 종료","退出 deepDesign"),("단축키 및 메뉴 안내","快捷键与菜单说明"),
+            ("설정…","设置…"),("Firelight 종료","退出 Firelight"),("단축키 및 메뉴 안내","快捷键与菜单说明"),
         ],
         "fr" => &[
             ("Fichier","文件"),("Édition","编辑"),("Affichage","视图"),("Planche","画板"),("Aide","帮助"),
@@ -987,7 +987,7 @@ fn menu_t(zh: &str) -> String {
             ("Document de conception","设计文档"),("Wireframe","线框图"),("Haute fidélité","高保真"),("Source MBT","MBT 源码"),("Ajuster à la fenêtre","适配窗口"),
             ("Mode démo","演示模式"),("Nouvelle planche","新建画板"),("Dupliquer la planche","复制当前画板"),
             ("Valider et rendre","校验并渲染"),("Correction auto (dette moteur)","自动修复（引擎还债）"),
-            ("Réglages…","设置…"),("Quitter deepDesign","退出 deepDesign"),("Raccourcis et menus","快捷键与菜单说明"),
+            ("Réglages…","设置…"),("Quitter Firelight","退出 Firelight"),("Raccourcis et menus","快捷键与菜单说明"),
         ],
         "en" => &[
             ("File","文件"),("Edit","编辑"),("View","视图"),("Board","画板"),("Help","帮助"),
@@ -998,7 +998,7 @@ fn menu_t(zh: &str) -> String {
             ("Design Document","设计文档"),("Wireframe","线框图"),("High-Fidelity","高保真"),("MBT Source","MBT 源码"),("Fit Window","适配窗口"),
             ("Demo Mode","演示模式"),("New Board","新建画板"),("Duplicate Board","复制当前画板"),
             ("Validate & Render","校验并渲染"),("Auto-Fix (engine debt)","自动修复（引擎还债）"),
-            ("Settings…","设置…"),("Quit deepDesign","退出 deepDesign"),("Shortcuts & Menus","快捷键与菜单说明"),
+            ("Settings…","设置…"),("Quit Firelight","退出 Firelight"),("Shortcuts & Menus","快捷键与菜单说明"),
         ],
         _ => &[],
     };
@@ -1013,9 +1013,9 @@ fn menu_t(zh: &str) -> String {
 fn build_native_menus(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
 
-    let app_menu = SubmenuBuilder::new(app, "deepDesign Studio")
+    let app_menu = SubmenuBuilder::new(app, "Firelight 火光")
         .about(Some(AboutMetadata {
-            name: Some("deepDesign Studio".into()),
+            name: Some("Firelight 火光".into()),
             // 版本唯一事实源是 tauri.conf.json 的 version（曾硬编码 0.3.0 与 UI 显示漂移）——
             // 这里动态读取，随包版本自动同步
             version: Some(app.package_info().version.to_string()),
@@ -1041,7 +1041,7 @@ fn build_native_menus(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
         .item(&MenuItem::with_id(
             app,
             "quit-app",
-            &menu_t("退出 deepDesign"),
+            &menu_t("退出 Firelight"),
             true,
             Some("CmdOrCtrl+Q"),
         )?)

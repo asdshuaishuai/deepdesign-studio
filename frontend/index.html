@@ -976,9 +976,13 @@ body[data-mode="dark"] .pmain input{color:#f0f2f8;font-size:13px;font-weight:450
 body[data-mode="dark"] .pmain input::placeholder{color:rgba(255,255,255,.42);font-weight:400}
 body[data-mode="dark"] .pmain .kbd{color:rgba(255,255,255,.45);background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1);font-size:10px}
 body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 16px;box-shadow:0 2px 10px color-mix(in srgb,var(--acc) 40%,transparent)}
+/* ============ 全局边框融合（2026-11-18：层级靠明度差，分隔线去除） ============ */
+.topbar,.left,.right,.statusbar,.canvas-tail,.lfoot{border-color:transparent}
+.home-scroll{padding-bottom:128px}
+
 </style>
 </head>
-<body data-theme="mac" class="mode-home">
+<body data-theme="deep" data-mode="dark" class="mode-home">
 
 <!-- ================= 顶栏 ================= -->
 <div class="topbar" data-tauri-drag-region>
@@ -5768,10 +5772,16 @@ window.addEventListener('storage',ev=>{
 (function initTheme(){
   const THEMES=['win11','mac','deep','neu','glass'];
   // 系统判定默认：Windows → Win11 Fluent，macOS（及其他）→ Mac
-  const SYS_DEFAULT=IS_WIN?'win11':'mac';
+  // 2026-11-18 默认主题 deep 暗色（用户决策：纯白太难受；NoNDesign 同款暗色优先）
+  const SYS_DEFAULT='deep';
   let t,migrated=false;
   try{t=localStorage.getItem('dd-theme');}catch(_){}
   if(!THEMES.includes(t)){t=SYS_DEFAULT;}
+  else if((t==='mac'||t==='win11')){
+    // 2026-11-18 默认改版迁移：旧默认 mac/win11（浅色，用户反馈「纯白太难受」）
+    // 一次性迁到 deep 暗色；主动选择过其它主题的不受影响
+    try{if(!localStorage.getItem('dd-theme-migrated2')){t='deep';localStorage.setItem('dd-theme-migrated2','1');}}catch(_){}
+  }
   else if(t==='mac'&&IS_WIN){
     // 一次性迁移：旧版无差别默认 mac（并非用户主动选择），Windows 上升级到 Win11；
     // 迁移后用户手动选任何主题照常尊重
@@ -5789,6 +5799,7 @@ window.addEventListener('storage',ev=>{
     if(localStorage.getItem('dd-mode-chosen'))m=localStorage.getItem('dd-mode');
   }catch(_){}
   const MQ=IS_LINUX&&window.matchMedia?matchMedia('(prefers-color-scheme: dark)'):null;
+  if(!m&&(t==='deep'))m='dark'; // deep 主题默认暗色（明暗按钮随时可切）
   if(!m)m=(MQ&&MQ.matches)?'dark':'light';
   setAppMode(m);
   if(MQ){

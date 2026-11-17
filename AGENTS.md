@@ -9,6 +9,12 @@ AI 原生原型设计工具的桌面客户端（Tauri 2 + Rust）。**一句话�
 **当前版本：0.5.0-fix**（2026-11-04 发布）——版本号唯一权威是仓库根 `VERSION` 文件，
 详见 [docs/versioning.md](docs/versioning.md)。
 
+> **品牌（2026-11-17 改名）**：产品显示名 **Firelight 火光**（原名 deepDesign Studio）。
+> 应用内文案/图标/菜单栏已全部换新；`productName` = Firelight 火光、`mainBinaryName` =
+> firelight；**仓库/标识符/数据目录不变**（com.deepcode.deepdesign，DDP 与配置无缝延续）。
+> 默认主题 deep + 暗色（用户决策「纯白太难受」；一次性迁移旧 mac/win11 默认，主动选择
+> 过的不受影响）；全模式机壳分隔线融合（顶栏/侧栏/状态栏 border 透明）。
+
 ## 分支纪律（用户决策）
 
 - **`dev` 是开发分支**：所有日常开发提交都落在这里。拉取代码、改动、测试都在 `dev` 上做。
