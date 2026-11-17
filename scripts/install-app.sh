@@ -8,7 +8,8 @@
 #   scripts/install-app.sh --uninstall    # 彻底卸载（含数据目录可选 --purge）
 set -euo pipefail
 
-APP_NAME="deepDesign Studio.app"
+APP_NAME="Firelight 火光.app"
+LEGACY_APP_NAME="deepDesign Studio.app"
 DEST="/Applications/$APP_NAME"
 BUNDLE="${2:-}"
 MODE="${1:-install}"
@@ -27,7 +28,7 @@ if pgrep -f "deepdesign-studio" >/dev/null 2>&1; then
 fi
 
 # 1) 卸掉残留 DMG 挂载卷（历史幽灵注册的主要来源；卷名可能是 dmg.* 或产品名）
-for vol in /Volumes/dmg.* "/Volumes/deepDesign Studio"; do
+for vol in /Volumes/dmg.* "/Volumes/deepDesign Studio" "/Volumes/Firelight 火光"; do
   [ -d "$vol" ] || continue
   say "弹出残留挂载 $vol"
   diskutil unmount "$vol" >/dev/null 2>&1 || hdiutil detach "$vol" -quiet >/dev/null 2>&1 || true
@@ -56,7 +57,8 @@ SRC="${BUNDLE:-$DEFAULT_BUNDLE}"
 # 3) 删旧包（/Applications 与仓库内 dev bundle 一起清——dev bundle 被 Finder 打开过就会再注册）
 for old in "$DEST" \
   "$ROOT/src-tauri/target/release/bundle/macos/$APP_NAME" \
-  "$ROOT/src-tauri/target/debug/bundle/macos/$APP_NAME"; do
+  "$ROOT/src-tauri/target/debug/bundle/macos/$APP_NAME" \
+  "/Applications/$LEGACY_APP_NAME"; do
   if [ -e "$old" ]; then say "删除旧副本: $old"; rm -rf "$old"; fi
 done
 
@@ -95,7 +97,7 @@ if [ -x "$LSREG" ]; then
     | sed 's/^ *path: *//; s/ (0x[0-9a-f]*)$//' | sort -u \
     | while IFS= read -r rp; do [ -e "$rp" ] && echo "$rp"; done | wc -l | tr -d ' ')
 fi
-COUNT_DISK=$(ls -d /Applications/deepDesign*.app 2>/dev/null | wc -l | tr -d ' ')  # 精确匹配本应用；*deep* 会误数同目录的 deepDolphin 等无关应用
+COUNT_DISK=$(ls -d /Applications/Firelight*.app /Applications/deepDesign*.app 2>/dev/null | wc -l | tr -d ' ')  # 迁移期双名兼容：旧名清完后仅剩 Firelight  # 精确匹配本应用；*deep* 会误数同目录的 deepDolphin 等无关应用
 say "验证：磁盘副本=$COUNT_DISK  LaunchServices 注册=$COUNT_LS"
 [ "$COUNT_DISK" = "1" ] || die "磁盘副本数 ≠ 1（=${COUNT_DISK}）"
 [ "$COUNT_LS" -le "1" ] || die "注册数 > 1（=${COUNT_LS}）——存在重复注册"
