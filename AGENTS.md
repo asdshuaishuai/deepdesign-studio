@@ -411,6 +411,19 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
   （不回应 agent 永挂）→ `acpPermReject` 自动选首个 reject/cancel 类选项；
   ③ agent 进程死亡会话残留 → failed 事件 `acp_agent_exited` 即 `acpInvalidate`；
   ④ ⌘K 改 toggle；⑤ 状态栏模型名走缓存（setStatus 每 op 调用不再解析 localStorage）。
+  **审查修复（2026-11-17 三轮）**：① done 回灌守卫——外接 agent 只产出整篇文档、无 op
+  流可喂 rebase_agent_ops，此前 done 以 `ops:[]` 绕过 rebase 守卫会吞人类编辑 → 回灌前
+  比对 `mbtCanonical(mbtText)!==acpStartMbt`，画布被推进过即**不回灌**并落红卡（诚实
+  降级：保人类编辑，重跑以新起点重做）；② 权限应答线格式改 `{"outcome":{outcome,optionId}}`
+  包裹（contract 面），夹具收到应答即校验形状、畸形驱动 cargo test 红；③ `spawn_session`
+  前 `create_dir_all` 工作区（此前唯一生产 mkdir 在 acp_prompt、却要求会话已在注册表，
+  鸡生蛋）；④ 窗口 `Destroyed` → `shutdown_for_label` 清 ACP 会话；⑤ 前端 `acp_prompt`
+  补传 `run` 参数（二轮 flight 换绑由此在生产可达）；⑥ `prompt_req` CAS 在飞守卫 +
+  权限框补覆盖层 CSS + keydown 短路补 `#acp-perm`/`#cmdk`；⑦ 权限选项 onclick 经
+  escAttr(JSON) 防单引号注入（setAcpAgent 同构修）；⑧ Figma 导入 walk 改
+  `absoluteBoundingBox`（嵌套节点绝对坐标压平，消费侧归一不变）。
+  教训：同一 `let` 语句内两次 lock 同一 MutexGuard = 自死锁（第一个临时 guard 存活到
+  语句末，闭包内再 lock 即永久阻塞），拆两条语句。i18n +12 键（528→540）。
   ③ **Figma 桥**（figma-plugin/ 三文件，完全离线 networkAccess=none，与 figma-ops
   项目零引用）：导出 `export_figma_package_inner`（逐板 data.svg + query_nodes
   manifest + README → ~/Documents/deepDesign/）；导入 `composeFigmaImportOps`

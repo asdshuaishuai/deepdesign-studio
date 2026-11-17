@@ -168,68 +168,96 @@ pub fn probe_agent_full(def: &AcpAgentDef) -> ProbeState {
     } else {
         Duration::from_secs(20)
     };
-    let (tx, rx) = mpsc::channel::<ProbeState>();
     let def_id = def.id;
+    let argv = match find_agent_argv(def) {
+        Some(a) => a,
+        None => {
+            set_probe(def_id, ProbeState::Missing);
+            return ProbeState::Missing;
+        }
+    };
+    let child = match spawn_child(&argv, std::env::temp_dir().as_path()) {
+        Ok(c) => Arc::new(Mutex::new(c)),
+        Err(_) => {
+            set_probe(def_id, ProbeState::Missing);
+            return ProbeState::Missing;
+        }
+    };
+    let (tx, rx) = mpsc::channel::<ProbeState>();
+    let child_t = child.clone();
     std::thread::spawn(move || {
-        let st = match handshake_probe(def_id) {
-            Ok(argv) => ProbeState::Verified { argv },
+        let st = match handshake_probe(&child_t) {
+            Ok(()) => ProbeState::Verified { argv },
             Err(_) => ProbeState::Missing,
         };
         let _ = tx.send(st);
     });
-    let st = rx.recv_timeout(timeout).unwrap_or(ProbeState::Missing);
+    let st = match rx.recv_timeout(timeout) {
+        Ok(st) => st,
+        Err(_) => {
+            // 超时：探测线程仍阻塞在 stdout 读循环（挂死的 agent 永不 EOF）——
+            // 从外部 kill 关管道触发收口，否则每次对挂死 CLI 的探测泄漏一个子进程
+            // （2026-11-17 审查）
+            if let Ok(mut c) = child.lock() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            ProbeState::Missing
+        }
+    };
     set_probe(def_id, st.clone());
     st
 }
 
-fn handshake_probe(id: &str) -> Result<Vec<String>, String> {
-    let def = agent_def(id).ok_or("unknown_agent")?;
-    let argv = find_agent_argv(def).ok_or("agent_not_found")?;
-    let mut child = spawn_child(&argv, std::env::temp_dir().as_path())?;
-    let res = (|| -> Result<(), String> {
-        {
-            let mut w = child.stdin.take().ok_or("stdin")?;
-            send_msg(
-                &mut w,
-                &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true}}}}),
-            )
-            .map_err(|e| format!("write:{e}"))?;
-            send_msg(
-                &mut w,
-                &json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":std::env::temp_dir().to_string_lossy(),"mcpServers":[]}}),
-            )
-            .map_err(|e| format!("write:{e}"))?;
-            // 不 drop w：保持 stdin 打开直到读完响应（有些 agent 收 EOF 即退出）
-            w.flush().ok();
+/// child 经 Arc<Mutex<>> 共享：recv_timeout 超时方要能拿到它去 kill
+/// （kill 关 stdout 管道 → 读循环 EOF → 探测线程退出）。
+fn handshake_probe(child: &Arc<Mutex<Child>>) -> Result<(), String> {
+    let mut c = child.lock().map_err(|_| "child_poisoned".to_string())?;
+    let mut w = c.stdin.take().ok_or("stdin")?;
+    send_msg(
+        &mut w,
+        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true}}}}),
+    )
+    .map_err(|e| format!("write:{e}"))?;
+    send_msg(
+        &mut w,
+        &json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":std::env::temp_dir().to_string_lossy(),"mcpServers":[]}}),
+    )
+    .map_err(|e| format!("write:{e}"))?;
+    // 不 drop w：保持 stdin 打开直到读完响应（有些 agent 收 EOF 即退出）——
+    // 此前内层块提前析构使注释意图落空（2026-11-17 审查）
+    w.flush().ok();
+    let out = c.stdout.take().ok_or("stdout")?;
+    drop(c); // 释放锁：超时方 kill 时要能拿到 child
+    let rd = BufReader::new(out);
+    let mut got_init = false;
+    let mut got_session = false;
+    for line in rd.lines() {
+        let line = line.map_err(|e| format!("read:{e}"))?;
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        if v.get("method").is_some() {
+            continue; // 探测期不回应通知/请求
         }
-        let out = child.stdout.take().ok_or("stdout")?;
-        let rd = BufReader::new(out);
-        let mut got_init = false;
-        let mut got_session = false;
-        for line in rd.lines() {
-            let line = line.map_err(|e| format!("read:{e}"))?;
-            let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
-            if v.get("method").is_some() {
-                continue; // 探测期不回应通知/请求
+        match v.get("id").and_then(|x| x.as_u64()) {
+            Some(1) => got_init = v.get("error").is_none(),
+            Some(2) => {
+                got_session = v.get("error").is_none();
+                break;
             }
-            match v.get("id").and_then(|x| x.as_u64()) {
-                Some(1) => got_init = v.get("error").is_none(),
-                Some(2) => {
-                    got_session = v.get("error").is_none();
-                    break;
-                }
-                _ => {}
-            }
+            _ => {}
         }
-        if got_init && got_session {
-            Ok(())
-        } else {
-            Err("handshake_incomplete".into())
-        }
-    })();
-    let _ = child.kill();
-    let _ = child.wait();
-    res.map(|_| argv)
+    }
+    // 收口：无论成败都 kill + wait（防僵尸）；超时路径已被外层 kill，幂等无害
+    if let Ok(mut c) = child.lock() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    drop(w); // 显式标注 stdin 的实际析构点（读完响应才关）
+    if got_init && got_session {
+        Ok(())
+    } else {
+        Err("handshake_incomplete".into())
+    }
 }
 
 fn spawn_child(argv: &[String], cwd: &Path) -> Result<Child, String> {
@@ -274,11 +302,40 @@ pub fn path_in_workspace(ws: &Path, p: &str) -> Option<PathBuf> {
     let raw = Path::new(p);
     let resolved = if raw.is_absolute() { raw.to_path_buf() } else { ws.join(raw) };
     let ws_can = ws.canonicalize().ok()?;
-    let resolved = resolved.canonicalize().unwrap_or(resolved);
-    if resolved.starts_with(&ws_can) {
-        Some(resolved)
+    // 工作区内尚不存在的文件 canonicalize 必败——保留非规范化原路径做 starts_with
+    // 会与 canonical 的 ws_can 组件级失配：工作区根任一路径段是符号链接
+    // （macOS temp_dir /var→/private/var）时，agent 每写一个新文件都被误判越界
+    // （2026-11-17 审查）。改为 canonicalize 最深存在祖先 + 回拼剩余段。
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut probe = resolved.clone();
+    let base = loop {
+        match probe.canonicalize() {
+            Ok(c) => break c,
+            Err(_) => {
+                let name = probe.file_name()?.to_owned();
+                probe = probe.parent()?.to_path_buf();
+                tail.push(name);
+            }
+        }
+    };
+    let mut resolved_can = base;
+    for seg in tail.iter().rev() {
+        resolved_can = resolved_can.join(seg);
+    }
+    if resolved_can.starts_with(&ws_can) {
+        Some(resolved_can)
     } else {
         None
+    }
+}
+
+/// JSON-RPC id 匹配：数字原样，字符串数字也接受（部分 CLI 会字符串化回显；
+/// 协议允许 String id，此前 as_u64 单一判定把字符串 id 全部静默丢弃）。
+fn id_matches(v: Option<&Value>, n: u64) -> bool {
+    match v {
+        Some(Value::Number(x)) => x.as_u64() == Some(n),
+        Some(Value::String(s)) => s.parse::<u64>() == Ok(n),
+        _ => false,
     }
 }
 
@@ -352,6 +409,11 @@ impl AcpSession {
             _ => find_agent_argv(def),
         }
         .ok_or("agent_not_found")?;
+        // 工作区目录必须先建：spawn_child 的 current_dir 指向不存在的目录时 spawn
+        // 直接报错（Errno 2）。生产路径此前从不建目录——唯一的 mkdir 在 acp_prompt，
+        // 而它要求会话已在注册表，会话又只能由本函数创建（鸡生蛋死锁），
+        // 每次建会话都确定性失败（2026-11-17 审查）
+        std::fs::create_dir_all(workspace).map_err(|e| format!("workspace:{e}"))?;
         pump_and_handshake(spawn_child(&argv, workspace)?, workspace, run_id, agent_id, rt, sink)
     }
 
@@ -363,13 +425,28 @@ impl AcpSession {
 
     pub fn prompt(&self, text: &str) -> Result<(), String> {
         let id = self.req_seq.fetch_add(1, Ordering::Relaxed) + 1;
-        self.prompt_req.store(id, Ordering::Relaxed);
-        self.writer
+        // 在飞单飞守卫：CAS 0→id 原子占位。并发 prompt 会覆盖 prompt_req——
+        // 先发请求的响应匹配失败被静默丢弃、该 run 永不收口（无终态信封）；
+        // 「单会话串行 prompt」的约定此前只靠前端 agentBusy 兜底（2026-11-17 审查）
+        if self
+            .prompt_req
+            .compare_exchange(0, id, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return Err("acp_prompt_in_flight".into());
+        }
+        if self
+            .writer
             .send(json!({
                 "jsonrpc":"2.0","id":id,"method":"session/prompt",
                 "params":{"sessionId":self.sid(),"prompt":[{"type":"text","text":text}]}
             }))
-            .map_err(|_| "writer_closed".to_string())
+            .is_err()
+        {
+            self.prompt_req.store(0, Ordering::Relaxed); // 发送失败回滚占位
+            return Err("writer_closed".into());
+        }
+        Ok(())
     }
 
     pub fn cancel(&self) {
@@ -379,9 +456,18 @@ impl AcpSession {
     }
 
     /// 权限确认框应答（前端 acp_permission_reply → 命令层）。
-    pub fn reply(&self, request_id: u64, option_id: &str) {
+    /// 线格式按 ACP 协议：result 必须是 outcome 包裹对象——
+    /// `{"outcome":{"outcome":"selected","optionId":…}}` / `{"outcome":{"outcome":"cancelled"}}`。
+    /// 裸 `{"optionId":…}` 会被 SDK 系 agent 的 RequestPermissionResponse 模式校验
+    /// 拒绝（pydantic ValidationError 实证），用户点「允许」后 agent 侧挂起
+    /// （2026-11-17 审查）。option_id None = 用户取消（拒绝框/Esc）。
+    pub fn reply(&self, request_id: Value, option_id: Option<&str>) {
+        let outcome = match option_id {
+            Some(id) => json!({"outcome":"selected","optionId":id}),
+            None => json!({"outcome":"cancelled"}),
+        };
         let _ = self.writer.send(json!({
-            "jsonrpc":"2.0","id":request_id,"result":{"optionId":option_id}
+            "jsonrpc":"2.0","id":request_id,"result":{"outcome":outcome}
         }));
     }
 
@@ -407,22 +493,32 @@ fn dispatch_msg(
         return;
     }
     // ── agent 发来的请求（需应答）──
+    // id 保留原始 Value：JSON-RPC 2.0 允许 String id，as_u64 单一判定会把
+    // 字符串 id 的请求全部落进 `_ => return`——权限请求无应答 agent 挂死、
+    // fs 回调无响应 agent 卡死（2026-11-17 审查）
     if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
-        let rid = v.get("id").and_then(|x| x.as_u64());
+        let rid = v.get("id").cloned();
+        let params = v.get("params").cloned().unwrap_or(json!({}));
         match (method, rid) {
             ("session/request_permission", Some(rid)) => {
-                let params = v.get("params").cloned().unwrap_or(json!({}));
+                // 真实请求字段是 toolCall（其 title 才是工具上下文）；顶层 title
+                // 非协议字段——仅作兼容回退读（2026-11-17 审查）
+                let title = params
+                    .get("title")
+                    .or_else(|| params.pointer("/toolCall/title"))
+                    .cloned()
+                    .unwrap_or(json!("外部智能体请求权限"));
                 sink(json!({
                     "type": "acp-permission", "run": run,
                     "request_id": rid, "session": sess.sid(),
-                    "title": params.get("title").cloned().unwrap_or(json!("外部智能体请求权限")),
+                    "title": title,
                     "options": params.get("options").cloned().unwrap_or(json!([])),
                 }));
                 // 应答由前端 acp_permission_reply → sess.reply 直接写 response 行
                 return;
             }
             ("fs/read_text_file", Some(rid)) => {
-                let p = v.pointer("/params/path").and_then(|x| x.as_str()).unwrap_or("");
+                let p = params.get("path").and_then(|x| x.as_str()).unwrap_or("");
                 match path_in_workspace(&sess.workspace, p) {
                     Some(path) => match std::fs::read_to_string(&path) {
                         Ok(content) => {
@@ -439,8 +535,8 @@ fn dispatch_msg(
                 return;
             }
             ("fs/write_text_file", Some(rid)) => {
-                let p = v.pointer("/params/path").and_then(|x| x.as_str()).unwrap_or("");
-                let content = v.pointer("/params/content").and_then(|x| x.as_str()).unwrap_or("");
+                let p = params.get("path").and_then(|x| x.as_str()).unwrap_or("");
+                let content = params.get("content").and_then(|x| x.as_str()).unwrap_or("");
                 match path_in_workspace(&sess.workspace, p) {
                     Some(path) => match std::fs::write(&path, content) {
                         Ok(_) => {
@@ -465,29 +561,46 @@ fn dispatch_msg(
             _ => return, // 无 id 的未知通知忽略
         }
     }
-    // ── 响应 ──
-    if let Some(rid) = v.get("id").and_then(|x| x.as_u64()) {
-        if v.get("method").is_none() {
-            // prompt 主请求：response 到达 = 终止 → finalize
-            if sess.prompt_req.swap(0, Ordering::Relaxed) == rid {
-                if v.get("error").is_some() {
-                    sink(json!({"type":"failed","run":run,"error":v.get("error").cloned().unwrap_or(json!("acp_prompt_failed"))}));
-                } else {
-                    let stop = v
-                        .pointer("/result/stopReason")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("end_turn")
-                        .to_string();
-                    finalize_done(sess, &sink, &stop);
-                }
-                return;
-            }
-            let waiter = pending.lock().unwrap().remove(&rid);
-            if let Some(w) = waiter {
-                let _ = w.tx.send(v);
+    // ── 响应（id 数字或字符串数字都匹配，见 id_matches）──
+    if v.get("method").is_none() && v.get("id").is_some() {
+        // prompt 主请求：response 到达 = 终止 → finalize
+        let inflight = sess.prompt_req.load(Ordering::Relaxed);
+        if inflight != 0 && id_matches(v.get("id"), inflight) {
+            sess.prompt_req.store(0, Ordering::Relaxed);
+            if v.get("error").is_some() {
+                // failed 信封 error 统一字符串形状（前端红卡 String(p.error) 直显；
+                // 原始 JSON-RPC 错误对象会渲染成 [object Object]——2026-11-17 审查）
+                let msg = v
+                    .pointer("/error/message")
+                    .and_then(|x| x.as_str())
+                    .map(|s| format!("acp_prompt_failed:{s}"))
+                    .unwrap_or_else(|| "acp_prompt_failed".to_string());
+                sink(json!({"type":"failed","run":run,"error":msg}));
+            } else {
+                let stop = v
+                    .pointer("/result/stopReason")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("end_turn")
+                    .to_string();
+                finalize_done(sess, &sink, &stop);
             }
             return;
         }
+        // 其余响应（initialize/session/new）按 req_seq 的数字 id 匹配 pending。
+        // 两次加锁必须拆成两条语句：同一 let 语句里第一个临时 MutexGuard 存活到
+        // 语句结束，闭包里再 lock 即自死锁（reader 线程卡死在首条响应上，
+        // 握手超时路径的 pending.lock 也跟着卡死——2026-11-17 实测复现）
+        let matched = pending
+            .lock()
+            .unwrap()
+            .keys()
+            .copied()
+            .find(|k| id_matches(v.get("id"), *k));
+        let waiter = matched.and_then(|k| pending.lock().unwrap().remove(&k));
+        if let Some(w) = waiter {
+            let _ = w.tx.send(v);
+        }
+        return;
     }
 }
 
@@ -593,6 +706,27 @@ impl AcpRegistry {
             .collect();
         root.join(slug)
     }
+
+    /// 关闭指定项目窗口名下的全部 ACP 会话（lib.rs 窗口 Destroyed 钩子调用）。
+    /// 会话按 agent 返回的 sid 键控、不知道窗口 label，但工作区按 label 派生
+    /// （workspace_for）——按 workspace 归属过滤。窗口关闭时不清的话，CLI 子进程
+    /// 与泵/守护/写三线程随注册表残留至应用退出，子进程持续运行（2026-11-17 审查）
+    pub fn shutdown_for_label(&self, project_label: &str) {
+        let ws = self.workspace_for(project_label);
+        let stale: Vec<String> = {
+            let sessions = self.sessions.lock().unwrap();
+            sessions
+                .iter()
+                .filter(|(_, s)| s.workspace == ws)
+                .map(|(k, _)| k.clone())
+                .collect()
+        };
+        for k in stale {
+            if let Some(s) = self.sessions.lock().unwrap().remove(&k) {
+                s.shutdown();
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -624,8 +758,17 @@ fn pump_and_handshake(
         alive: Arc::new(AtomicBool::new(true)),
         child_pid: Mutex::new(Some(pid)),
     });
-    // writer 线程：独占 child.stdin（mpsc 序列化并发写）
-    let mut stdin = child.stdin.take().ok_or("stdin")?;
+    // writer 线程：独占 child.stdin（mpsc 序列化并发写）。
+    // 两个早期失败面（stdin/stdout 缺失）在任何线程 spawn 前返回——child 会被
+    // 裸 drop（std 不 kill），先 kill+wait 防僵尸（2026-11-17 审查）
+    let mut stdin = match child.stdin.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("stdin".into());
+        }
+    };
     let alive_w = sess.alive.clone();
     std::thread::spawn(move || {
         while let Ok(v) = writer_rx.recv() {
@@ -638,7 +781,14 @@ fn pump_and_handshake(
         }
     });
     // reader 泵线程（先 take stdout 再移交 child 给回收守护）
-    let stdout = child.stdout.take().ok_or("stdout")?;
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("stdout".into());
+        }
+    };
     let sess_r = sess.clone();
     let alive_r = sess.alive.clone();
     let pending_r = sess.pending.clone();
@@ -672,22 +822,35 @@ fn pump_and_handshake(
         }
     });
     // initialize + session/new（阻塞等待）
-    let init = sess
-        .request("initialize", json!({"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true}}}), Duration::from_secs(30))?;
-    if init.get("error").is_some() {
-        return Err("initialize_rejected".into());
-    }
-    let ws_str = workspace.to_string_lossy().into_owned();
-    let new_s = sess.request(
-        "session/new",
-        json!({"cwd": ws_str, "mcpServers": []}),
-        Duration::from_secs(30),
-    )?;
-    let sid = new_s
-        .pointer("/result/sessionId")
-        .and_then(|v| v.as_str())
-        .ok_or("session_new_no_id")?
-        .to_string();
+    let handshake = (|| -> Result<String, String> {
+        let init = sess
+            .request("initialize", json!({"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true}}}), Duration::from_secs(30))?;
+        if init.get("error").is_some() {
+            return Err("initialize_rejected".into());
+        }
+        let ws_str = workspace.to_string_lossy().into_owned();
+        let new_s = sess.request(
+            "session/new",
+            json!({"cwd": ws_str, "mcpServers": []}),
+            Duration::from_secs(30),
+        )?;
+        new_s
+            .pointer("/result/sessionId")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| "session_new_no_id".to_string())
+    })();
+    let sid = match handshake {
+        Ok(sid) => sid,
+        Err(e) => {
+            // 握手失败必须显式收口：reader 泵线程持有 sess Arc，Drop 永不可达——
+            // alive 恒 true、守护线程永不 kill，child + 3 线程随每次失败泄漏，
+            // 重试线性累积（2026-11-17 审查）。shutdown 置 alive=false 并 kill：
+            // 管道 EOF 让 reader 退出 → Arc 归零 → 线程全部收口
+            sess.shutdown();
+            return Err(e);
+        }
+    };
     *sess.sid.lock().unwrap() = sid;
     Ok(sess)
 }
@@ -736,6 +899,18 @@ mod tests {
         std::fs::write(&abs_out, "y").unwrap();
         assert!(path_in_workspace(&ws, &abs_out.to_string_lossy()).is_none());
         assert!(path_in_workspace(&ws, "../../etc/passwd").is_none());
+        // 工作区内**尚不存在**的新文件：canonicalize 失败曾保留非规范化原路径，
+        // 与 canonical 的 ws_can 做前缀比较——macOS temp_dir 在 /var→/private/var
+        // 符号链接下，agent 每写一个新文件都被误判越界拒绝（2026-11-17 审查）
+        let new_in = ws.join("sub").join("new.md");
+        assert!(
+            path_in_workspace(&ws, &new_in.to_string_lossy()).is_some(),
+            "工作区内新文件不应被误判越界：{}",
+            new_in.display()
+        );
+        // 越界的新文件仍要拒绝（最深存在祖先解析后前缀不匹配）
+        let new_out = std::env::temp_dir().join("outside-acp-new").join("x.md");
+        assert!(path_in_workspace(&ws, &new_out.to_string_lossy()).is_none());
         let _ = std::fs::remove_dir_all(&ws);
     }
 
@@ -799,7 +974,7 @@ mod tests {
                         .and_then(|e| e.get("request_id").and_then(|x| x.as_u64()))
                 };
                 if let Some(rid) = req_id {
-                    sess.reply(rid, "allow_once");
+                    sess.reply(json!(rid), Some("allow_once"));
                     replied = true;
                 }
             }
@@ -847,7 +1022,7 @@ mod tests {
                         .and_then(|e| e.get("request_id").and_then(|x| x.as_u64()))
                 };
                 if let Some(rid) = req_id {
-                    sess.reply(rid, "allow_once");
+                    sess.reply(json!(rid), Some("allow_once"));
                     replied2 = true;
                 }
             }

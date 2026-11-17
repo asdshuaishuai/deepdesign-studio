@@ -460,11 +460,11 @@ async fn acp_prompt(
         .get(&session)
         .cloned()
         .ok_or("unknown_acp_session")?;
-    // 工作区导出：canonical → mbt.md（DDP 仍是唯一事实源，agent 在提取视图上工作）
+    // 工作区导出：canonical → mbt.md（DDP 仍是唯一事实源，agent 在提取视图上工作）。
+    // 空 canonical 也要写：跳过会让上一次 prompt 的文件留存，agent 未动文件时
+    // finalize_done 把旧内容当本次产出回灌（2026-11-17 审查）
     std::fs::create_dir_all(&sess.workspace).map_err(|e| format!("workspace:{e}"))?;
-    if !mbt.is_empty() {
-        std::fs::write(sess.workspace.join("mbt.md"), &mbt).map_err(|e| format!("export:{e}"))?;
-    }
+    std::fs::write(sess.workspace.join("mbt.md"), &mbt).map_err(|e| format!("export:{e}"))?;
     // BUG1（审查修复）：换绑在飞 run 与事件出口——sink 绑死建会话时刻 run 会把
     // 第二次 prompt 的全部事件串进旧轨迹块且 acpRun 永不释放
     sess.rebind_flight(run, acp_sink(&app, window.label(), run));
@@ -494,8 +494,8 @@ async fn acp_cancel(
 async fn acp_permission_reply(
     reg: tauri::State<'_, acp::AcpRegistry>,
     session: String,
-    request_id: u64,
-    option_id: String,
+    request_id: serde_json::Value,
+    option_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let sess = reg
         .sessions
@@ -504,7 +504,9 @@ async fn acp_permission_reply(
         .get(&session)
         .cloned()
         .ok_or("unknown_acp_session")?;
-    sess.reply(request_id, &option_id);
+    // request_id 原样回传（JSON-RPC 2.0 允许 String id，as_u64 单一判定曾把
+    // 字符串 id 的请求应答不出去）；option_id None = cancelled outcome
+    sess.reply(request_id, option_id.as_deref());
     Ok(serde_json::json!({"ok": true}))
 }
 
@@ -553,7 +555,11 @@ async fn export_figma_package_inner(mbt_in: &str) -> Result<serde_json::Value, S
         .cloned()
         .unwrap_or_default();
     let ts = now_ms();
-    let home = std::env::var("HOME").unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+    // Windows 不设 HOME——只认它会把导出包静默落进 %TEMP%\Documents\；
+    // 依次回退 USERPROFILE（Windows 真身）与 temp（2026-11-17 审查）
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
     let dir = PathBuf::from(home)
         .join("Documents")
         .join("deepDesign")
@@ -679,6 +685,14 @@ pub fn run() {
                         eprintln!("[app] app-close-request 投递失败（脏文档确认可能不弹）: {e}");
                     }
                 }
+            }
+            // 窗口销毁即回收其 ACP 会话：注册表条目、CLI 子进程与 3 个泵线程
+            // 随窗口残留至应用退出、子进程持续运行是泄漏（多窗口场景下其余窗口
+            // 不受影响；应用退出时各窗 Destroyed 逐个清）（2026-11-17 审查）
+            if let tauri::WindowEvent::Destroyed = event {
+                use tauri::Manager as _;
+                let reg = window.app_handle().state::<acp::AcpRegistry>();
+                reg.shutdown_for_label(window.label());
             }
         })
         .setup(|app| {

@@ -29,6 +29,24 @@
   "Agent running · click to cancel",
   "Agent en cours · cliquer pour annuler"
  ],
+ "Figma 包已导出（{n} 板）→ {dir}": [
+  "Figma パッケージ書き出し完了（{n} 板）→ {dir}",
+  "Figma 패키지 내보내기 완료({n}개 보드) → {dir}",
+  "Figma package exported ({n} boards) → {dir}",
+  "Paquet Figma exporté ({n} planches) → {dir}"
+ ],
+ "Figma 导入完成：成功 {okc}，拒绝 {failc}": [
+  "Figma 読み込み完了：成功 {okc}、拒否 {failc}",
+  "Figma 가져오기 완료: 성공 {okc}, 거부 {failc}",
+  "Figma import done: {okc} ok, {failc} rejected",
+  "Importation Figma terminée : {okc} OK, {failc} refusées"
+ ],
+ "Figma 导入：{n} 条操作执行中…": [
+  "Figma 読み込み：{n} 操作を実行中…",
+  "Figma 가져오기: {n}개 작업 실행 중…",
+  "Figma import: running {n} ops…",
+  "Importation Figma : {n} opérations en cours…"
+ ],
  "HTML 原型": [
   "HTML プロトタイプ",
   "HTML 프로토타입",
@@ -178,6 +196,12 @@
   "정보",
   "About",
   "À propos"
+ ],
+ "内置管线": [
+  "内蔵パイプライン",
+  "내장 파이프라인",
+  "Built-in pipeline",
+  "Pipeline intégré"
  ],
  "切换深色 / 浅色模式": [
   "ダーク/ライト切替",
@@ -347,6 +371,54 @@
   "Duplicating board as {id}",
   "Duplication de la planche en {id}"
  ],
+ "外部智能体完成——改动已回灌画布（AgentGate 校验）": [
+  "外部エージェント完了——変更をキャンバスへ還元（AgentGate 検証）",
+  "외부 에이전트 완료—변경을 캔버스에 재적용(AgentGate 검증)",
+  "External agent finished — changes re-applied to canvas (AgentGate)",
+  "Agent externe terminé — modifications réappliquées au canevas (AgentGate)"
+ ],
+ "外部智能体完成（未改动项目文件）": [
+  "外部エージェント完了（プロジェクトファイル未変更）",
+  "외부 에이전트 완료(프로젝트 파일 미변경)",
+  "External agent finished (no project file changes)",
+  "Agent externe terminé (aucun fichier modifié)"
+ ],
+ "外部智能体执行中": [
+  "外部エージェント実行中",
+  "외부 에이전트 실행 중",
+  "External agent running",
+  "Agent externe en cours"
+ ],
+ "外部智能体请求权限": [
+  "外部エージェントが権限を要求",
+  "외부 에이전트 권한 요청",
+  "External agent requests permission",
+  "L'agent externe demande une permission"
+ ],
+ "外部智能体（ACP）": [
+  "外部エージェント（ACP）",
+  "외부 에이전트(ACP)",
+  "External agents (ACP)",
+  "Agents externes (ACP)"
+ ],
+ "完整握手检测": [
+  "完全ハンドシェイク検査",
+  "전체 핸드셰이크 검사",
+  "Full handshake probe",
+  "Poignée de main complète"
+ ],
+ "导入 Figma 选区 JSON…": [
+  "Figma 選択範囲 JSON を読み込む…",
+  "Figma 선택 JSON 가져오기…",
+  "Import Figma selection JSON…",
+  "Importer la sélection Figma (JSON)…"
+ ],
+ "导出 Figma 包…": [
+  "Figma パッケージを書き出す…",
+  "Figma 패키지 내보내기…",
+  "Export Figma package…",
+  "Exporter le paquet Figma…"
+ ],
  "导出 HTML 原型": [
   "HTML プロトタイプをエクスポート",
   "HTML 프로토타입 내보내기",
@@ -377,11 +449,23 @@
   "Enabled: ",
   "Activé : "
  ],
+ "已安装": [
+  "インストール済み",
+  "설치됨",
+  "Installed",
+  "Installé"
+ ],
  "已请求取消——当前步骤结束后停止，已完成部分保留": [
   "取消をリクエストしました——現在のステップ終了後に停止し、完了済み部分は保持されます",
   "취소를 요청했습니다——현재 단계 종료 후 중지되며 완료된 부분은 유지됩니다",
   "Cancellation requested — stops after the current step; completed work is kept",
   "Annulation demandée — arrêt après l'étape en cours ; le travail effectué est conservé"
+ ],
+ "已验证": [
+  "検証済み",
+  "검증됨",
+  "Verified",
+  "Vérifié"
  ],
  "应用主题 {t}": [
   "テーマ {t} を適用",
@@ -545,6 +629,12 @@
   "Unsaved Changes",
   "Modifications non enregistrées"
  ],
+ "未安装": [
+  "未インストール",
+  "미설치",
+  "Not installed",
+  "Non installé"
+ ],
  "本应用建立在开源社区之上——以上项目版权归各自作者所有。": [
   "本アプリはオープンソースコミュニティの上に成り立っています。掲載プロジェクトの著作権はそれぞれの作者に帰属します。",
   "이 앱은 오픈소스 커뮤니티 위에 세워졌습니다. 위 프로젝트의 저작권은 각 저자에게 있습니다.",
@@ -556,6 +646,12 @@
   "Markdown 제목(#/##/###)이 없어 목차를 만들 수 없습니다",
   "No Markdown headings (#/##/###) in this document — no outline available",
   "Aucun titre Markdown (#/##/###) dans ce document — plan indisponible"
+ ],
+ "权限请求": [
+  "権限リクエスト",
+  "권한 요청",
+  "Permission request",
+  "Demande de permission"
  ],
  "查看主题清单": [
   "テーマ一覧を取得",
@@ -640,6 +736,12 @@
   "단계 상한 조정 가능(200/500/1000/2000)",
   "Adjustable step limit (200/500/1000/2000)",
   "Limite de pas ajustable (200/500/1000/2000)"
+ ],
+ "没有可导入的节点（全部不可见或为空）": [
+  "読み込み可能なノードがありません（非表示または空）",
+  "가져올 노드가 없습니다(모두 숨김 또는 빈)",
+  "No importable nodes (all hidden or empty)",
+  "Aucun nœud importable (tous cachés ou vides)"
  ],
  "注册页": [
   "サインアップページ",
@@ -857,119 +959,89 @@
   "HarmonyOS debut; Linux ships deb and AppImage (linglong retired)",
   "Première version HarmonyOS ; Linux fournit deb et AppImage (linglong abandonné)"
  ],
- "（使用之前保存的配置）": [
-  "（保存済みの設定を使用）",
-  " (저장된 설정 사용)",
-  " (using previously saved config)",
-  " (configuration enregistrée utilisée)"
- ],
- "导出 Figma 包…": [
-  "Figma パッケージを書き出す…",
-  "Figma 패키지 내보내기…",
-  "Export Figma package…",
-  "Exporter le paquet Figma…"
- ],
- "导入 Figma 选区 JSON…": [
-  "Figma 選択範囲 JSON を読み込む…",
-  "Figma 선택 JSON 가져오기…",
-  "Import Figma selection JSON…",
-  "Importer la sélection Figma (JSON)…"
- ],
- "Figma 包已导出（{n} 板）→ {dir}": [
-  "Figma パッケージ書き出し完了（{n} 板）→ {dir}",
-  "Figma 패키지 내보내기 완료({n}개 보드) → {dir}",
-  "Figma package exported ({n} boards) → {dir}",
-  "Paquet Figma exporté ({n} planches) → {dir}"
- ],
- "Figma 导入：{n} 条操作执行中…": [
-  "Figma 読み込み：{n} 操作を実行中…",
-  "Figma 가져오기: {n}개 작업 실행 중…",
-  "Figma import: running {n} ops…",
-  "Importation Figma : {n} opérations en cours…"
- ],
- "Figma 导入完成：成功 {okc}，拒绝 {failc}": [
-  "Figma 読み込み完了：成功 {okc}、拒否 {failc}",
-  "Figma 가져오기 완료: 성공 {okc}, 거부 {failc}",
-  "Figma import done: {okc} ok, {failc} rejected",
-  "Importation Figma terminée : {okc} OK, {failc} refusées"
- ],
- "没有可导入的节点（全部不可见或为空）": [
-  "読み込み可能なノードがありません（非表示または空）",
-  "가져올 노드가 없습니다(모두 숨김 또는 빈)",
-  "No importable nodes (all hidden or empty)",
-  "Aucun nœud importable (tous cachés ou vides)"
- ],
- "外部智能体（ACP）": [
-  "外部エージェント（ACP）",
-  "외부 에이전트(ACP)",
-  "External agents (ACP)",
-  "Agents externes (ACP)"
- ],
- "内置管线": [
-  "内蔵パイプライン",
-  "내장 파이프라인",
-  "Built-in pipeline",
-  "Pipeline intégré"
- ],
- "完整握手检测": [
-  "完全ハンドシェイク検査",
-  "전체 핸드셰이크 검사",
-  "Full handshake probe",
-  "Poignée de main complète"
- ],
- "已验证": [
-  "検証済み",
-  "검증됨",
-  "Verified",
-  "Vérifié"
- ],
- "已安装": [
-  "インストール済み",
-  "설치됨",
-  "Installed",
-  "Installé"
- ],
- "未安装": [
-  "未インストール",
-  "미설치",
-  "Not installed",
-  "Non installé"
- ],
  "默认": [
   "デフォルト",
   "기본",
   "Default",
   "Par défaut"
  ],
- "权限请求": [
-  "権限リクエスト",
-  "권한 요청",
-  "Permission request",
-  "Demande de permission"
+ "（使用之前保存的配置）": [
+  "（保存済みの設定を使用）",
+  " (저장된 설정 사용)",
+  " (using previously saved config)",
+  " (configuration enregistrée utilisée)"
  ],
- "外部智能体请求权限": [
-  "外部エージェントが権限を要求",
-  "외부 에이전트 권한 요청",
-  "External agent requests permission",
-  "L'agent externe demande une permission"
+ "输出中…": [
+  "出力中…",
+  "출력 중…",
+  "Outputting…",
+  "Sortie…"
  ],
- "外部智能体执行中": [
-  "外部エージェント実行中",
-  "외부 에이전트 실행 중",
-  "External agent running",
-  "Agent externe en cours"
+ "输出": [
+  "出力",
+  "출력",
+  "Output",
+  "Sortie"
  ],
- "外部智能体完成（未改动项目文件）": [
-  "外部エージェント完了（プロジェクトファイル未変更）",
-  "외부 에이전트 완료(프로젝트 파일 미변경)",
-  "External agent finished (no project file changes)",
-  "Agent externe terminé (aucun fichier modifié)"
+ "先选择一个外部智能体": [
+  "先に外部エージェントを選択してください",
+  "먼저 외부 에이전트를 선택하세요",
+  "Select an external agent first",
+  "Sélectionnez d'abord un agent externe"
  ],
- "外部智能体完成——改动已回灌画布（AgentGate 校验）": [
-  "外部エージェント完了——変更をキャンバスへ還元（AgentGate 検証）",
-  "외부 에이전트 완료—변경을 캔버스에 재적용(AgentGate 검증)",
-  "External agent finished — changes re-applied to canvas (AgentGate)",
-  "Agent externe terminé — modifications réappliquées au canevas (AgentGate)"
+ "握手中…（npx 首次拉包最长 90s）": [
+  "ハンドシェイク中…（npx 初回取得は最大 90 秒）",
+  "핸드셰이크 중…(npx 최초 다운로드 최대 90초)",
+  "Handshaking… (npx first fetch can take up to 90s)",
+  "Poignée de main… (récupération npx initiale jusqu’à 90 s)"
+ ],
+ "✓ 握手成功": [
+  "✓ ハンドシェイク成功",
+  "✓ 핸드셰이크 성공",
+  "✓ Handshake OK",
+  "✓ Poignée de main réussie"
+ ],
+ "外部智能体启动失败：": [
+  "外部エージェントの起動に失敗：",
+  "외부 에이전트 시작 실패:",
+  "External agent failed to start:",
+  "Échec du démarrage de l’agent externe :"
+ ],
+ "ACP 启动失败": [
+  "ACP 起動失敗",
+  "ACP 시작 실패",
+  "ACP startup failed",
+  "Échec du démarrage ACP"
+ ],
+ "过半操作被门拒绝——中止导入": [
+  "過半数の操作がゲートで拒否——読み込みを中止",
+  "과반수 작업이 게이트에서 거부됨——가져오기 중단",
+  "Over half the ops were rejected by gates — import aborted",
+  "Plus de la moitié des opérations refusées par les gardes — import annulé"
+ ],
+ "该请求无可拒绝选项——已应答取消": [
+  "拒否できる選択肢がありません——取消し応答を返しました",
+  "거절할 수 있는 옵션이 없습니다——취소 응답을 보냈습니다",
+  "No rejectable option in this request — replied cancelled",
+  "Aucune option refusable — réponse « annulé » envoyée"
+ ],
+ "无可用选项": [
+  "利用可能な選択肢がありません",
+  "사용 가능한 옵션이 없습니다",
+  "No options available",
+  "Aucune option disponible"
+ ],
+ "选择一项以继续": [
+  "続行するには選択してください",
+  "계속하려면 선택하세요",
+  "Pick one to continue",
+  "Choisissez une option pour continuer"
+ ],
+ "外部智能体的改动与你的画布编辑冲突——已保留你的编辑，agent 结果未回灌": [
+  "外部エージェントの変更がキャンバス編集と競合——編集を保持し、エージェントの結果は未適用",
+  "외부 에이전트 변경이 캔버스 편집과 충돌——편집을 유지하고 에이전트 결과는 미적용",
+  "External agent changes conflict with your canvas edits — your edits kept, agent result not applied",
+  "Les modifications de l'agent externe entrent en conflit avec vos éditions de canevas — éditions conservées, résultat de l'agent non appliqué"
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",

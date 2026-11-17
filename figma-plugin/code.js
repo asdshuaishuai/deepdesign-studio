@@ -38,11 +38,16 @@ figma.ui.onmessage = async (msg) => {
     function walk(node, depth) {
       if (depth > 6) return;
       const isText = node.type === 'TEXT';
+      // 坐标一律导出**页面绝对值**：node.x/y 是父相对坐标（frame 子节点相对父
+      // frame），嵌套设计直接压平会让 deepDesign 导入几何塌向原点（消费侧把它
+      // 当板内绝对坐标用，minX/minY 归一保不住相对关系）。absoluteBoundingBox 是
+      // 页面绝对坐标（旋转件取包围盒——桥本身是尽力而为的扁平化，可接受）。
+      const bb = node.absoluteBoundingBox || { x: node.x, y: node.y, width: node.width, height: node.height };
       const item = {
         id: node.id,
         component: isText ? 'body_text' : 'card',
-        x: Math.round(node.x), y: Math.round(node.y),
-        w: Math.round(node.width), h: Math.round(node.height),
+        x: Math.round(bb.x), y: Math.round(bb.y),
+        w: Math.round(bb.width), h: Math.round(bb.height),
         text: isText ? node.characters : '',
         style: {
           fill: node.fills && node.fills[0] && node.fills[0].type === 'SOLID'
