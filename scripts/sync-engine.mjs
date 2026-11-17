@@ -215,6 +215,11 @@ async function download(local, mode) {
     console.log(`[sync-engine] 本地集成：${local}`);
     return readFileSync(local);
   }
+  // 哈希命中的本地文件直接复用（网络抖动/离线不打断构建）——锚定 sha512 同源校验
+  if (existsSync(local) && sha512Base64(readFileSync(local)) === WASM_SHA512) {
+    console.log('[sync-engine] 本地 wasm 哈希与锚定一致，跳过下载');
+    return readFileSync(local);
+  }
   console.log(`[sync-engine] 下载 ${WASM_URL}`);
   const res = await fetch(WASM_URL);
   if (!res.ok) fail(`下载失败：HTTP ${res.status}`);
@@ -278,10 +283,31 @@ async function contractProbe(exports, wasmBytes) {
   if (missing.length) fail(`wasm 缺少必需导出：${missing.join(', ')}`);
   const missInsp = INSPECTION_EXPORTS.filter((n) => typeof exports[n] !== 'function');
   if (missInsp.length) fail(`wasm 缺少检视导出：${missInsp.join(', ')}`);
+  // 0.2 测引入的 session 导出（session_event 手势面）：dev 模式必查（本地 wasm 必须
+  // 全量），release 锚定（如 engine-v0.1.11）缺它只告警不拦构建——0.2 独有能力
+  // 在该锚定下不可用是已知态，客户端按能力探测诚实降级（2026-11-17 本地安装实测）
+  const session02Extras = ['session_event', 'session_event_in'];
+  const releaseMode = process.argv.includes('--release');
   const missSess = SESSION_EXPORTS.filter((n) => typeof exports[n] !== 'function');
-  if (missSess.length) fail(`wasm 缺少 session API 导出：${missSess.join(', ')}`);
+  if (missSess.length) {
+    if (releaseMode && missSess.every((n) => session02Extras.includes(n))) {
+      console.warn(
+        '[sync-engine] ⚠ Release 锚定缺 0.2 独有 session 导出：' +
+          missSess.join(', ') +
+          ' —— 相关能力（手势事件等）在本打包不可用，客户端能力探测会诚实降级',
+      );
+    } else {
+      fail(`wasm 缺少 session API 导出：${missSess.join(', ')}`);
+    }
+  }
   const missIn = IN_FACE_EXPORTS.filter((n) => typeof exports[n] !== 'function');
-  if (missIn.length) fail(`wasm 缺少 _in 契约面导出：${missIn.join(', ')}`);
+  if (missIn.length) {
+    if (releaseMode && missIn.every((n) => session02Extras.includes(n))) {
+      console.warn('[sync-engine] ⚠ Release 锚定缺 0.2 独有 _in 导出：' + missIn.join(', '));
+    } else {
+      fail(`wasm 缺少 _in 契约面导出：${missIn.join(', ')}`);
+    }
+  }
 
   // classic wasm：字符串经内存编解码（读方向；写方向生产路径已迁 `_in` 槽——
 // 本脚本的 writeStr 仅服务经典面探针与组件 place 验证）
