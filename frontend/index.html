@@ -226,7 +226,7 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 /* ---------- 画布区 ---------- */
 .center{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--cvs);position:relative}
 /* ================= 首页 · 书架（协调版落地页） ================= */
-#home-view{position:absolute;inset:0;z-index:15;display:none;overflow:auto;background:var(--cvs)}
+#home-view{position:absolute;inset:0;z-index:15;display:none;overflow-x:hidden;overflow-y:auto;background:var(--cvs)}
 body.mode-home #home-view{display:block}
 body.mode-home .left,body.mode-home .right,body.mode-home .canvas-tail,body.mode-home .canvas-scroll{display:none!important}
 /* 环境级微染 + 点阵：只做氛围，不抢界面 */
