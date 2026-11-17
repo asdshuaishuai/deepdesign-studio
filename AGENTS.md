@@ -158,8 +158,11 @@ node scripts/engine-host.mjs    # node 直查工具（调试用；Rust 侧已不
 忽略本地源**——标记在场时醒目告警并使用 Release 锚定引擎（CI 全新检出无标记，
 不受影响）。删除标记文件即恢复纯 Release 锚定。
 
-**当前工作状态：本地集成模式（引擎 dev 0.2 预发布测引入，2026-11-10 启用；2026-11-12
-适配 moonc 0.10.20 工具链升级）**。
+**当前工作状态：本地集成模式（0.2 = 本地唯一引擎；2026-11-17 用户决策「0.1.11 锚点
+已抛弃」——ENGINE_LOCAL 在场时 --release 打包同样使用本地 dev 0.2 构建，此前
+「硬性忽略」纪律废止；无标记的 CI 全新检出仍回落 GitHub Release 锚点。release 探针
+对 0.2 独有导出 session_event/session_event_in 亦为告警放行档）。2026-11-10 启用；
+2026-11-12 适配 moonc 0.10.20 工具链升级）。
 `ENGINE_LOCAL` 标记在场，`--dev` 跑法持续使用 `../moonviz-dev` 本地构建
 （dev@a6af848，moonc 0.10.20 + moon 0.1.20261104，moon test 338/338 绿；
 工具链升级为引擎侧 substring→slice 弃用 API 迁移，产物 ABI 兼容——契约探针
@@ -389,7 +392,12 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
   画布 SVG 内的用户标签**不参与** kbd 本地化与轨迹折叠（显示文本与 mbt.md 源一致）。
 - **NoNDesign 骨架移植 + ACP 外接智能体 + Figma 双向桥（2026-11-17，用户决策三大改造）**：
   ① **交互骨架**（参考 `../NoNDesign` Flutter 端，只借交互与布局、**主题与能力零变动**）：
-  左 Rail 58px 图标列（⌘1-5 映射不变，检查 S 的 C 位锚点换 `rail-doc`）、顶栏命令条 +
+  左 Rail 58px 图标列（⌘1-5 映射不变，检查 S 的 C 位锚点换 `rail-doc`；**2026-11-18
+  首页改版：`home` 成为默认落地模式**——NoNDesign 式 hero 光晕 + 渐变大标题 +
+  一句话起步输入框（`homeGo` → runGlobalPrompt，成功落地自动进画布）+ **书架**
+  （`#shelf-grid` 作品卡：dd-recent-projects 驱动，打开/移除，Rail 首页/书架双入口 +
+  gotoShelf 锚点滚动；模板精选行复用 mkTplCard）——body.mode-home 隐藏左右栏与画布件，
+  #home-view 绝对覆盖层）、顶栏命令条 +
   Agent 运行胶囊（点击=取消）+ 明暗快捷切换、⌘K 命令面板 `#cmdk`（17 命令全复用现有
   函数；非命令文本回车=转 Agent composer）、状态栏右段 `rev·▣板◇节点·模型·ctx%`
   （context_usage 每 10 步一发 + 预算触发 elide 事件）。
