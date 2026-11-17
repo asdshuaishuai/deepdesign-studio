@@ -95,7 +95,7 @@ if [ -x "$LSREG" ]; then
     | sed 's/^ *path: *//; s/ (0x[0-9a-f]*)$//' | sort -u \
     | while IFS= read -r rp; do [ -e "$rp" ] && echo "$rp"; done | wc -l | tr -d ' ')
 fi
-COUNT_DISK=$(ls -d /Applications/*deep* 2>/dev/null | wc -l | tr -d ' ')
+COUNT_DISK=$(ls -d /Applications/deepDesign*.app 2>/dev/null | wc -l | tr -d ' ')  # 精确匹配本应用；*deep* 会误数同目录的 deepDolphin 等无关应用
 say "验证：磁盘副本=$COUNT_DISK  LaunchServices 注册=$COUNT_LS"
 [ "$COUNT_DISK" = "1" ] || die "磁盘副本数 ≠ 1（=${COUNT_DISK}）"
 [ "$COUNT_LS" -le "1" ] || die "注册数 > 1（=${COUNT_LS}）——存在重复注册"
