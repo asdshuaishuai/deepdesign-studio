@@ -18,6 +18,12 @@ const NEW_ENTRIES={
   '文档模式左栏改为文档目录（点击定位、滚动高亮）；生成原型时画布实时同步':['ドキュメントモードの左パネルが目次に（クリック移動・スクロール連動ハイライト）；プロトタイプ生成中はキャンバスがリアルタイム同期','문서 모드 왼쪽 패널이 목차로(클릭 이동, 스크롤 하이라이트); 프로토타입 생성 중 캔버스 실시간 동기화','Doc mode left rail becomes a document outline (click-to-scroll, scrollspy); canvas syncs live during builds','Le panneau gauche devient un plan du document (clic-scroll, surlignage) ; canevas synchronisé en direct'],
   'Agent 轨迹全量直播：全模式思考流式展示、完成后自动收缩；终态卡时序修复':['Agent 軌跡の完全ライブ配信：全モードで思考をストリーミング表示、完了後に自動収縮；終端カードの順序を修正','Agent轨迹 전체 라이브: 모든 모드에서思考 스트리밍, 완료 후 자동 축소; 종료 카드 순서 수정','Full live agent trace: streaming thinking in all modes, auto-collapsed when done; final-card ordering fixed',"Trace agent en direct : réflexion en flux dans tous les modes, repliée après ; ordre des cartes corrigé"],
   '引擎升级 0.1.10：genUI 建页第一层锚定，组合意图丢段可见（skipped）、变体错误即文档':['エンジン 0.1.10：genUI 第一層を固定、結合意図の欠落セグメント可視化（skipped）、バリアントエラーが文書化','엔진 0.1.10: genUI 1계층 고정, 복합 의도 누락 세그먼트 가시화(skipped), 변형 오류 문서화','Engine 0.1.10: genUI first-tier pinned, dropped combined-intent segments visible (skipped), variant errors as documentation','Moteur 0.1.10 : genUI premier niveau épinglé, segments perdus visibles (skipped), erreurs de variante documentées'],
+  /* ── NoNDesign 骨架移植（Rail/命令面板/运行胶囊/状态栏）── */
+  '问 deepDesign，或运行一个命令…':['deepDesignに問うか、コマンドを実行…','deepDesign에게 물하거나 명령 실행…','Ask deepDesign, or run a command…',"Demandez à deepDesign ou lancez une commande…"],
+  'Agent 运行中 · 点击取消':['Agent 実行中 · クリックで取消','Agent 실행 중 · 클릭하여 취소','Agent running · click to cancel','Agent en cours · cliquer pour annuler'],
+  '命令面板（⌘K）':['コマンドパレット（⌘K）','명령 팔레트（⌘K）','Command palette (⌘K)','Palette de commandes (⌘K)'],
+  '切换深色 / 浅色模式':['ダーク/ライト切替','다크/라이트 전환','Toggle dark / light mode','Basculer sombre / clair'],
+  '发送给 Agent':['Agent へ送信','Agent에 보내기','Send to Agent',"Envoyer à l'Agent"],
   /* ── Agent 取消能力 ── */
   '请求取消':['リクエスト取消','요청 취소','Cancel','Annuler'],
   '当前没有运行中的任务':['現在実行中のタスクはありません','현재 실행 중인 작업이 없습니다','No task is currently running','Aucune tâche en cours'],

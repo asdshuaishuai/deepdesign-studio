@@ -2357,31 +2357,42 @@ pub async fn run_with_mode(
         }
         step += 1;
         // 上下文管理（请求侧收缩；messages 本体完整保留作轨迹/journal）：
-        // L1 常态去supersede + L2 预算守卫（逐模型窗口，未命中回落 128K）
+        // L1 常态去supersede + L2 预算守卫（逐模型窗口，未命中回落 128K）。
+        // context_usage 每 10 步常态发一次（前端状态栏 ctx 比例——2026-11-17
+        // NoNDesign 骨架移植：AI 状态织进 UI），预算触发时额外发 elide 事件。
         let mut request_messages = supersede_stale_tool_results(&messages);
         let est = estimate_context_bytes(&request_messages);
+        if step % 10 == 0 || !context_event_sent {
+            context_event_sent = true;
+            emit(
+                "context_usage",
+                json!({
+                    "est_tokens": est / 3,
+                    "budget_tokens": context_budget_bytes / 3,
+                    "elided_bytes": 0,
+                    "action": "tick",
+                }),
+            );
+        }
         if est > (context_budget_bytes as f64 * CONTEXT_BUDGET_RATIO) as usize {
             let (shrunk, elided_bytes) = elide_stale_tool_contents(&request_messages);
             request_messages = shrunk;
-            if !context_event_sent {
-                context_event_sent = true;
-                eprintln!(
-                    "[agent] context budget: est ~{} tokens over {:.0}% of {} — elided {} bytes of stale tool output",
-                    est / 3,
-                    CONTEXT_BUDGET_RATIO * 100.0,
-                    context_budget_bytes / 3,
-                    elided_bytes
-                );
-                emit(
-                    "context_usage",
-                    json!({
-                        "est_tokens": est / 3,
-                        "budget_tokens": context_budget_bytes / 3,
-                        "elided_bytes": elided_bytes,
-                        "action": "elide_stale_tool",
-                    }),
-                );
-            }
+            eprintln!(
+                "[agent] context budget: est ~{} tokens over {:.0}% of {} — elided {} bytes of stale tool output",
+                est / 3,
+                CONTEXT_BUDGET_RATIO * 100.0,
+                context_budget_bytes / 3,
+                elided_bytes
+            );
+            emit(
+                "context_usage",
+                json!({
+                    "est_tokens": est / 3,
+                    "budget_tokens": context_budget_bytes / 3,
+                    "elided_bytes": elided_bytes,
+                    "action": "elide_stale_tool",
+                }),
+            );
         }
         // 瞬时错误（限流/过载/网络抖动/TLS 握手被掐）指数退避重试：
         // 本机网络对部分端点间歇阻断，单次 800ms 重试实测不够。
