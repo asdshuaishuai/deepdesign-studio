@@ -148,14 +148,20 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 /* 左栏 */
 .left{width:252px;background:rgba(255,255,255,.92);border-right:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
 /* 模式 Rail（NoNDesign 骨架）：58px 图标列，背景/边框与左栏同族（各主题成组覆盖） */
-#rail{width:58px;background:rgba(255,255,255,.92);border-right:var(--bd);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:6px;flex-shrink:0;z-index:10}
-.rail-btn{width:42px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:transparent;color:var(--tx2);border-radius:10px;cursor:pointer;position:relative}
-.rail-btn .ic{width:17px;height:17px}
-.rail-btn:hover{background:rgba(0,0,0,.06);color:var(--tx)}
-.rail-btn.on{background:var(--acc);color:#fff}
-.rail-btn.on .rail-tt{color:#fff}
-.rail-btn .rail-tt{font-size:9px;line-height:1;color:var(--tx3)}
-.rail-sep{width:28px;height:1px;background:var(--bd);margin:4px 0}
+/* ================= 伪 mac 程序坞（Rail Dock 化） ================= */
+#rail{position:fixed;left:50%;transform:translateX(-50%);bottom:36px;z-index:45;
+  display:flex;flex-direction:row;align-items:center;gap:3px;padding:6px 9px;
+  background:color-mix(in srgb,var(--cvs) 62%,transparent);border:1px solid var(--bd);border-radius:20px;
+  backdrop-filter:blur(18px) saturate(1.4);box-shadow:0 14px 44px rgba(15,23,42,.20)}
+.rail-btn{position:relative;width:46px;height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:none;background:transparent;color:var(--tx2);border-radius:13px;cursor:pointer;transition:transform .16s cubic-bezier(.34,1.56,.64,1),background .14s,color .14s}
+.rail-btn .ic{width:18px;height:18px}
+.rail-btn:hover{background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--tx);transform:translateY(-5px) scale(1.1)}
+.rail-btn:active{transform:translateY(-1px) scale(.98)}
+.rail-btn.on{color:var(--acc);background:color-mix(in srgb,var(--acc) 13%,transparent)}
+.rail-btn.on::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
+.rail-btn.on .rail-tt{color:var(--acc);font-weight:700}
+.rail-btn .rail-tt{font-size:8.5px;line-height:1;color:var(--tx3)}
+.rail-sep{width:1px;height:26px;background:var(--bd);margin:0 3px}
 .ltabs{display:flex;border-bottom:var(--bd);font-size:12px;background:rgba(0,0,0,.02)}
 .ltab{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 0;border:none;background:transparent;color:var(--tx2);cursor:pointer;font-weight:500;border-bottom:2px solid transparent}
 .ltab.on{color:var(--acc-tx);border-bottom-color:var(--acc-tx);font-weight:600;background:rgba(0,122,255,.04)}
@@ -232,7 +238,6 @@ body.mode-home .left,body.mode-home .right,body.mode-home .canvas-tail,body.mode
 /* home 模式下机壳融为一体：分隔线全部去除 + 首页滚动条隐藏（滚轮/触控板仍可滚） */
 body.mode-home .topbar{border-bottom-color:transparent}
 body.mode-home .statusbar{border-top-color:transparent}
-body.mode-home #rail{border-right-color:transparent}
 #home-view::-webkit-scrollbar{width:0;height:0}
 /* 环境级微染 + 点阵：只做氛围，不抢界面 */
 #home-view::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
@@ -241,7 +246,7 @@ body.mode-home #rail{border-right-color:transparent}
     radial-gradient(760px 460px at 98% 26%, color-mix(in srgb,var(--acc2,var(--acc)) 7%,transparent), transparent 60%),
     radial-gradient(color-mix(in srgb,var(--tx) 4%,transparent) 1px,transparent 1px);
   background-size:auto,auto,22px 22px}
-.home-scroll{position:relative;z-index:1;padding:64px 48px 80px;box-sizing:border-box}
+.home-scroll{position:relative;z-index:1;padding:64px 48px 128px;box-sizing:border-box}
 .home-inner{max-width:860px;margin:0 auto}
 .home-hero{text-align:center;padding:28px 0 6px}
 .home-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 13px;border-radius:999px;border:1px solid color-mix(in srgb,var(--acc) 32%,transparent);color:var(--acc);font-size:11px;font-weight:600;letter-spacing:.4px}
@@ -280,7 +285,7 @@ body.mode-home #rail{border-right-color:transparent}
    只在 线稿/高保真（design-active）出现——文档/源码/演示模式没有可修的画布 */
 .canvas-tail #tail-fix{height:22px;font-size:11px;padding:0 9px;border-radius:6px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-weight:600;letter-spacing:0;margin-right:0;flex-shrink:0}
 body:not(.design-active) #tail-fix{display:none!important}
-.canvas-scroll{flex:1;overflow:auto;position:relative;
+.canvas-scroll{flex:1;overflow:auto;position:relative;padding-bottom:96px;
   background-image:radial-gradient(circle,rgba(0,0,0,.065) 1px,transparent 1px);background-size:22px 22px}
 .ctools{position:sticky;top:12px;left:12px;z-index:20;display:inline-flex;align-items:center;gap:2px;padding:4px;border-radius:var(--r-lg);box-shadow:var(--sh-pop);margin:12px 0 0 12px;background:rgba(255,255,255,.9);backdrop-filter:blur(16px);border:1px solid rgba(0,0,0,.07);width:max-content}
 .ctool{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--tx2);border-radius:8px;cursor:pointer}
