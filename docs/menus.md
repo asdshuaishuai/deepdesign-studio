@@ -134,6 +134,15 @@
 
 ## 5. 实现边界
 
+### 文件下拉（fmenu，2026-11-17 新增 Figma 桥两项）
+
+| 项 | 动作 | 说明 |
+| --- | --- | --- |
+| 导出 Figma 包… | `exportFigma()` | `export_figma_package`：逐板 SVG + `deepdesign.json` manifest + README → `~/Documents/deepDesign/deepDesign-figma-<ts>/`；Figma 端用 `figma-plugin/`（完全离线插件桥）导入为真实可编辑图层 |
+| 导入 Figma 选区 JSON… | `importFigma()` | 插件「导出当前页节点」产物 → `composeFigmaImportOps`（cap 300 节点）→ create 画板 + place 走 HumanGate 落画布 |
+
+命令面板（⌘K）含同名两项；NoNDesign 骨架新增的 Rail/命令面板/状态栏不进本表（非菜单面）。
+
 - 菜单不持有任何状态：每个动作都调用既有前端函数，最终走 `runOp` → `engApply`（WebView 内 wasm `apply_human_op` 直调）→ canonical `.mbt.md` 回写 → 重新渲染。
 - 引擎 `duplicate` 操作已加入 MBT 操作表（`cli/main.mbt::apply_mbt_operation`），与直接命令 `duplicate <src> <new_name>` 同源。
 - 右键菜单容器 `#ctxmenu` 动态构建；点击任意处 / 窗口失焦自动关闭。

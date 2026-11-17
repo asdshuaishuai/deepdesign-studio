@@ -513,6 +513,119 @@ async fn acp_close(
     Ok(serde_json::json!({"ok": true}))
 }
 
+/// 导出 Figma 包：逐板 session_export_svg（矢量拖入即图层）+ query_nodes（几何/样式
+/// manifest）+ README → ~/Documents/deepDesign/deepDesign-figma-<ts>/。
+/// Figma 端用 figma-plugin/（完全离线插件桥，与 figma-ops 项目零引用）。
+#[tauri::command]
+async fn export_figma_package(
+    _app: tauri::AppHandle,
+    mbt_b64: String,
+) -> Result<serde_json::Value, String> {
+    use base64::Engine as _;
+    let mbt = base64::engine::general_purpose::STANDARD
+        .decode(mbt_b64.trim())
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .ok_or("mbt_b64_invalid")?;
+    export_figma_package_inner(&mbt).await
+}
+
+/// 导出核心（与 Tauri 解耦——cargo test 直调）。
+async fn export_figma_package_inner(mbt_in: &str) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    let mbt = mbt_in;
+    if mbt.is_empty() {
+        return Err("ddp_mbt_empty".into());
+    }
+    let list = crate::EngineHost.call("session_list_artboards", &mbt, "").await?;
+    if list.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        return Err("list_artboards_failed".into());
+    }
+    let boards_in = list
+        .get("data")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let ts = now_ms();
+    let home = std::env::var("HOME").unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+    let dir = PathBuf::from(home)
+        .join("Documents")
+        .join("deepDesign")
+        .join(format!("deepDesign-figma-{ts}"));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir:{e}"))?;
+    let mut manifest_boards: Vec<serde_json::Value> = Vec::new();
+    for ab in &boards_in {
+        let id = ab.get("id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+        let svg = crate::EngineHost.call("session_export_svg", &mbt, &id).await?;
+        let svg_str = svg
+            .pointer("/data/svg")
+            .or_else(|| svg.pointer("/svg"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !svg_str.is_empty() {
+            let _ = std::fs::write(dir.join(format!("board-{id}.svg")), svg_str);
+        }
+        let nodes = crate::EngineHost.call("session_query_nodes", &mbt, &id).await?;
+        let node_arr = nodes
+            .get("data")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        manifest_boards.push(serde_json::json!({
+            "id": id,
+            "name": id,
+            "width": ab.get("width").cloned().unwrap_or(json!(390)),
+            "height": ab.get("height").cloned().unwrap_or(json!(844)),
+            "background": "#FFFFFF",
+            "nodes": node_arr,
+        }));
+    }
+    let manifest = serde_json::json!({
+        "exportedAt": ts as u64,
+        "generator": format!("deepDesign v{}", env!("CARGO_PKG_VERSION")),
+        "boards": manifest_boards,
+    });
+    std::fs::write(
+        dir.join("deepdesign.json"),
+        serde_json::to_string_pretty(&manifest).map_err(|e| format!("json:{e}"))?,
+    )
+    .map_err(|e| format!("write:{e}"))?;
+    std::fs::write(
+        dir.join("README.txt"),
+        format!(
+            "deepDesign → Figma 导出包（{} 板）\n\n             1. Figma → Plugins → Development → Import plugin from manifest…\n             2. 选择本仓库 figma-plugin/manifest.json\n             3. 插件里「选择 deepdesign.json 导入」——逐板建真实可编辑图层\n             4. 反向：插件「导出当前页节点」→ deepDesign 文件菜单「导入 Figma 选区 JSON」\n\n             导出时间：{}\n",
+            manifest_boards.len(),
+            chrono_like_ts(ts)
+        ),
+    )
+    .map_err(|e| format!("write:{e}"))?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "dir": dir.to_string_lossy(),
+        "boards": manifest_boards.len(),
+    }))
+}
+
+/// 可读时间戳（避免引入 chrono：epoch 秒格式化为 UTC YYYY-MM-DD HH:MM）
+fn chrono_like_ts(ms: u128) -> String {
+    let secs = (ms / 1000) as i64;
+    let days = secs / 86400;
+    let rem = secs % 86400;
+    let (h, mi, _s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    // civil-from-days（Howard Hinnant 算法）
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02} {h:02}:{mi:02}")
+}
+
 pub fn run() {
     tauri::Builder::default()
         // 单实例保证：二次启动（任何来源/路径）不再并跑，聚焦既有主窗
@@ -542,7 +655,8 @@ pub fn run() {
             acp_prompt,
             acp_cancel,
             acp_permission_reply,
-            acp_close
+            acp_close,
+            export_figma_package
         ])
         .on_window_event(|window, event| {
             // 脏文档关窗拦截：有未保存更改时拦下系统关闭，交前端确认（Rust 不解释
@@ -1116,5 +1230,31 @@ moonviz:
         let last = tampered.len() - 1;
         tampered[last] ^= 0xFF;
         assert!(decrypt_ddp(&tampered, "pw").is_err(), "篡改任意字节必须拒绝");
+    }
+}
+
+#[cfg(test)]
+mod figma_export_tests {
+    use super::*;
+
+    /// 导出包契约：manifest 形状（exportedAt/boards[{id,w,h,nodes{rect}}]）+ 板 SVG
+    /// 落盘 + README。文档用探针实证过的合法 canonical（单板单节点）。
+    #[tokio::test]
+    async fn export_figma_package_writes_manifest_and_svgs() {
+        let mbt = "---\nmoonbit:\n  backend: native\n  import:\n    - path: moonviz/decl\n      alias: decl\nmoonviz:\n  format: visual-document\n  revision: 1\n  entry: w\n---\n\n# w\n\n<!-- moonviz:artboard w -->\n```mbt\n///| @moonviz:visual w\nfn visual_w() -> @decl.Prototype {\n  let page = @decl.prototype(name=\"w\", width=390, height=844)\n  page.add(@decl.generic_node(id=\"t1\",component=\"body_text\",kind=\"text\",width=@decl.fixed(200),height=@decl.fixed(24),x=20,y=40,text=\"你好\",fill=\"none\",text_color=\"#14201A\",font_size=14,visible=true))\n  page\n}\n```\n";
+        let r = export_figma_package_inner(mbt).await.expect("导出失败");
+        assert_eq!(r["ok"], serde_json::json!(true), "{r}");
+        assert_eq!(r["boards"], serde_json::json!(1), "{r}");
+        let dir = r["dir"].as_str().unwrap().to_string();
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(std::path::Path::new(&dir).join("deepdesign.json")).expect("manifest 缺失")).unwrap();
+        assert!(manifest["exportedAt"].as_u64().is_some(), "{manifest}");
+        let b0 = &manifest["boards"][0];
+        assert_eq!(b0["id"], serde_json::json!("w"));
+        assert_eq!(b0["nodes"].as_array().map(|a| a.len()), Some(1), "manifest 应含 1 节点：{b0}");
+        assert!(b0["nodes"][0]["rect"]["w"].as_f64().is_some(), "几何必须在 rect 内：{b0}");
+        assert!(std::path::Path::new(&dir).join("board-w.svg").exists(), "SVG 未落盘");
+        assert!(std::path::Path::new(&dir).join("README.txt").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -387,6 +387,30 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
 - **轨迹文本呈现治理**：同一提示词不再于轨迹中重复全文——tl-user/续轮回答行/assistant 计划行
   均折叠（`<details class="tl-fold">`，120/80 字截断 + 悬停全文）；trackAgent 汇总卡截 90 字。
   画布 SVG 内的用户标签**不参与** kbd 本地化与轨迹折叠（显示文本与 mbt.md 源一致）。
+- **NoNDesign 骨架移植 + ACP 外接智能体 + Figma 双向桥（2026-11-17，用户决策三大改造）**：
+  ① **交互骨架**（参考 `../NoNDesign` Flutter 端，只借交互与布局、**主题与能力零变动**）：
+  左 Rail 58px 图标列（⌘1-5 映射不变，检查 S 的 C 位锚点换 `rail-doc`）、顶栏命令条 +
+  Agent 运行胶囊（点击=取消）+ 明暗快捷切换、⌘K 命令面板 `#cmdk`（17 命令全复用现有
+  函数；非命令文本回车=转 Agent composer）、状态栏右段 `rev·▣板◇节点·模型·ctx%`
+  （context_usage 每 10 步一发 + 预算触发 elide 事件）。
+  ② **ACP**（`src-tauri/src/acp.rs`，零新依赖）：线格式=newline-delimited JSON-RPC
+  （NoNDesign step_adapter 实证）；12 项 CLI 目录（dsh 在内，pivot 占位灰）+ PATH 强化
+  （nvm 降序/zsh -lc/常见目录）+ 探测缓存；**工作区隔离**——canonical 先导出
+  `app_data/acp-workspace/<label>/mbt.md`，DDP 仍是唯一事实源；事件经 agent-event 同
+  通道（run id 注入，轨迹零改动）；**权限全量确认框**（用户决策，非 NoNDesign 自动放行
+  MVP）；fs 回调越界即 PermissionError；prompt 终止读回 mbt.md → EngineHost render →
+  done 信封走 applyAgentTerminal 回灌画布。假 agent 集成测试
+  `fake_agent_full_chain_probe_prompt_permission`（fixtures/fake_acp_agent.py）锚定全链。
+  教训三件：`#[tauri::command]` 的 fn 不能带 `pub`（宏重导出冲突 E0255）；跨线程
+  prompt id 用会话字段不用 thread_local（泵线程读不到）；session/update 通知必须先于
+  通配分发（无 id 通知曾被 `_ => return` 全吞）。
+  ③ **Figma 桥**（figma-plugin/ 三文件，完全离线 networkAccess=none，与 figma-ops
+  项目零引用）：导出 `export_figma_package_inner`（逐板 data.svg + query_nodes
+  manifest + README → ~/Documents/deepDesign/）；导入 `composeFigmaImportOps`
+  （TEXT→body_text 其余→rect、**cap 300**、不可见跳过、几何在 n.rect——塌零实证、
+  值引号转义）→ HumanGate 逐条落画布；SVG 信封在 **data.svg**（嵌套，顶层读取曾为空）。
+  i18n：新增键一律进 i18n-catalog.cjs 的 NEW_ENTRIES（extra.json 是重建产物），
+  本次 +23 键（510→528）。
 - **前置缓存上下文分层（2026-11-12，用户反馈「每次都感觉记忆有点低」）**：三类根因
   （跨 run 无项目理解层 / 70% 悬崖改写历史 / read_mbt 全文拼图景）分三层治：
   ① **项目地图**（`compose_project_map`）：run 起点（闲置清扫后）确定性构建一次——全部

@@ -549,6 +549,34 @@ function fn(name){const start=script.indexOf('function '+name+'(');assert(start>
 const context=vm.createContext({console,window:{addEventListener(){}},document:{addEventListener(){},querySelectorAll:()=>[],body:{nodeType:1,querySelectorAll:()=>[]},createTreeWalker:()=>({nextNode:()=>null}),documentElement:{classList:{add(){}}},getElementById:element},navigator:{platform:'Win32',userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},performance:{now:()=>0},setTimeout,clearTimeout,requestAnimationFrame(fn){if(typeof fn==='function')fn();},MutationObserver:class{observe(){}},NodeFilter:{SHOW_TEXT:4},btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),encodeURIComponent,decodeURIComponent,escape,unescape});
 // Use the real state/engine-seam/apply/queue functions, with presentation stubbed.
 vm.runInContext(script.slice(script.indexOf("const APP_VER"),script.indexOf('function mbtResult(')),context);
+/* Figma 桥：composeFigmaImportOps 纯函数契约（2026-11-17 P3）
+ * —— TEXT→body_text / 其余→rect、cap 300、不可见跳过、首条 op=create 画板、
+ * 几何取 n.rect（顶层读取曾塌零）、值带引号转义。 */
+{
+  const fnSrc=(script.slice(script.indexOf('function composeFigmaImportOps('),script.indexOf('/* ---------- ACP 外接智能体')>0?script.indexOf('/* ---------- ACP 外接智能体'):undefined)||'');
+  assert(fnSrc.includes('function composeFigmaImportOps'),'composeFigmaImportOps 缺失——请同步检查');
+  const ctx2=vm.createContext({...context});
+  vm.runInContext(fnSrc,ctx2);
+  const sample={boards:[{id:'b',width:500,height:500,nodes:[
+    {id:'1:1',component:'body_text',text:'标题',rect:{x:10,y:5,w:200,h:24},style:{visible:true,text_color:'#111111',font_size:20}},
+    {id:'1:2',component:'card',text:'',rect:{x:0,y:0,w:80,h:32},style:{visible:true,fill:'#FF0000',radius:8}},
+    {id:'1:3',text:'隐藏',rect:{x:1,y:1,w:9,h:9},style:{visible:false}},
+    {id:'1:4',text:'超限',rect:{x:2,y:2,w:9,h:9},style:{visible:true}},
+  ]}]};
+  const ops=vm.runInContext(`composeFigmaImportOps(${JSON.stringify(sample)})`,ctx2);
+  assert(ops[0].startsWith('create figma_'),'首条应 create 画板：'+ops[0]);
+  assert(ops.some(o=>o.includes('body_text'))&&ops.some(o=>o.includes(' rect ')),'组件映射错误');
+  assert(!ops.some(o=>o.includes('隐藏')),'不可见节点应跳过');
+  assert(ops.length===4,'应 1 create + 3 place（cap 前）：'+ops.length);
+  // cap：401 节点 → 1 create + 300 place
+  const many={boards:[{nodes:Array.from({length:401},(_,i)=>({id:'x'+i,text:'',rect:{x:i,y:0,w:9,h:9},style:{visible:true}}))}]};
+  const ops2=vm.runInContext(`composeFigmaImportOps(${JSON.stringify(many)})`,ctx2);
+  assert(ops2.length===301,'cap 300 应生效：'+ops2.length);
+  // 引号转义
+  const q=vm.runInContext(`composeFigmaImportOps({boards:[{nodes:[{text:'a"b',rect:{x:0,y:0,w:9,h:9},style:{visible:true}}]}]})`,ctx2);
+  assert(q[1].includes('a\\"b'),'引号必须转义：'+q[1]);
+}
+
 vm.runInContext(['newId','mbtResult','applyMbtResult','serializeProject','runOp','runOpNow','addBoard','quickStart','createBlank','newProject'].map(fn).join('\n'),context);
 vm.runInContext(`
 function renderStage(){} function renderAbs(){} function renderFlows(){} function renderInspector(){} function renderLayersIfOpen(){} function updateSel(){} function setStatus(){} function closeAgentPop(){} function cancelInline(){} async function acpInvalidate(){} // ACP 会话失效（项目切换钩子；测试切片不含其真身）

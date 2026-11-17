@@ -1,0 +1,32 @@
+<div style="font-family:-apple-system,sans-serif;padding:14px;font-size:13px">
+  <b>deepDesign Bridge</b>
+  <p style="color:#666;font-size:12px">双向桥：导入 deepDesign 导出包为可编辑 Figma 图层；导出选区回 deepDesign。</p>
+  <button id="pick" style="width:100%;padding:8px;margin-bottom:8px">① 选择 deepdesign.json 导入</button>
+  <button id="exp" style="width:100%;padding:8px">② 导出当前页节点 → 下载 JSON</button>
+  <pre id="log" style="font-size:11px;color:#888;white-space:pre-wrap"></pre>
+  <script>
+    document.getElementById('pick').onclick = () => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = '.json';
+      inp.onchange = () => {
+        const fr = new FileReader();
+        fr.onload = () => parent.postMessage({ pluginMessage: { type: 'import', data: JSON.parse(fr.result) } }, '*');
+        fr.readAsText(inp.files[0]);
+      };
+      inp.click();
+    };
+    document.getElementById('exp').onclick = () => {
+      parent.postMessage({ pluginMessage: { type: 'export-selection' } }, '*');
+    };
+    onmessage = (e) => {
+      if (e.data.pluginMessage && e.data.pluginMessage.type === 'export-done') {
+        const blob = new Blob([e.data.pluginMessage.json], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'deepdesign-import.json';
+        a.click();
+        document.getElementById('log').textContent = '已下载 deepdesign-import.json — deepDesign 文件菜单「导入 Figma 选区 JSON」落画布';
+      }
+    };
+  </script>
+</div>

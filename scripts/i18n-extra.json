@@ -23,6 +23,12 @@
   "Full live agent trace: streaming thinking in all modes, auto-collapsed when done; final-card ordering fixed",
   "Trace agent en direct : réflexion en flux dans tous les modes, repliée après ; ordre des cartes corrigé"
  ],
+ "Agent 运行中 · 点击取消": [
+  "Agent 実行中 · クリックで取消",
+  "Agent 실행 중 · 클릭하여 취소",
+  "Agent running · click to cancel",
+  "Agent en cours · cliquer pour annuler"
+ ],
  "HTML 原型": [
   "HTML プロトタイプ",
   "HTML 프로토타입",
@@ -173,6 +179,12 @@
   "About",
   "À propos"
  ],
+ "切换深色 / 浅色模式": [
+  "ダーク/ライト切替",
+  "다크/라이트 전환",
+  "Toggle dark / light mode",
+  "Basculer sombre / clair"
+ ],
  "切换状态": [
   "状態を切替",
   "상태 전환",
@@ -221,11 +233,23 @@
   "Delete board {id}? (Undo with ⌘Z)",
   "Supprimer la planche {id} ? (⌘Z pour annuler)"
  ],
+ "发送给 Agent": [
+  "Agent へ送信",
+  "Agent에 보내기",
+  "Send to Agent",
+  "Envoyer à l'Agent"
+ ],
  "取消请求失败：": [
   "取消リクエスト失敗：",
   "취소 요청 실패:",
   "Cancellation request failed:",
   "Échec de la demande d'annulation :"
+ ],
+ "命令面板（⌘K）": [
+  "コマンドパレット（⌘K）",
+  "명령 팔레트（⌘K）",
+  "Command palette (⌘K)",
+  "Palette de commandes (⌘K)"
  ],
  "在画板 {ab} 为节点 {node} 添加交互": [
   "ボード {ab} のノード {node} にインタラクションを追加",
@@ -809,6 +833,12 @@
   "In-process WASM engine host",
   "Hôte moteur WASM intra-processus"
  ],
+ "问 deepDesign，或运行一个命令…": [
+  "deepDesignに問うか、コマンドを実行…",
+  "deepDesign에게 물하거나 명령 실행…",
+  "Ask deepDesign, or run a command…",
+  "Demandez à deepDesign ou lancez une commande…"
+ ],
  "闲置画板清扫：Agent run 前后自动清理空占位": [
   "アイドルアートボードの清掃：Agent run の前後で空きプレースホルダーを自動削除",
   "유휴 아트보드 정리: Agent 실행 전후로 빈 자리표시자 자동 정리",
@@ -833,35 +863,113 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
- "问 deepDesign，或运行一个命令…": [
-  "deepDesignに問うか、コマンドを実行…",
-  "deepDesign에게 물하거나 명령 실행…",
-  "Ask deepDesign, or run a command…",
-  "Demandez à deepDesign ou lancez une commande…"
+ "导出 Figma 包…": [
+  "Figma パッケージを書き出す…",
+  "Figma 패키지 내보내기…",
+  "Export Figma package…",
+  "Exporter le paquet Figma…"
  ],
- "Agent 运行中 · 点击取消": [
-  "Agent 実行中 · クリックで取消",
-  "Agent 실행 중 · 클릭하여 취소",
-  "Agent running · click to cancel",
-  "Agent en cours · cliquer pour annuler"
+ "导入 Figma 选区 JSON…": [
+  "Figma 選択範囲 JSON を読み込む…",
+  "Figma 선택 JSON 가져오기…",
+  "Import Figma selection JSON…",
+  "Importer la sélection Figma (JSON)…"
  ],
- "命令面板（⌘K）": [
-  "コマンドパレット（⌘K）",
-  "명령 팔레트（⌘K）",
-  "Command palette (⌘K)",
-  "Palette de commandes (⌘K)"
+ "Figma 包已导出（{n} 板）→ {dir}": [
+  "Figma パッケージ書き出し完了（{n} 板）→ {dir}",
+  "Figma 패키지 내보내기 완료({n}개 보드) → {dir}",
+  "Figma package exported ({n} boards) → {dir}",
+  "Paquet Figma exporté ({n} planches) → {dir}"
  ],
- "切换深色 / 浅色模式": [
-  "ダーク/ライト切替",
-  "다크/라이트 전환",
-  "Toggle dark / light mode",
-  "Basculer sombre / clair"
+ "Figma 导入：{n} 条操作执行中…": [
+  "Figma 読み込み：{n} 操作を実行中…",
+  "Figma 가져오기: {n}개 작업 실행 중…",
+  "Figma import: running {n} ops…",
+  "Importation Figma : {n} opérations en cours…"
  ],
- "发送给 Agent": [
-  "Agent へ送信",
-  "Agent에 보내기",
-  "Send to Agent",
-  "Envoyer à l'Agent"
+ "Figma 导入完成：成功 {okc}，拒绝 {failc}": [
+  "Figma 読み込み完了：成功 {okc}、拒否 {failc}",
+  "Figma 가져오기 완료: 성공 {okc}, 거부 {failc}",
+  "Figma import done: {okc} ok, {failc} rejected",
+  "Importation Figma terminée : {okc} OK, {failc} refusées"
+ ],
+ "没有可导入的节点（全部不可见或为空）": [
+  "読み込み可能なノードがありません（非表示または空）",
+  "가져올 노드가 없습니다(모두 숨김 또는 빈)",
+  "No importable nodes (all hidden or empty)",
+  "Aucun nœud importable (tous cachés ou vides)"
+ ],
+ "外部智能体（ACP）": [
+  "外部エージェント（ACP）",
+  "외부 에이전트(ACP)",
+  "External agents (ACP)",
+  "Agents externes (ACP)"
+ ],
+ "内置管线": [
+  "内蔵パイプライン",
+  "내장 파이프라인",
+  "Built-in pipeline",
+  "Pipeline intégré"
+ ],
+ "完整握手检测": [
+  "完全ハンドシェイク検査",
+  "전체 핸드셰이크 검사",
+  "Full handshake probe",
+  "Poignée de main complète"
+ ],
+ "已验证": [
+  "検証済み",
+  "검증됨",
+  "Verified",
+  "Vérifié"
+ ],
+ "已安装": [
+  "インストール済み",
+  "설치됨",
+  "Installed",
+  "Installé"
+ ],
+ "未安装": [
+  "未インストール",
+  "미설치",
+  "Not installed",
+  "Non installé"
+ ],
+ "默认": [
+  "デフォルト",
+  "기본",
+  "Default",
+  "Par défaut"
+ ],
+ "权限请求": [
+  "権限リクエスト",
+  "권한 요청",
+  "Permission request",
+  "Demande de permission"
+ ],
+ "外部智能体请求权限": [
+  "外部エージェントが権限を要求",
+  "외부 에이전트 권한 요청",
+  "External agent requests permission",
+  "L'agent externe demande une permission"
+ ],
+ "外部智能体执行中": [
+  "外部エージェント実行中",
+  "외부 에이전트 실행 중",
+  "External agent running",
+  "Agent externe en cours"
+ ],
+ "外部智能体完成（未改动项目文件）": [
+  "外部エージェント完了（プロジェクトファイル未変更）",
+  "외부 에이전트 완료(프로젝트 파일 미변경)",
+  "External agent finished (no project file changes)",
+  "Agent externe terminé (aucun fichier modifié)"
+ ],
+ "外部智能体完成——改动已回灌画布（AgentGate 校验）": [
+  "外部エージェント完了——変更をキャンバスへ還元（AgentGate 検証）",
+  "외부 에이전트 완료—변경을 캔버스에 재적용(AgentGate 검증)",
+  "External agent finished — changes re-applied to canvas (AgentGate)",
+  "Agent externe terminé — modifications réappliquées au canevas (AgentGate)"
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",
