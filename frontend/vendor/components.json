@@ -107,7 +107,10 @@
     "category": "display",
     "variants": [
       "primary",
-      "success"
+      "success",
+      "warning",
+      "info",
+      "error"
     ],
     "default_size": [
       64,

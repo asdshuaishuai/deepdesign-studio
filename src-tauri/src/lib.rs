@@ -439,10 +439,13 @@ async fn acp_session(
 
 #[tauri::command]
 async fn acp_prompt(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     reg: tauri::State<'_, acp::AcpRegistry>,
     session: String,
     text: String,
     mbt_b64: String,
+    run: u64,
 ) -> Result<serde_json::Value, String> {
     use base64::Engine as _;
     let mbt = base64::engine::general_purpose::STANDARD
@@ -462,6 +465,9 @@ async fn acp_prompt(
     if !mbt.is_empty() {
         std::fs::write(sess.workspace.join("mbt.md"), &mbt).map_err(|e| format!("export:{e}"))?;
     }
+    // BUG1（审查修复）：换绑在飞 run 与事件出口——sink 绑死建会话时刻 run 会把
+    // 第二次 prompt 的全部事件串进旧轨迹块且 acpRun 永不释放
+    sess.rebind_flight(run, acp_sink(&app, window.label(), run));
     tauri::async_runtime::spawn_blocking(move || sess.prompt(&text))
         .await
         .map_err(|e| format!("join:{e}"))??;

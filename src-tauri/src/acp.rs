@@ -297,7 +297,10 @@ pub struct AcpSession {
     sid: Mutex<String>,
     pub agent: String,
     pub workspace: PathBuf,
-    pub run_id: u64,
+    /// 在飞 run id + 事件出口（**每次 prompt 置换**——旧实现绑死建会话时刻的
+    /// run id，第二次 prompt 的全部事件带旧 run → 前端 acpRun 永不匹配、
+    /// agentBusy 卡死、轨迹串块。2026-11-17 审查修复）
+    flight: Mutex<(u64, Sink)>,
     /// tokio handle（finalize 在泵线程做 EngineHost render——block_on 需要）
     rt: Option<tokio::runtime::Handle>,
     writer: mpsc::Sender<Value>,
@@ -325,6 +328,11 @@ impl AcpSession {
         self.sid.lock().unwrap().clone()
     }
 
+    fn flight_snapshot(&self) -> (u64, Sink) {
+        let f = self.flight.lock().unwrap();
+        (f.0, f.1.clone())
+    }
+
     /// spawn + initialize + session/new（阻塞握手；调用方放 spawn_blocking）。
     /// `rt`：tokio handle（finalize 的 EngineHost render 用；测试可传 None——
     /// 无 handle 时 finalize 降级为「不回灌」信封）。
@@ -348,6 +356,11 @@ impl AcpSession {
     }
 
     /// session/prompt：发请求即返回；response 到达由泵线程 finalize（done/failed 信封）。
+    /// 每次 prompt 前由命令层调用：换绑在飞 run 与事件出口（BUG1 修复落点）。
+    pub fn rebind_flight(&self, run_id: u64, sink: Sink) {
+        *self.flight.lock().unwrap() = (run_id, sink);
+    }
+
     pub fn prompt(&self, text: &str) -> Result<(), String> {
         let id = self.req_seq.fetch_add(1, Ordering::Relaxed) + 1;
         self.prompt_req.store(id, Ordering::Relaxed);
@@ -382,16 +395,15 @@ impl AcpSession {
 
 fn dispatch_msg(
     sess: &Arc<AcpSession>,
-    sink: &Sink,
     pending: &Mutex<HashMap<u64, Pending>>,
     v: Value,
 ) {
-    let run = sess.run_id;
+    let (run, sink) = sess.flight_snapshot();
     // ── 通知 session/update 先于通配分发（无 id 通知曾被 `_ => return` 吞掉——
     // 思考/工具/文本事件全丢，只有带 id 的 permission/fs 存活的实证）──
     if v.get("method").and_then(|m| m.as_str()) == Some("session/update") {
         let upd = v.pointer("/params/update").cloned().unwrap_or(json!({}));
-        handle_update(sess, sink, &upd);
+        handle_update(sess, &sink, &upd);
         return;
     }
     // ── agent 发来的请求（需应答）──
@@ -466,7 +478,7 @@ fn dispatch_msg(
                         .and_then(|x| x.as_str())
                         .unwrap_or("end_turn")
                         .to_string();
-                    finalize_done(sess, sink, &stop);
+                    finalize_done(sess, &sink, &stop);
                 }
                 return;
             }
@@ -480,7 +492,7 @@ fn dispatch_msg(
 }
 
 fn handle_update(sess: &AcpSession, sink: &Sink, upd: &Value) {
-    let run = sess.run_id;
+    let (run, _) = sess.flight_snapshot();
     match upd.get("sessionUpdate").and_then(|x| x.as_str()) {
         Some("agent_message_chunk") => {
             let text = upd.pointer("/content/text").and_then(|x| x.as_str()).unwrap_or("");
@@ -527,7 +539,7 @@ fn handle_update(sess: &AcpSession, sink: &Sink, upd: &Value) {
 /// 无 mbt.md（agent 未动文件）→ done 但 mbt_b64 空串（前端跳过应用，仅收轨迹）；
 /// 无 tokio handle（测试环境）→ 同样降级为不回灌。
 fn finalize_done(sess: &AcpSession, sink: &Sink, stop: &str) {
-    let run = sess.run_id;
+    let (run, _) = sess.flight_snapshot();
     let file = sess.workspace.join("mbt.md");
     let content = std::fs::read_to_string(&file).unwrap_or_default();
     if content.is_empty() {
@@ -601,7 +613,7 @@ fn pump_and_handshake(
         sid: Mutex::new(String::new()),
         agent: agent_label.to_string(),
         workspace: workspace.to_path_buf(),
-        run_id,
+        flight: Mutex::new((run_id, sink.clone())),
         rt,
         writer: writer_tx,
         pending: Arc::new(Mutex::new(HashMap::new())),
@@ -651,11 +663,12 @@ fn pump_and_handshake(
             }
             let Ok(line) = line else { break };
             let Some(v) = parse_line(&line) else { continue };
-            dispatch_msg(&sess_r, &sink, &pending_r, v);
+            dispatch_msg(&sess_r, &pending_r, v);
         }
         // 进程退出：未完成的 prompt 以 failed 收口（alive 未被主动关闭时）
         if alive_r.swap(false, Ordering::Relaxed) {
-            sink(json!({"type": "failed", "run": run_id, "error": "acp_agent_exited"}));
+            let (run, sink) = sess_r.flight_snapshot();
+            sink(json!({"type": "failed", "run": run, "error": "acp_agent_exited"}));
         }
     });
     // initialize + session/new（阻塞等待）
@@ -807,6 +820,53 @@ mod tests {
         assert!(evs.iter().any(|e| e["type"] == json!("assistant_thinking")), "缺思考事件");
         assert!(evs.iter().any(|e| e["type"] == json!("tool_start")), "缺工具事件");
         assert!(evs.iter().any(|e| e["type"] == json!("acp-permission")), "缺权限请求事件");
+        // ── BUG1 回归锚定：第二次 prompt 换绑新 run=88 + 全新 sink（生产语义：
+        // 每次 prompt 换新事件出口；也避开测试夹具 events 锁与 block_on 交织）──
+        let events2: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let ev_c2 = events2.clone();
+        let sink2: Sink = Arc::new(move |v: Value| {
+            ev_c2.lock().unwrap().push(v);
+        });
+        sess.rebind_flight(88, sink2);
+        sess.prompt("再来一次").expect("第二次 prompt 发送失败");
+        let deadline2 = std::time::Instant::now() + Duration::from_secs(30);
+        let mut done2 = false;
+        let mut replied2 = false;
+        while std::time::Instant::now() < deadline2 {
+            {
+                let evs = events2.lock().unwrap();
+                if evs.iter().any(|e| e["type"] == json!("done")) {
+                    done2 = true;
+                }
+            }
+            if !replied2 {
+                let req_id = {
+                    let evs = events2.lock().unwrap();
+                    evs.iter()
+                        .find(|e| e["type"] == json!("acp-permission"))
+                        .and_then(|e| e.get("request_id").and_then(|x| x.as_u64()))
+                };
+                if let Some(rid) = req_id {
+                    sess.reply(rid, "allow_once");
+                    replied2 = true;
+                }
+            }
+            if done2 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(120));
+        }
+        assert!(done2, "第二次 prompt 未收口");
+        let evs2 = events2.lock().unwrap();
+        assert!(
+            evs2.iter().all(|e| e["run"] == json!(88)),
+            "BUG1：第二次 prompt 的事件必须全部带新 run=88：{:?}",
+            evs2.iter().map(|e| (e["type"].clone(), e["run"].clone())).collect::<Vec<_>>()
+        );
+        assert!(
+            evs2.iter().any(|e| e["type"] == json!("assistant_delta")),
+            "第二次 prompt 应有流式事件"
+        );
         sess.shutdown();
         let _ = std::fs::remove_dir_all(&ws);
     }

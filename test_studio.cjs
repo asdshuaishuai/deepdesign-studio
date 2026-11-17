@@ -292,8 +292,8 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
     '轨迹终态卡助手 traceFinalCard 缺失或未在内部统一转义（innerHTML 注入点，终态卡走 tracePending 队列）——请同步检查 Q');
   assert(/p\.stopReason==='max_turns'\)\{[\s\S]{0,260}traceFinalCard\(box,false,/.test(script),
     'max_turns 未落异常终止红卡——请同步检查 Q');
-  assert(/p\.type==='failed'\)\{[\s\S]{0,400}traceFinalCard\(box,false,/.test(script),
-    'failed 未升级为异常终止终态卡（单行弱标志回归）——请同步检查 Q');
+  assert(/p\.type==='failed'\)\{[\s\S]{0,600}traceFinalCard\(box,false,/.test(script),
+    'failed 未升级为异常终止终态卡（单行弱标志回归）（窗口 600：ACP 清理行插入 failed 分支后 400 覆盖不到终态卡，2026-11-17 审查）——请同步检查 Q');
   assert(/function traceFailCard\(runId,msg\)/.test(script)&&(script.match(/traceFailCard\(runId,msg\);/g)||[]).length>=2,
     'run 前置校验失败路径未补落终态卡（traceFailCard）——Rust 零事件早退会让 tl-run 容器空着，请同步检查 Q');
   assert(/\.tl-final\.abnormal\{/.test(html),

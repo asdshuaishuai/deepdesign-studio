@@ -404,6 +404,13 @@ UI 说明（可选）/ 设计规范；`mdToHtml` 是极简 Markdown 渲染（先
   教训三件：`#[tauri::command]` 的 fn 不能带 `pub`（宏重导出冲突 E0255）；跨线程
   prompt id 用会话字段不用 thread_local（泵线程读不到）；session/update 通知必须先于
   通配分发（无 id 通知曾被 `_ => return` 全吞）。
+  **审查修复（2026-11-17 二轮）**：① sink/run 绑死建会话时刻——第二次 prompt 全部事件
+  带旧 run → acpRun 永不匹配、agentBusy 卡死、轨迹串块 → `flight` 字段 +
+  `rebind_flight(run,sink)` 每次 prompt 换绑（acp_prompt 传 run/label），
+  回归锚定=假 agent 第二次 prompt 断言事件全带新 run=88；② 权限框无拒绝路径
+  （不回应 agent 永挂）→ `acpPermReject` 自动选首个 reject/cancel 类选项；
+  ③ agent 进程死亡会话残留 → failed 事件 `acp_agent_exited` 即 `acpInvalidate`；
+  ④ ⌘K 改 toggle；⑤ 状态栏模型名走缓存（setStatus 每 op 调用不再解析 localStorage）。
   ③ **Figma 桥**（figma-plugin/ 三文件，完全离线 networkAccess=none，与 figma-ops
   项目零引用）：导出 `export_figma_package_inner`（逐板 data.svg + query_nodes
   manifest + README → ~/Documents/deepDesign/）；导入 `composeFigmaImportOps`

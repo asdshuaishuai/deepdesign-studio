@@ -1419,7 +1419,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div style="padding:13px 16px;border-bottom:var(--bd);font-weight:700;font-size:13px">权限请求</div>
     <div id="acp-perm-title" style="padding:11px 16px;font-size:12.5px;color:var(--tx2)"></div>
     <div class="cmdk-list" id="acp-perm-options" style="max-height:30vh"></div>
-    <div class="cmdk-foot">选择一项以继续 · 无选项时点击遮罩 = 不回应</div>
+    <div class="cmdk-foot"><span style="flex:1">选择一项以继续</span><button class="tbtn" style="color:#d97a1a" onclick="acpPermReject()">拒绝</button></div>
   </div>
 </div>
 
@@ -2909,7 +2909,7 @@ document.addEventListener('keydown',async e=>{
     if(e.metaKey||e.ctrlKey||e.altKey)return; // Windows 无原生菜单：⌘S/⌘5 等组合在演示中照常可用
     return;
   }
-  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openCmdk();return;}
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();const o=$('cmdk');if(o&&o.style.display!=='none'){closeCmdk();}else{openCmdk();}return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveProject();return;}
   if((e.metaKey||e.ctrlKey)&&(e.key==='='||e.key==='+')){e.preventDefault();zoomIn();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='-'){e.preventDefault();zoomOut();return;}
@@ -3244,9 +3244,17 @@ async function runAcpPrompt(t){
 }
 function acpPermReply(optionId){
   const box=$('acp-perm');const req=box.dataset.req?Number(box.dataset.req):0;
-  box.style.display='none';
+  box.style.display='none';box.dataset.req='';
   if(!req||!acpSessionId)return;
   if(optionId!=null)window.__TAURI__.core.invoke('acp_permission_reply',{session:acpSessionId,requestId:req,optionId}).catch(()=>{});
+}
+/* 拒绝路径：自动选第一个 reject/cancel 类选项（agent 目录的语义拒绝）；
+ * 无此类选项时关闭弹窗并提示（不回应会让 agent 侧 prompt 永挂）。 */
+function acpPermReject(){
+  const opts=[...document.querySelectorAll('#acp-perm-options .cmdk-item')];
+  const cand=opts.find(b=>/reject|cancel|denied|拒绝/i.test(b.textContent));
+  if(cand)cand.click();
+  else{acpPermReply(null);toast('该请求无可拒绝选项——已忽略（agent 可能继续等待）','err');}
 }
 async function probeAcp(){
   const want=acpAgentId();
@@ -3524,6 +3532,8 @@ function ensureTraceListener(){
     }
     if(p.type==='failed'){
       collapseLiveLines(p.run);
+      // 外接 agent 进程死亡：会话必残（泵已亡）——立即失效，下次 prompt 重建
+      if(p.error==='acp_agent_exited'&&p.run===acpRun)acpInvalidate();
       if(p.run===acpRun){acpRun=0;agentBusy=false;$('gp-send')&&($('gp-send').disabled=false);syncTraceCancelBtn();}
       if(p.run===currentAgentRunId){currentAgentRunId=0;syncTraceCancelBtn();}
       // 中途失败（LLM 断连/无响应等）同为异常终态：升级为红卡终态——
@@ -3619,16 +3629,25 @@ function cmdkSend(){
 function toggleAppMode(){pickAppMode(document.body.dataset.mode==='dark'?'light':'dark');}
 /* 状态栏右段：rev · 板/节点 · 模型 · ctx（数据全部来自既有全局，无新轮询） */
 let sbCtx={est:0,budget:0};
+let sbModelCache={key:'',model:''};
+function sbModelName(){
+  // setStatus 每 op 都调 syncSbRight——localStorage 解析走缓存（key=active+providers 长度）
+  try{
+    const act=localStorage.getItem('deepdesign-fx-active')||'';
+    const provRaw=localStorage.getItem('deepdesign-fx-providers')||'';
+    const key=act+'|'+provRaw.length;
+    if(sbModelCache.key!==key){
+      const prov=JSON.parse(provRaw||'{}');
+      sbModelCache={key,model:(act&&prov[act]&&prov[act].model)||''};
+    }
+  }catch(_){ }
+  return sbModelCache.model;
+}
 function syncSbRight(){
   const el=$('sb-right');if(!el)return;
   const boards=Object.keys(sessions).length;
   let nodes=0;for(const id in sessions){const n=sessions[id].nodes;if(Array.isArray(n))nodes+=n.length;}
-  let model='';
-  try{
-    const act=localStorage.getItem('deepdesign-fx-active');
-    const prov=JSON.parse(localStorage.getItem('deepdesign-fx-providers')||'{}');
-    model=(act&&prov[act]&&prov[act].model)||'';
-  }catch(_){}
+  const model=sbModelName();
   const seg=[];
   if(mbtRevision>0)seg.push('rev '+mbtRevision);
   if(boards)seg.push('▣'+boards+' ◇'+nodes);
