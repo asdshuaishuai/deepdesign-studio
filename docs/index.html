@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>deepDesign Studio — 你提需求，它来画</title>
-<meta name="description" content="deepDesign Studio：AI 原生原型设计工具。人类画布与 Agent 修改经同一道引擎门，回写同一份 .mbt.md。产品经理与 AI 双视角同屏同步，一镜到底。" />
+<title>Firelight 火光 — 你提需求，它来画</title>
+<meta name="description" content="Firelight 火光：AI 原生原型设计工具。人类画布与 Agent 修改经同一道引擎门，回写同一份 .mbt.md。产品经理与 AI 双视角同屏同步，一镜到底。" />
 <link rel="icon" type="image/png" href="assets/icon.png" />
 <style>
 /* ============================================================
-   deepDesign Studio — 一镜到底 · 双视角同屏版
+   Firelight 火光 — 一镜到底 · 双视角同屏版（2026-11 改名，原 deepDesign Studio）
    固定舞台 + 滚动时间轴；产品经理与 Agent 同一时刻各说各话。
    单文件零依赖。
    ============================================================ */
@@ -61,6 +61,9 @@ code{font-family:var(--mono);font-size:.88em}
   -webkit-text-fill-color:var(--tx3)}
 #sc0 .lede{margin:26px auto 0;max-width:46ch;font-size:clamp(15px,1.8vw,19px);color:var(--tx2);font-weight:500}
 #sc0 .lede b{color:var(--tx);font-weight:600}
+#sc0 .pills{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:22px;max-width:760px}
+#sc0 .pills span{font-size:11px;font-weight:500;color:var(--tx2);border:1px solid var(--hair);border-radius:99px;padding:5px 13px;background:rgba(255,255,255,.55);white-space:nowrap}
+#sc0 .pills span:first-child{color:var(--ink);border-color:color-mix(in srgb,var(--ink) 40%,transparent);font-weight:600}
 #sc0 .hero-glow{position:absolute;inset:-10% -20%;pointer-events:none;
   background:radial-gradient(40% 36% at 32% 34%,rgba(230,126,34,.10),transparent 70%),
              radial-gradient(40% 36% at 68% 34%,rgba(94,92,230,.10),transparent 70%)}
@@ -170,6 +173,8 @@ code{font-family:var(--mono);font-size:.88em}
   font-size:13px;font-weight:600;background:#fff;transition:transform .18s var(--ease),box-shadow .18s var(--ease),border-color .18s}
 #sc5 .dl:hover{transform:translateY(-2px);border-color:var(--ink);box-shadow:0 12px 28px -14px rgba(0,0,0,.35)}
 #sc5 .dl small{display:block;font-size:10.5px;font-weight:400;color:var(--tx3)}
+#sc5 .ver-note{margin:0 0 18px;font-size:12.5px;color:var(--tx3)}
+#sc5 .ver-note b{color:var(--tx)}
 #sc5 .dl-note{margin-top:12px;font-size:11.5px;color:var(--tx3)}
 #sc5 .mini-foot{position:absolute;bottom:26px;left:0;right:0;font-size:12px;color:var(--tx3);display:flex;justify-content:center;gap:20px;flex-wrap:wrap;padding:0 20px}
 #sc5 .mini-foot a:hover{color:var(--tx)}
@@ -197,7 +202,7 @@ code{font-family:var(--mono);font-size:.88em}
 
 <nav class="nav" id="nav">
   <a class="brand" href="#" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">
-    <img src="assets/icon.png" alt="" />deepDesign <span>Studio</span>
+    <img src="assets/icon.png" alt="" />Firelight <span>火光</span>
   </a>
   <a class="nav-gh" href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">
     <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
@@ -215,10 +220,13 @@ code{font-family:var(--mono);font-size:.88em}
   <!-- S0 · 开场：双视角宣言 -->
   <section class="sc" id="sc0">
     <div class="hero-glow"></div>
-    <span class="eyebrow">deepDesign Studio · AI 原生原型设计</span>
+    <span class="eyebrow">Firelight 火光 · AI 原生原型设计</span>
     <h1 class="h1-anim" id="heroH1">你提需求，它来画。</h1>
     <p class="h2ai g">我读的不是像素，是结构。<span class="who">— AGENT · 同一时刻</span></p>
     <p class="lede">人拖一下，Agent 改一处，写进的都是同一份 <b>canonical .mbt.md</b>。<br />往下滚，两边的经过同时讲。</p>
+    <div class="pills">
+      <span>🔥 灵光一闪，试试看！</span><span>引擎双门校验</span><span>DDP 单文件加密</span><span>前缀缓存上下文</span><span>七语言界面</span><span>ACP 外接智能体</span><span>Figma 双向桥</span>
+    </div>
     <div class="scroll-cue">往下滚</div>
   </section>
 
@@ -231,12 +239,12 @@ code{font-family:var(--mono);font-size:.88em}
     </div>
     <figure class="shot" id="shot">
       <div class="chrome"><i></i><i></i><i></i><span>welcome · 1280 × 800 · rev 21</span></div>
-      <img src="assets/editor-dark.png" alt="deepDesign Studio 编辑视图" />
+      <img src="assets/editor-dark.png" alt="Firelight 火光 工作区 · 高保真视图" />
     </figure>
     <div class="doc" id="s1doc">
       <div class="fn">prototype.mbt.md · canonical</div>
       <div>├ artboard welcome 1280×800</div>
-      <div>│&nbsp;&nbsp;├ hero "deepDesign Studio" 0,0 1280×220</div>
+      <div>│&nbsp;&nbsp;├ hero "Firelight 火光" 0,0 1280×220</div>
       <div>│&nbsp;&nbsp;└ flow: tap card → detail ✓</div>
       <div>└ artboard detail · back → welcome ✓</div>
     </div>
@@ -304,16 +312,16 @@ code{font-family:var(--mono);font-size:.88em}
 
   <!-- S4 · 演示模式 -->
   <section class="sc" id="sc4">
-    <span class="k">DEMO MODE · ⌘4</span>
+    <span class="k">DEMO MODE · ⌘5</span>
     <h2>演示，也是一种交付。</h2>
     <figure class="stage4" id="stage4">
       <div class="under">
         <div class="chrome"><i></i><i></i><i></i><span>demo · clean · 全画板</span></div>
-        <img src="assets/demo-clean.png" alt="演示模式 · 隐藏交互标注" />
+        <img src="assets/demo-clean.png" alt="Firelight 火光 演示模式 · 隐藏交互标注" />
       </div>
       <div class="over" id="inkOver">
         <div class="chrome"><i></i><i></i><i></i><span>demo · ink · 手绘批注</span></div>
-        <img src="assets/demo-ink.png" alt="演示模式 · 手绘批注" />
+        <img src="assets/demo-ink.png" alt="Firelight 火光 演示模式 · 手绘批注" />
       </div>
     </figure>
     <p class="cap" id="cap4">隐藏交互标注——真实成品观感，漏接的返回钮也强制可点</p>
@@ -323,6 +331,7 @@ code{font-family:var(--mono);font-size:.88em}
   <section class="sc" id="sc5">
     <h2>下一个想法，<br /><span class="g">先做个能点的样子。</span></h2>
     <p>你说它画，中途想改随时上手。最后交到手里的是能点、能演示的原型。</p>
+    <p class="ver-note"><b>Firelight 火光 v0.5</b> — MoonViz 引擎 0.2 · ACP 外接智能体（12 CLI）· Figma 双向桥 · 工作区 Dock · 七语言。原名 deepDesign Studio。</p>
     <div class="row">
       <a class="btn btn-pri" href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
@@ -342,7 +351,7 @@ code{font-family:var(--mono);font-size:.88em}
       <a href="https://github.com/asdshuaishuai/deepdesign-studio" target="_blank" rel="noopener">GitHub</a>
       <a href="https://asdshuaishuai.github.io/moonviz/" target="_blank" rel="noopener">MoonViz 引擎</a>
       <a href="https://asdshuaishuai.github.io/deeporca-site/" target="_blank" rel="noopener">DeepOrca 生态</a>
-      <span>MIT License · © 2026 deepDesign contributors</span>
+      <span>MIT License · © 2026 Firelight contributors</span>
     </div>
   </section>
 
@@ -479,7 +488,7 @@ var STEPS = [
     log:['<span class="op">lint</span> → <span class="op">critique</span> → <span class="op">missing</span>',
          '<span class="dim">需求完整度 / 交互连线 / 综合修复</span>',
          '<span class="ok">✓ 缺口直接补齐</span> <span class="dim">她在时间线里翻得到每一步</span>'] },
-  { pm:{h:'拿去给老板看', s:'⌘4 切演示模式，交互标注都藏掉，看着就是做完的东西。拿马克笔圈两处重点，笔迹存在文档里，下次打开还在。'},
+  { pm:{h:'拿去给老板看', s:'⌘5 切演示模式，交互标注都藏掉，看着就是做完的东西。拿马克笔圈两处重点，笔迹存在文档里，下次打开还在。'},
     ai:{h:'交付的就是成果', s:'批注和原型都落在 .ddp 里，也能导出 HTML、SVG 或者加密分发。给出去的东西里没有我的痕迹，只有结果。'},
     log:['<span class="op">ink</span> 批注持久化 → <span class="dim">.ddp</span>',
          '<span class="op">export</span> HTML / SVG / 加密 DDP',

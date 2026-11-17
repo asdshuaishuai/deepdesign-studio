@@ -1,4 +1,4 @@
-# deepDesign Studio
+# Firelight 火光（原 deepDesign Studio）
 
 **一句话，产出设计文档（含产品需求）→ 完整可交互原型的一站式产品设计工作室**（Tauri 2）。
 **设计文档（产品需求设计）是流程的第一栏**：可以一句话让 Agent 生成，也可以直接粘贴/导入
