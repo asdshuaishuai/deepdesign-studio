@@ -662,19 +662,6 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .stab.on{background:var(--acc);color:#fff;box-shadow:0 2px 8px color-mix(in srgb,var(--acc) 45%,transparent)}
 .settings-sec{font-size:10.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 2px}
 .settings-sec:first-of-type{margin-top:2px}
-/* ACP 外接智能体：紧凑 chip 网格（替代 13 行单列 radio 堆叠） */
-.acp-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px;margin:8px 0 6px}
-.acp-chip{position:relative;display:flex;flex-direction:column;gap:3px;padding:8px 11px;border:1px solid var(--panel-line,rgba(0,0,0,.12));border-radius:11px;background:var(--panel-input,#fff);cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
-.acp-chip input{position:absolute;opacity:0;pointer-events:none}
-.acp-chip:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--panel-line,transparent))}
-.acp-chip-name{font-size:11.5px;font-weight:600;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.acp-chip-st{font-size:9.5px;color:var(--tx3);display:flex;align-items:center;gap:4px;min-height:13px}
-.acp-chip-st::before{content:'';width:5px;height:5px;border-radius:99px;background:var(--tx3);opacity:.55;flex:none}
-.acp-chip-st.s-verified::before,.acp-chip-st.s-found::before{background:var(--ok);opacity:1}
-.acp-chip-st.s-builtin::before{background:var(--acc);opacity:1}
-.acp-chip-st.s-grayed::before{opacity:.3}
-.acp-chip.on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 10%,var(--panel-input,#fff));box-shadow:0 0 0 1px var(--acc)}
-.acp-chip.on .acp-chip-name{color:var(--acc-tx,var(--acc))}
 .prov-chip[data-theme-chip].on{background:var(--acc);color:var(--acc-contrast,#fff);border-color:var(--acc-tx)}
 .settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 .about-hero{display:flex;align-items:center;gap:14px;padding:4px 0 2px}
@@ -1502,7 +1489,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </label>
     </div>
     <div class="settings-sec">外部智能体（ACP）</div>
-    <div id="acp-list" class="acp-list"></div>
+    <select id="acp-select" class="settings-select" style="width:100%;max-width:100%" onchange="setAcpAgent(this.value)"></select>
     <div style="display:flex;gap:8px;align-items:center;margin:6px 0 0">
       <button type="button" class="tbtn" onclick="probeAcp()" style="font-size:11px;padding:0 10px">完整握手检测</button>
       <span id="acp-probe-msg" style="font-size:10.5px;color:var(--tx3)"></span>
@@ -3400,21 +3387,18 @@ async function probeAcp(){
   }catch(e){msg.textContent='✗ '+String(e).slice(0,60);}
 }
 async function renderAcpAgents(){
-  const box=$('acp-list');if(!box)return;
+  const sel=$('acp-select');if(!sel)return;
   let agents=[];
   if(IS_TAURI){try{const r=await window.__TAURI__.core.invoke('acp_agents');agents=(r&&r.agents)||[];}catch(_){ }}
   const cur=acpAgentId();
-  // chip 网格卡（紧凑：名称一行、状态点一行），选中态 accent 描边
-  const row=(id,name,stCls,stTxt,checked)=>`<label class="acp-chip${checked?' on':''}">
-    <input type="radio" name="acp-agent" value="${escAttr(id)}" ${checked?'checked':''} onchange="setAcpAgent(${escAttr(JSON.stringify(id))})">
-    <span class="acp-chip-name">${escHtml(name)}</span>
-    <span class="acp-chip-st ${stCls}">${escHtml(stTxt)}</span></label>`;
-  let html=row('',L('内置管线'),'s-builtin',L('默认'),!cur);
+  // 下拉选项：名称 + 安装态后缀（grayed 的占位项名称自带「即将支持」）
+  const opt=(id,label,checked)=>`<option value="${escAttr(id)}"${checked?' selected':''}>${escHtml(label)}</option>`;
+  let html=opt('',L('内置管线')+' · '+L('默认'),!cur);
   for(const a of agents){
     const cn={verified:L('已验证'),found:L('已安装'),missing:L('未安装'),grayed:''}[a.state]||a.state;
-    html+=row(a.id,a.name,'s-'+(a.state||''),cn,cur===a.id);
+    html+=opt(a.id,a.name+(cn?`（${cn}）`:''),cur===a.id);
   }
-  box.innerHTML=html;
+  sel.innerHTML=html;
 }
 function setAcpAgent(id){
   try{localStorage.setItem('dd-acp-agent',id);}catch(_){ }
