@@ -229,6 +229,11 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 #home-view{position:absolute;inset:0;z-index:15;display:none;overflow-x:hidden;overflow-y:auto;background:var(--cvs)}
 body.mode-home #home-view{display:block}
 body.mode-home .left,body.mode-home .right,body.mode-home .canvas-tail,body.mode-home .canvas-scroll{display:none!important}
+/* home 模式下机壳融为一体：分隔线全部去除 + 首页滚动条隐藏（滚轮/触控板仍可滚） */
+body.mode-home .topbar{border-bottom-color:transparent}
+body.mode-home .statusbar{border-top-color:transparent}
+body.mode-home #rail{border-right-color:transparent}
+#home-view::-webkit-scrollbar{width:0;height:0}
 /* 环境级微染 + 点阵：只做氛围，不抢界面 */
 #home-view::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background:
