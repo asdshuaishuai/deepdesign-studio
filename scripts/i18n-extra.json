@@ -149,11 +149,29 @@
   "{node} has an unimplemented interaction — demo supports: navigate/back/toast/set text/toggle state",
   "{node} a une interaction non implémentée — démo gère : navigation/retour/toast/texte/bascule"
  ],
+ "「健身打卡 App，绿色系」": [
+  "「フィットネス記録アプリ（グリーン系）」",
+  "「헬스 체크인 앱, 그린 계열」",
+  "\"Fitness check-in app, green palette\"",
+  "«App de suivi fitness, tons verts»"
+ ],
+ "「城市露营装备租赁小程序」": [
+  "「都市キャンプ用品レンタルminiアプリ」",
+  "「도시 캠핑 장비 대여 미니앱」",
+  "\"Urban camping gear rental app\"",
+  "«App de location de matériel de camping»"
+ ],
  "一句话同步产出设计文档 + UI 说明；生成原型后自动抽取设计规范（DESIGN.md）": [
   "一句话で設計ドキュメント+UI仕様を同時生成；プロトタイプ生成後にデザイン仕様（DESIGN.md）を自動抽出",
   "한 문장으로 설계 문서+UI 명세 동시 생성; 프로토타입 생성 후 디자인 사양(DESIGN.md) 자동 추출",
   "One line yields design doc + UI spec together; DESIGN.md auto-extracted after prototyping",
   "Une phrase produit document + spécification UI ; DESIGN.md extrait après prototypage"
+ ],
+ "一句话描述你的产品…（⏎ 生成）": [
+  "一文で製品を描写…（⏎ 生成）",
+  "한 문장으로 제품을 묘사…(⏎ 생성)",
+  "Describe your product in one line… (⏎ to generate)",
+  "Décrivez votre produit en une phrase… (⏎ pour générer)"
  ],
  "上下文": [
   "コンテキスト",
@@ -179,6 +197,18 @@
   "Generating responsive layout for board {ab}",
   "Génération d'une mise en page responsive pour la planche {ab}"
  ],
+ "书架": [
+  "ブックシェルフ",
+  "책장",
+  "Shelf",
+  "Étagère"
+ ],
+ "书架空空——从上面一句话开始，或打开一个 .ddp": [
+  "ブックシェルフは空です——上の一文から始めるか、.ddp を開いてください",
+  "책장이 비었습니다—위의 한 문장으로 시작하거나 .ddp를 여세요",
+  "Shelf is empty — start with a line above, or open a .ddp",
+  "Étagère vide — commencez par une phrase ci-dessus, ou ouvrez un .ddp"
+ ],
  "交互与内容 QA 硬门：可交互组件无去向、占位符与 mock 数据缺口、空壳容器、热区相交与多 flow 冲突": [
   "インタラクション／コンテンツ QA のハードゲート：行き先のない操作可能コンポーネント、プレースホルダーと mock データ欠落、空のコンテナ、ホットゾーン交差と複数 flow の競合",
   "인터랙션·콘텐츠 QA 하드 게이트: 목적지 없는 상호작용 컴포넌트, 자리표시자와 mock 데이터 부족, 빈 컨테이너, 핫존 교차와 다중 flow 충돌",
@@ -191,11 +221,23 @@
   "Canvas edits and Agent changes are both validated by the MoonViz engine dual gates and written back to the same .mbt.md visual document; .ddp is its authenticated encrypted container.",
   "Les modifications du canevas comme celles de l'agent sont validées par les doubles gardes du moteur MoonViz puis réécrites dans le même document visuel .mbt.md ; .ddp en est le conteneur chiffré authentifié."
  ],
+ "从书架移除（不删文件）": [
+  "ブックシェルフから除外（ファイルは削除しない）",
+  "책장에서 제외(파일은 삭제 안 함)",
+  "Remove from shelf (keeps the file)",
+  "Retirer de l'étagère (fichier conservé)"
+ ],
  "从模板创建画板 {name}": [
   "テンプレートからボード {name} を作成",
   "템플릿에서 보드 {name} 생성",
   "Creating board {name} from template",
   "Création de la planche {name} depuis un modèle"
+ ],
+ "从模板开始": [
+  "テンプレートから始める",
+  "템플릿으로 시작",
+  "Start from a template",
+  "Commencer par un modèle"
  ],
  "修复双击编辑文字提交失败（影响所有用户）": [
   "ダブルクリック編集のコミット失敗を修正（全ユーザーに影響）",
@@ -274,6 +316,12 @@
   "보드 {id} 삭제? (⌘Z 실행 취소)",
   "Delete board {id}? (Undo with ⌘Z)",
   "Supprimer la planche {id} ? (⌘Z pour annuler)"
+ ],
+ "历史与本地作品都在这里": [
+  "履歴とローカル作品はここに",
+  "히스토리와 로컬 작품이 모두 여기에",
+  "History and local works live here",
+  "Historique et œuvres locales ici"
  ],
  "发送给 Agent": [
   "Agent へ送信",
@@ -467,6 +515,12 @@
   "Tools",
   "Appels d'outils"
  ],
+ "已从书架移除（文件未删除）": [
+  "ブックシェルフから除外しました（ファイルは未削除）",
+  "책장에서 제외되었습니다(파일 미삭제)",
+  "Removed from shelf (file kept)",
+  "Retiré de l'étagère (fichier conservé)"
+ ],
  "已取消 · 已提交 {n} ops，已完成部分保留": [
   "キャンセル済み · {n} ops を投入、完了済み部分は保持",
   "취소됨 · {n} ops 커밋됨, 완료된 부분 유지",
@@ -508,6 +562,12 @@
   "보드 {a}에서 {b}(으)로 이동 연결 설정",
   "Linking board {a} to {b}",
   "Création de la navigation de la planche {a} vers {b}"
+ ],
+ "开始生成": [
+  "生成を開始",
+  "생성 시작",
+  "Generate",
+  "Générer"
  ],
  "开源感谢": [
   "オープンソース謝辞",
@@ -599,11 +659,29 @@
   "Mobile",
   "Mobile"
  ],
+ "把想法变成能用的作品": [
+  "アイデアを 使える作品に",
+  "아이디어를 쓸 수 있는 작품으로",
+  "Turn ideas into working designs",
+  "Transformez vos idées en œuvres utilisables"
+ ],
+ "拒绝": [
+  "拒否",
+  "거부",
+  "Deny",
+  "Refuser"
+ ],
  "推断画板 {ab} 的设计规律": [
   "ボード {ab} のデザイン傾向を推測",
   "보드 {ab}의 디자인 패턴 추론",
   "Inferring design patterns of board {ab}",
   "Inférence des motifs de design de la planche {ab}"
+ ],
+ "描述你要解决的问题。deepDesign 先写设计文档，再把它变成可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。": [
+  "解決すべき課題と対象ユーザーを描くと、deepDesign がまず設計ドキュメントを書き、インタラクティブなプロトタイプに変えます。全工程でエンジニアリングゲートが検証し、成果物は同一の .mbt.md に蓄積されます。",
+  "해결할 문제와 대상을 묘사하면 deepDesign이 먼저 설계 문서를 쓰고 인터랙티브 프로토타입으로 바꿉니다. 전 과정이 엔진 게이트로 검증되고 산출물은 같은 .mbt.md에 쌓입니다.",
+  "Describe the problem and audience. deepDesign writes the design doc first, then turns it into an interactive prototype — engine-gated throughout, landing in one .mbt.md.",
+  "Décrivez le problème visé. deepDesign écrit d'abord le document de design, puis le transforme en prototype interactif — validé par des portes moteur à chaque étape, le tout dans un seul .mbt.md."
  ],
  "提取画板 {ab} 的设计系统": [
   "ボード {ab} のデザインシステムを抽出",
@@ -640,6 +718,12 @@
   "변경 사항 버리기",
   "Discard Changes",
   "Abandonner les modifications"
+ ],
+ "文档 · 原型 · 交互 · 规范": [
+  "ドキュメント · プロトタイプ · インタラクション · 仕様",
+  "문서 · 프로토타입 · 인터랙션 · 스펙",
+  "Docs · Prototypes · Interactions · Specs",
+  "Docs · Prototypes · Interactions · Specs"
  ],
  "文档模式左栏改为文档目录（点击定位、滚动高亮）；生成原型时画布实时同步": [
   "ドキュメントモードの左パネルが目次に（クリック移動・スクロール連動ハイライト）；プロトタイプ生成中はキャンバスがリアルタイム同期",
@@ -941,6 +1025,12 @@
   "Reviewing design of board {ab}",
   "Revue du design de la planche {ab}"
  ],
+ "试试：": [
+  "試してみる：",
+  "사용해 보기:",
+  "Try:",
+  "Essayez :"
+ ],
  "该请求无可拒绝选项——已应答取消": [
   "拒否できる選択肢がありません——取消し応答を返しました",
   "거절할 수 있는 옵션이 없습니다——취소 응답을 보냈습니다",
@@ -1025,6 +1115,18 @@
   "Integration mode",
   "Mode d'intégration"
  ],
+ "首页": [
+  "ホーム",
+  "홈",
+  "Home",
+  "Accueil"
+ ],
+ "首页 · 书架": [
+  "ホーム · ブックシェルフ",
+  "홈 · 책장",
+  "Home · Shelf",
+  "Accueil · Étagère"
+ ],
  "鸿蒙版首发；Linux 提供 deb 与 AppImage（玲珑下线）": [
   "HarmonyOS 版を初公開。Linux は deb と AppImage を提供（linyaps 廃止）",
   "HarmonyOS 버전 첫 공개; Linux는 deb 및 AppImage 제공(링롱폐지)",
@@ -1043,107 +1145,29 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
- "把想法变成能用的作品": [
-  "アイデアを 使える作品に",
-  "아이디어를 쓸 수 있는 작품으로",
-  "Turn ideas into working designs",
-  "Transformez vos idées en œuvres utilisables"
+ "引擎门校验": [
+  "エンジンゲート検証",
+  "엔진 게이트 검증",
+  "Engine-gated",
+  "Portes moteur"
  ],
- "文档 · 原型 · 交互 · 规范": [
-  "ドキュメント · プロトタイプ · インタラクション · 仕様",
-  "문서 · 프로토타입 · 인터랙션 · 스펙",
-  "Docs · Prototypes · Interactions · Specs",
-  "Docs · Prototypes · Interactions · Specs"
+ "DDP 单文件加密": [
+  "DDP 単一ファイル暗号化",
+  "DDP 단일 파일 암호화",
+  "DDP single-file encryption",
+  "DDP mono-fichier chiffré"
  ],
- "描述你要解决的问题。deepDesign 先写设计文档，再把它变成可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。": [
-  "解決すべき課題と対象ユーザーを描くと、deepDesign がまず設計ドキュメントを書き、インタラクティブなプロトタイプに変えます。全工程でエンジニアリングゲートが検証し、成果物は同一の .mbt.md に蓄積されます。",
-  "해결할 문제와 대상을 묘사하면 deepDesign이 먼저 설계 문서를 쓰고 인터랙티브 프로토타입으로 바꿉니다. 전 과정이 엔진 게이트로 검증되고 산출물은 같은 .mbt.md에 쌓입니다.",
-  "Describe the problem and audience. deepDesign writes the design doc first, then turns it into an interactive prototype — engine-gated throughout, landing in one .mbt.md.",
-  "Décrivez le problème visé. deepDesign écrit d'abord le document de design, puis le transforme en prototype interactif — validé par des portes moteur à chaque étape, le tout dans un seul .mbt.md."
+ "前缀缓存": [
+  "プレフィックスキャッシュ",
+  "프리픽스 캐시",
+  "Prefix caching",
+  "Cache de préfixe"
  ],
- "一句话描述你的产品…（⏎ 生成）": [
-  "一文で製品を描写…（⏎ 生成）",
-  "한 문장으로 제품을 묘사…(⏎ 생성)",
-  "Describe your product in one line… (⏎ to generate)",
-  "Décrivez votre produit en une phrase… (⏎ pour générer)"
- ],
- "开始生成": [
-  "生成を開始",
-  "생성 시작",
-  "Generate",
-  "Générer"
- ],
- "试试：": [
-  "試してみる：",
-  "사용해 보기:",
-  "Try:",
-  "Essayez :"
- ],
- "「城市露营装备租赁小程序」": [
-  "「都市キャンプ用品レンタルminiアプリ」",
-  "「도시 캠핑 장비 대여 미니앱」",
-  "\"Urban camping gear rental app\"",
-  "«App de location de matériel de camping»"
- ],
- "「健身打卡 App，绿色系」": [
-  "「フィットネス記録アプリ（グリーン系）」",
-  "「헬스 체크인 앱, 그린 계열」",
-  "\"Fitness check-in app, green palette\"",
-  "«App de suivi fitness, tons verts»"
- ],
- "书架": [
-  "ブックシェルフ",
-  "책장",
-  "Shelf",
-  "Étagère"
- ],
- "首页": [
-  "ホーム",
-  "홈",
-  "Home",
-  "Accueil"
- ],
- "首页 · 书架": [
-  "ホーム · ブックシェルフ",
-  "홈 · 책장",
-  "Home · Shelf",
-  "Accueil · Étagère"
- ],
- "历史与本地作品都在这里": [
-  "履歴とローカル作品はここに",
-  "히스토리와 로컬 작품이 모두 여기에",
-  "History and local works live here",
-  "Historique et œuvres locales ici"
- ],
- "书架空空——从上面一句话开始，或打开一个 .ddp": [
-  "ブックシェルフは空です——上の一文から始めるか、.ddp を開いてください",
-  "책장이 비었습니다—위의 한 문장으로 시작하거나 .ddp를 여세요",
-  "Shelf is empty — start with a line above, or open a .ddp",
-  "Étagère vide — commencez par une phrase ci-dessus, ou ouvrez un .ddp"
- ],
- "从书架移除（不删文件）": [
-  "ブックシェルフから除外（ファイルは削除しない）",
-  "책장에서 제외(파일은 삭제 안 함)",
-  "Remove from shelf (keeps the file)",
-  "Retirer de l'étagère (fichier conservé)"
- ],
- "已从书架移除（文件未删除）": [
-  "ブックシェルフから除外しました（ファイルは未削除）",
-  "책장에서 제외되었습니다(파일 미삭제)",
-  "Removed from shelf (file kept)",
-  "Retiré de l'étagère (fichier conservé)"
- ],
- "从模板开始": [
-  "テンプレートから始める",
-  "템플릿으로 시작",
-  "Start from a template",
-  "Commencer par un modèle"
- ],
- "拒绝": [
-  "拒否",
-  "거부",
-  "Deny",
-  "Refuser"
+ "七语言界面": [
+  "7 言語 UI",
+  "7개 언어 UI",
+  "7-language UI",
+  "Interface en 7 langues"
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",

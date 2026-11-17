@@ -18,6 +18,11 @@ const NEW_ENTRIES={
   '文档模式左栏改为文档目录（点击定位、滚动高亮）；生成原型时画布实时同步':['ドキュメントモードの左パネルが目次に（クリック移動・スクロール連動ハイライト）；プロトタイプ生成中はキャンバスがリアルタイム同期','문서 모드 왼쪽 패널이 목차로(클릭 이동, 스크롤 하이라이트); 프로토타입 생성 중 캔버스 실시간 동기화','Doc mode left rail becomes a document outline (click-to-scroll, scrollspy); canvas syncs live during builds','Le panneau gauche devient un plan du document (clic-scroll, surlignage) ; canevas synchronisé en direct'],
   'Agent 轨迹全量直播：全模式思考流式展示、完成后自动收缩；终态卡时序修复':['Agent 軌跡の完全ライブ配信：全モードで思考をストリーミング表示、完了後に自動収縮；終端カードの順序を修正','Agent轨迹 전체 라이브: 모든 모드에서思考 스트리밍, 완료 후 자동 축소; 종료 카드 순서 수정','Full live agent trace: streaming thinking in all modes, auto-collapsed when done; final-card ordering fixed',"Trace agent en direct : réflexion en flux dans tous les modes, repliée après ; ordre des cartes corrigé"],
   '引擎升级 0.1.10：genUI 建页第一层锚定，组合意图丢段可见（skipped）、变体错误即文档':['エンジン 0.1.10：genUI 第一層を固定、結合意図の欠落セグメント可視化（skipped）、バリアントエラーが文書化','엔진 0.1.10: genUI 1계층 고정, 복합 의도 누락 세그먼트 가시화(skipped), 변형 오류 문서화','Engine 0.1.10: genUI first-tier pinned, dropped combined-intent segments visible (skipped), variant errors as documentation','Moteur 0.1.10 : genUI premier niveau épinglé, segments perdus visibles (skipped), erreurs de variante documentées'],
+  /* ── 首页能力 pills ── */
+  '引擎门校验':['エンジンゲート検証','엔진 게이트 검증','Engine-gated','Portes moteur'],
+  'DDP 单文件加密':['DDP 単一ファイル暗号化','DDP 단일 파일 암호화','DDP single-file encryption','DDP mono-fichier chiffré'],
+  '前缀缓存':['プレフィックスキャッシュ','프리픽스 캐시','Prefix caching','Cache de préfixe'],
+  '七语言界面':['7 言語 UI','7개 언어 UI','7-language UI','Interface en 7 langues'],
   /* ── 首页 · 书架（home 落地页改版）── */
   '把想法变成能用的作品':['アイデアを 使える作品に','아이디어를 쓸 수 있는 작품으로','Turn ideas into working designs',"Transformez vos idées en œuvres utilisables"],
   '文档 · 原型 · 交互 · 规范':['ドキュメント · プロトタイプ · インタラクション · 仕様','문서 · 프로토타입 · 인터랙션 · 스펙','Docs · Prototypes · Interactions · Specs','Docs · Prototypes · Interactions · Specs'],
