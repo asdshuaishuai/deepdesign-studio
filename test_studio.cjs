@@ -579,7 +579,7 @@ vm.runInContext(script.slice(script.indexOf("const APP_VER"),script.indexOf('fun
 
 vm.runInContext(['newId','mbtResult','applyMbtResult','serializeProject','runOp','runOpNow','addBoard','quickStart','createBlank','newProject'].map(fn).join('\n'),context);
 vm.runInContext(`
-function renderStage(){} function renderAbs(){} function renderFlows(){} function renderInspector(){} function renderLayersIfOpen(){} function updateSel(){} function setStatus(){} function closeAgentPop(){} function cancelInline(){} async function acpInvalidate(){} // ACP 会话失效（项目切换钩子；测试切片不含其真身）
+function renderStage(){} function renderAbs(){} function renderFlows(){} function renderInspector(){} function renderLayersIfOpen(){} function updateSel(){} function setStatus(){} function closeAgentPop(){} function cancelInline(){} async function acpInvalidate(){} function setMode(){} // 首页离场钩子（quickStart 切模式；测试切片不含其真身） // ACP 会话失效（项目切换钩子；测试切片不含其真身）
 async function switchSession(id){active=id}
 let history=[];
 // 引擎接缝桩：镜像 wasm apply/render 的返回契约（mbt 拼接语义与旧 execCli 桩一致）

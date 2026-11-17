@@ -450,15 +450,21 @@ async function main() {
     writeFileSync(markerPath, p + '\n');
     console.log(`[sync-engine] 本地集成模式已记录（删除 ${markerPath} 恢复 Release 锚定）`);
   }
-  // 模式：--release 显式声明生产打包（本地源硬性忽略）；--dev / 裸跑 = dev 语义
+  // 模式：--release 显式声明生产打包；--dev / 裸跑 = dev 语义。
+  // 用户决策 2026-11-17：**0.1.11 锚点已抛弃**——ENGINE_LOCAL 标记在场（本机安装/
+  // dev 环境）时，--release 打包同样使用本地 dev 0.2 构建（醒目告警）；
+  // 无标记的 CI 全新检出回落 GitHub Release 锚点（ENGINE_VERSION），不受影响。
   const mode = process.argv.includes('--release')
     ? 'release'
     : process.argv.includes('--dev') || localArg >= 0
       ? 'dev'
       : 'dev';
-  const localPath = resolveLocalPath(markerPath, mode);
-  if (mode === 'release' && (process.env.MOONVIZ_WASM_PATH || existsSync(markerPath))) {
-    console.warn('[sync-engine] ⚠ 生产构建：检测到本地集成标记/环境变量，已硬性忽略——本打包使用 Release 锚定引擎');
+  const markerActive = existsSync(markerPath);
+  const localPath = resolveLocalPath(markerPath, markerActive ? 'dev' : mode);
+  if (mode === 'release' && markerActive) {
+    console.warn('[sync-engine] ⚠ ENGINE_LOCAL 在场（本机安装）：本打包使用本地 dev 0.2 引擎——0.1.11 锚点已抛弃（2026-11-17 用户决策）');
+  } else if (mode === 'release' && process.env.MOONVIZ_WASM_PATH) {
+    console.warn('[sync-engine] ⚠ 生产构建：MOONVIZ_WASM_PATH 覆盖生效');
   }
 
   // 跳过判断：现存 wasm 的哈希必须与**当前锚点**一致（换工件类型如 gc→classic 时
