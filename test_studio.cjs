@@ -357,9 +357,15 @@ assert.deepEqual(missingMap,[],`nativeMenuAction 映射体调用了未定义函�
   assert(html.indexOf('id="doc-tab-prd"') < html.indexOf('id="doc-tab-ui"')
     && html.indexOf('id="doc-tab-ui"') < html.indexOf('id="doc-tab-design"'),
     '面板内的栏位顺序变了（设计文档必须是第一栏）——请同步检查 S');
-  // 模式入口（2026-11-17 NoNDesign 骨架移植后为左 Rail 图标列）：设计文档仍排绘图模式之前（C 位，用户决策）
-  assert(html.indexOf('id="rail-doc"') < html.indexOf('id="rail-wireframe"'),
-    'Rail 里设计文档未排在绘图模式之前（C 位入口顺序）——请同步检查 S');
+  // 模式入口（2026-11-17 NoNDesign 骨架移植后为左 Rail 图标列；同日二次改造：四编辑
+  // 模式合并为 Dock「工作区」单入口，视图顺序锚定在 topbar 分段控件）：
+  // 设计文档仍排其余视图之前（C 位，用户决策）
+  assert(html.indexOf('id="rail-ws"') > -1
+    && html.indexOf('id="mode-doc"') > -1
+    && html.indexOf('id="mode-doc"') < html.indexOf('id="mode-wireframe"')
+    && html.indexOf('id="mode-wireframe"') < html.indexOf('id="mode-hifi"')
+    && html.indexOf('id="mode-hifi"') < html.indexOf('id="mode-decl"'),
+    '工作区四视图顺序变了（设计文档必须仍是第一视图）——请同步检查 S');
   assert(/const ui=\$\('doc-pane-ui'\);[\s\S]{0,300}?\u53ef\u9009/.test(script),
     'UI 说明未标注为可选中间产物（它不该是必经步骤）——请同步检查 S');
   assert(/id="doc-stage"/.test(html)&&/id="doc-pane-prd"/.test(html)&&/id="doc-prd-text"/.test(html)

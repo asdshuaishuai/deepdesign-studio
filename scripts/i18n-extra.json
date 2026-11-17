@@ -935,6 +935,18 @@
   "Demo mode and Neu theme fixes",
   "Corrections du mode démo et du thème Neu"
  ],
+ "火光把一闪而过的灵感，变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。": [
+  "火光が一瞬のひらめきを、設計ドキュメントとインタラクティブなプロトタイプに変えます。全工程でエンジンゲートが検証し、成果物は同一の .mbt.md に。",
+  "火光将一闪而过的灵感变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。",
+  "Firelight turns fleeting sparks into design docs and interactive prototypes — engine-gated throughout, landing in one .mbt.md.",
+  "Firelight transforme les éclairs d'inspiration en documents de design et prototypes interactifs — validé par les portes moteur, le tout dans un seul .mbt.md."
+ ],
+ "灵光一闪，试试看！": [
+  "閃きを、試してみよう！",
+  "영감 한 번, 시험해 보세요!",
+  "A spark of inspiration — try it!",
+  "Un éclair d'inspiration — essayez !"
+ ],
  "版本号统一：仓库根 VERSION 文件为唯一事实源": [
   "バージョン番号を統一：リポジトリ直下の VERSION ファイルが唯一の情報源",
   "버전 번호 통일: 저장소 루트 VERSION 파일이 유일한 기준",
@@ -1168,18 +1180,6 @@
   " (저장된 설정 사용)",
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
- ],
- "灵光一闪，试试看！": [
-  "閃きを、試してみよう！",
-  "영감 한 번, 시험해 보세요!",
-  "A spark of inspiration — try it!",
-  "Un éclair d'inspiration — essayez !"
- ],
- "火光把一闪而过的灵感，变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。": [
-  "火光が一瞬のひらめきを、設計ドキュメントとインタラクティブなプロトタイプに変えます。全工程でエンジンゲートが検証し、成果物は同一の .mbt.md に。",
-  "火光将一闪而过的灵感变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。",
-  "Firelight turns fleeting sparks into design docs and interactive prototypes — engine-gated throughout, landing in one .mbt.md.",
-  "Firelight transforme les éclairs d'inspiration en documents de design et prototypes interactifs — validé par les portes moteur, le tout dans un seul .mbt.md."
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",

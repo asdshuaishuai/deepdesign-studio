@@ -108,6 +108,8 @@ body[data-mode="dark"] .cmdk-item.sel,body[data-mode="dark"] .cmdk-item:hover{ba
 .mode-btn.on{background:#fff;color:var(--tx);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 body[data-mode="dark"] .mode-btn.on{background:rgba(255,255,255,.14);color:#fff;box-shadow:none}
 .mode-btn .ic{width:13px;height:13px;transform:translateY(.5px)}
+/* 工作区模式切换只在编辑视图出现（首页/演示收起——Dock 单入口回返） */
+body.mode-home .mode-seg,body.mode-play .mode-seg{display:none}
 .filechip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:99px;background:rgba(0,0,0,.05);color:var(--tx2);font-size:10.5px;font-family:ui-monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .devchip{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:99px;background:rgba(245,158,11,.16);color:#B45309;font-size:10px;font-weight:800;font-family:ui-monospace;letter-spacing:.5px;cursor:pointer;flex:none}
 body[data-mode="dark"] .devchip{background:rgba(245,158,11,.22);color:#FBBF24}
@@ -639,6 +641,9 @@ body[data-theme="deep"] .compcell.uc{background:#1d2230;border-color:#3a4668}
 .settings-head{display:flex;align-items:center;justify-content:space-between}.settings-head h3{font-size:16px;font-weight:800;letter-spacing:-.01em}.icon-close{border:0;background:transparent;color:var(--tx3);font-size:22px;cursor:pointer;width:30px;height:30px;border-radius:9px;line-height:1;transition:background .15s,color .15s}.icon-close:hover{background:color-mix(in srgb,var(--tx) 8%,transparent);color:var(--tx)}
 .settings-note{margin:10px 0 14px;font-size:11px;color:var(--tx3);line-height:1.65;background:color-mix(in srgb,var(--tx) 5%,transparent);border-radius:10px;padding:9px 12px}
 .spane{overflow:auto;min-height:0}
+/* 设置面板行内动作按钮：与输入/select 同一套边框语言（同高、同圆角、accent 悬停） */
+.tbtn-line{display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--panel-line,rgba(0,0,0,.14));background:var(--panel-input,#fff);color:var(--tx);font-size:11.5px;font-weight:600;cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s;white-space:nowrap;flex:none}
+.tbtn-line:hover{border-color:var(--acc);color:var(--acc-tx,var(--acc))}
 #decl-text-wrap{position:relative;flex:1;min-height:0;display:flex}
 #decl-stage #decl-text{flex:1;caret-color:var(--code-caret);position:relative;z-index:2;background:transparent;color:transparent;border-color:var(--code-line);border-radius:0 0 var(--r-lg) var(--r-lg)}
 #decl-stage #decl-text::selection{background:var(--code-sel);color:transparent}
@@ -1027,6 +1032,12 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     </div>
   </div>
   <span class="spacer" style="flex:1" data-tauri-drag-region></span>
+  <div class="mode-seg" id="mode-seg">
+    <button class="mode-btn" id="mode-doc" onclick="setMode('doc')" title="设计文档 ⌘1"><svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>文档</button>
+    <button class="mode-btn" id="mode-wireframe" onclick="setMode('wireframe')" title="线框图 ⌘2"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M8 4v16M16 4v16M4 9h16M4 15h16"/></svg>线框</button>
+    <button class="mode-btn" id="mode-hifi" onclick="setMode('hifi')" title="高保真 ⌘3"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>高保真</button>
+    <button class="mode-btn" id="mode-decl" onclick="setMode('decl')" title="MBT 源码 ⌘4"><svg class="ic" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>源码</button>
+  </div>
   <button class="cmdk-bar" id="cmdk-bar" onclick="openCmdk()" title="命令面板（⌘K）">
     <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><span>问 火光，或运行一个命令…</span><span class="kbd">⌘K</span>
   </button>
@@ -1052,17 +1063,8 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       <svg class="ic" viewBox="0 0 24 24"><path d="M4 5h5v15H4zM10 5h4v15h-4zM15.2 5.3l3.9.7-.5 14-3.4-.6z"/></svg><span class="rail-tt">书架</span>
     </button>
     <span class="rail-sep"></span>
-    <button class="rail-btn" id="rail-doc" onclick="setMode('doc')" title="设计文档（需求设计文档 / UI 说明 / 设计规范）">
-      <svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span class="rail-tt">文档</span>
-    </button>
-    <button class="rail-btn" id="rail-wireframe" onclick="setMode('wireframe')" title="线框图 ⌘2">
-      <svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M8 4v16M16 4v16M4 9h16M4 15h16"/></svg><span class="rail-tt">线框</span>
-    </button>
-    <button class="rail-btn" id="rail-hifi" onclick="setMode('hifi')" title="高保真 ⌘3">
-      <svg class="ic" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg><span class="rail-tt">高保真</span>
-    </button>
-    <button class="rail-btn" id="rail-decl" onclick="setMode('decl')" title="MBT 源码 ⌘4">
-      <svg class="ic" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg><span class="rail-tt">源码</span>
+    <button class="rail-btn" id="rail-ws" onclick="enterWorkspace()" title="工作区 · 文档 / 线框 / 高保真 / 源码（⌘1-⌘4 切换视图）">
+      <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span class="rail-tt">工作区</span>
     </button>
     <span class="rail-sep"></span>
     <button class="rail-btn" id="rail-play" onclick="togglePlay()" title="演示模式（⌘5）· 工作区内禁编辑">
@@ -1464,7 +1466,7 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         <span style="display:flex;gap:6px">
           <input id="agent-model" list="fx-model-list" placeholder="如 MiniMax-M3 / deepseek-chat / glm-4.7（MiniMax 可点右侧获取）">
           <datalist id="fx-model-list"></datalist>
-          <button type="button" class="tbtn" onclick="fetchFxModels()" title="从当前 Base URL 拉取模型列表（OpenAI /models）" style="white-space:nowrap;font-size:11px;padding:0 10px">获取模型</button>
+          <button type="button" class="tbtn-line" onclick="fetchFxModels()" title="从当前 Base URL 拉取模型列表（OpenAI /models）">获取模型</button>
         </span>
         <div id="agent-model-hint"></div>
       </label>
@@ -1489,11 +1491,11 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
       </label>
     </div>
     <div class="settings-sec">外部智能体（ACP）</div>
-    <select id="acp-select" class="settings-select" style="width:100%;max-width:100%" onchange="setAcpAgent(this.value)"></select>
-    <div style="display:flex;gap:8px;align-items:center;margin:6px 0 0">
-      <button type="button" class="tbtn" onclick="probeAcp()" style="font-size:11px;padding:0 10px">完整握手检测</button>
-      <span id="acp-probe-msg" style="font-size:10.5px;color:var(--tx3)"></span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="acp-select" class="settings-select" style="flex:1;min-width:0;max-width:none" onchange="setAcpAgent(this.value)"></select>
+      <button type="button" class="tbtn-line" onclick="probeAcp()">完整握手检测</button>
     </div>
+    <div id="acp-probe-msg" style="font-size:10.5px;color:var(--tx3);margin-top:6px;min-height:1em"></div>
     <p class="settings-note" style="margin-bottom:0">选择外接 CLI（Claude Code / Codex / Gemini / dsh 等，经 Agent Client Protocol）后，Agent 面板的指令将改由它执行；其修改落在隔离工作区，完成时经引擎校验回灌画布。选「内置管线」恢复默认。</p>
     </div>
     <div class="spane" id="sp-about" style="display:none">
@@ -4682,6 +4684,8 @@ function addBoard(prefix,w,h,src){return serializeProject(async()=>{
 });}
 
 /* ---------- 模式切换 ---------- */
+let wsLastMode='wireframe'; // 工作区记忆视图：Dock 单入口回返到最后编辑模式
+function enterWorkspace(){setMode(wsLastMode);}
 function setMode(m){
   // 空项目进演示无意义（欢迎页无交互可演示）——菜单/⌘5 与工具栏按钮同守卫。
   // enteringPlay 必须在 mode=m 赋值前捕获：下方演示初始化曾用 `mode!=='play'`
@@ -4702,6 +4706,9 @@ function setMode(m){
   ['wireframe','hifi','decl','doc'].forEach(x=>{const b=$('mode-'+x);if(b)b.classList.toggle('on',x===m);const r=$('rail-'+x);if(r)r.classList.toggle('on',x===m);});
   const rh=$('rail-home');if(rh)rh.classList.toggle('on',m==='home');
   const rp=$('rail-play');if(rp)rp.classList.toggle('on',m==='play');
+  // 工作区单入口：四个编辑模式都点亮 rail-ws；并记忆最后所在视图供 Dock 回返
+  const rw=$('rail-ws');if(rw)rw.classList.toggle('on',m==='doc'||m==='wireframe'||m==='hifi'||m==='decl');
+  if(m==='doc'||m==='wireframe'||m==='hifi'||m==='decl')wsLastMode=m;
   if(m==='home')renderShelf();
   $('decl-stage').style.display=m==='decl'?'flex':'none';
   $('doc-stage').style.display=m==='doc'?'flex':'none';
