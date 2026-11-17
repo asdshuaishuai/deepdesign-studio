@@ -162,6 +162,8 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 .rail-btn.on .rail-tt{color:var(--acc);font-weight:700}
 .rail-btn .rail-tt{font-size:8.5px;line-height:1;color:var(--tx3)}
 .rail-sep{width:1px;height:26px;background:var(--bd);margin:0 3px}
+/* 深色主题下 Dock 玻璃底提亮一档（暗底上暗玻璃不可见） */
+body[data-mode="dark"] #rail{background:rgba(44,48,64,.82);border-color:rgba(255,255,255,.16);box-shadow:0 14px 44px rgba(0,0,0,.5)}
 .ltabs{display:flex;border-bottom:var(--bd);font-size:12px;background:rgba(0,0,0,.02)}
 .ltab{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 0;border:none;background:transparent;color:var(--tx2);cursor:pointer;font-weight:500;border-bottom:2px solid transparent}
 .ltab.on{color:var(--acc-tx);border-bottom-color:var(--acc-tx);font-weight:600;background:rgba(0,122,255,.04)}
