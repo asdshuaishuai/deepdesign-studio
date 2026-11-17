@@ -15,6 +15,7 @@
 pub mod agent;
 pub mod models;
 mod wasmtime_host;
+pub mod acp;
 
 pub use wasmtime_host::EngineHost;
 
@@ -358,6 +359,160 @@ fn app_exit(app: tauri::AppHandle) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// ============================================================
+// ACP 外接智能体（acp.rs）—— Tauri 命令胶水
+// 事件经 agent-event 同通道 emit_to 发起窗口（run id 注入），轨迹零改动复用。
+// ============================================================
+
+fn acp_sink(app: &tauri::AppHandle, label: &str, run_id: u64) -> acp::Sink {
+    let app = app.clone();
+    let label = label.to_string();
+    std::sync::Arc::new(move |mut v: serde_json::Value| {
+        use tauri::Emitter as _;
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("run".into(), serde_json::json!(run_id));
+            obj.insert("ts".into(), serde_json::json!(now_ms()));
+        }
+        if let Err(e) = app.emit_to(label.as_str(), "agent-event", &v) {
+            eprintln!("[acp] agent-event 投递失败（{label}）: {e}");
+        }
+    })
+}
+
+#[tauri::command]
+async fn acp_agents() -> Result<serde_json::Value, String> {
+    let list: Vec<serde_json::Value> = acp::AGENT_CATALOG
+        .iter()
+        .map(|d| {
+            // 轻量探测（秒回）：found/missing/grayed；完整握手由 acp_probe 触发
+            let st = if d.grayed {
+                "grayed"
+            } else if acp::find_agent_argv(d).is_some() {
+                match acp::cached_probe(d.id) {
+                    Some(acp::ProbeState::Verified { .. }) => "verified",
+                    _ => "found",
+                }
+            } else {
+                "missing"
+            };
+            serde_json::json!({"id": d.id, "name": d.name, "state": st})
+        })
+        .collect();
+    Ok(serde_json::json!({"ok": true, "agents": list}))
+}
+
+#[tauri::command]
+async fn acp_probe(agent: String) -> Result<serde_json::Value, String> {
+    let def = acp::agent_def(&agent).ok_or("unknown_agent")?;
+    let st = tauri::async_runtime::spawn_blocking(move || acp::probe_agent_full(def))
+        .await
+        .map_err(|e| format!("join:{e}"))?;
+    Ok(match st {
+        acp::ProbeState::Verified { argv } => serde_json::json!({"ok": true, "state": "verified", "argv": argv}),
+        acp::ProbeState::Missing => serde_json::json!({"ok": true, "state": "missing"}),
+        acp::ProbeState::Grayed => serde_json::json!({"ok": true, "state": "grayed"}),
+    })
+}
+
+#[tauri::command]
+async fn acp_session(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    reg: tauri::State<'_, acp::AcpRegistry>,
+    agent: String,
+    run: u64,
+) -> Result<serde_json::Value, String> {
+    let label = window.label().to_string();
+    let workspace = reg.workspace_for(&label);
+    let rt = tokio::runtime::Handle::current();
+    let sink = acp_sink(&app, &label, run);
+    let sid_agent = agent.clone();
+    let sess = tauri::async_runtime::spawn_blocking(move || {
+        acp::AcpSession::spawn_session(&sid_agent, &workspace, run, Some(rt), sink)
+    })
+    .await
+    .map_err(|e| format!("join:{e}"))??;
+    let sid = sess.sid();
+    reg.sessions.lock().unwrap().insert(sid.clone(), sess.clone());
+    Ok(serde_json::json!({"ok": true, "session": sid, "workspace": sess.workspace.to_string_lossy()}))
+}
+
+#[tauri::command]
+async fn acp_prompt(
+    reg: tauri::State<'_, acp::AcpRegistry>,
+    session: String,
+    text: String,
+    mbt_b64: String,
+) -> Result<serde_json::Value, String> {
+    use base64::Engine as _;
+    let mbt = base64::engine::general_purpose::STANDARD
+        .decode(mbt_b64.trim())
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .unwrap_or_default();
+    let sess = reg
+        .sessions
+        .lock()
+        .unwrap()
+        .get(&session)
+        .cloned()
+        .ok_or("unknown_acp_session")?;
+    // 工作区导出：canonical → mbt.md（DDP 仍是唯一事实源，agent 在提取视图上工作）
+    std::fs::create_dir_all(&sess.workspace).map_err(|e| format!("workspace:{e}"))?;
+    if !mbt.is_empty() {
+        std::fs::write(sess.workspace.join("mbt.md"), &mbt).map_err(|e| format!("export:{e}"))?;
+    }
+    tauri::async_runtime::spawn_blocking(move || sess.prompt(&text))
+        .await
+        .map_err(|e| format!("join:{e}"))??;
+    Ok(serde_json::json!({"ok": true}))
+}
+
+#[tauri::command]
+async fn acp_cancel(
+    reg: tauri::State<'_, acp::AcpRegistry>,
+    session: String,
+) -> Result<serde_json::Value, String> {
+    let sess = reg
+        .sessions
+        .lock()
+        .unwrap()
+        .get(&session)
+        .cloned()
+        .ok_or("unknown_acp_session")?;
+    sess.cancel();
+    Ok(serde_json::json!({"ok": true}))
+}
+
+#[tauri::command]
+async fn acp_permission_reply(
+    reg: tauri::State<'_, acp::AcpRegistry>,
+    session: String,
+    request_id: u64,
+    option_id: String,
+) -> Result<serde_json::Value, String> {
+    let sess = reg
+        .sessions
+        .lock()
+        .unwrap()
+        .get(&session)
+        .cloned()
+        .ok_or("unknown_acp_session")?;
+    sess.reply(request_id, &option_id);
+    Ok(serde_json::json!({"ok": true}))
+}
+
+#[tauri::command]
+async fn acp_close(
+    reg: tauri::State<'_, acp::AcpRegistry>,
+    session: String,
+) -> Result<serde_json::Value, String> {
+    if let Some(s) = reg.sessions.lock().unwrap().remove(&session) {
+        s.shutdown();
+    }
+    Ok(serde_json::json!({"ok": true}))
+}
+
 pub fn run() {
     tauri::Builder::default()
         // 单实例保证：二次启动（任何来源/路径）不再并跑，聚焦既有主窗
@@ -380,7 +535,14 @@ pub fn run() {
             list_ddp_projects,
             rebase_agent_ops,
             open_project_window,
-            model_registry
+            model_registry,
+            acp_agents,
+            acp_probe,
+            acp_session,
+            acp_prompt,
+            acp_cancel,
+            acp_permission_reply,
+            acp_close
         ])
         .on_window_event(|window, event| {
             // 脏文档关窗拦截：有未保存更改时拦下系统关闭，交前端确认（Rust 不解释
@@ -400,6 +562,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            {
+                let reg = acp::AcpRegistry::default();
+                *reg.root.lock().unwrap() = app.path().app_data_dir().map(|d| d.join("acp-workspace")).ok();
+                app.manage(reg);
+            }
             build_native_menus(app.handle())?;
             // Linux 深浅色回正：tao 建窗时按 XDG portal 结果强制写
             // gtk-application-prefer-dark-theme，而 deepin 的 portal 不报深色

@@ -1379,6 +1379,13 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
         </select>
       </label>
     </div>
+    <div class="settings-sec">外部智能体（ACP）</div>
+    <div id="acp-list" class="acp-list"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin:6px 0 0">
+      <button type="button" class="tbtn" onclick="probeAcp()" style="font-size:11px;padding:0 10px">完整握手检测</button>
+      <span id="acp-probe-msg" style="font-size:10.5px;color:var(--tx3)"></span>
+    </div>
+    <p class="settings-note" style="margin-bottom:0">选择外接 CLI（Claude Code / Codex / Gemini / dsh 等，经 Agent Client Protocol）后，Agent 面板的指令将改由它执行；其修改落在隔离工作区，完成时经引擎校验回灌画布。选「内置管线」恢复默认。</p>
     </div>
     <div class="spane" id="sp-about" style="display:none">
       <div class="about-hero">
@@ -1403,6 +1410,16 @@ body[data-mode="dark"] .pmain .go{font-size:12.5px;font-weight:650;padding:8px 1
     <div class="settings-actions"><button title="closeSettings" class="tbtn" onclick="closeSettings()">取消</button><button class="tbtn pri" onclick="saveSettings()">保存设置</button></div>
   </div>
 </div>
+<!-- ACP 权限确认框（2026-11-17 用户决策：全量升级，非自动放行） -->
+<div id="acp-perm" style="display:none" onclick="if(event.target===this)acpPermReply(null)">
+  <div class="cmdk-box" style="width:min(480px,92vw)">
+    <div style="padding:13px 16px;border-bottom:var(--bd);font-weight:700;font-size:13px">权限请求</div>
+    <div id="acp-perm-title" style="padding:11px 16px;font-size:12.5px;color:var(--tx2)"></div>
+    <div class="cmdk-list" id="acp-perm-options" style="max-height:30vh"></div>
+    <div class="cmdk-foot">选择一项以继续 · 无选项时点击遮罩 = 不回应</div>
+  </div>
+</div>
+
 <!-- 演示模式底部操作栏（隐藏编辑面板与 Prompt 条，仅保留交互演示控制） -->
 <div class="play-bar" id="play-bar">
   <button class="pb-back" id="play-back" onclick="playBack()" title="返回上一页（Esc）；起始页时不可用">◀ 返回</button>
@@ -3114,9 +3131,89 @@ function humanizeAgentAction(tool,op){
 const TRACE={un:null,tried:false};
 /* 当前运行中的 run id：取消按钮的归属目标（traceOpen 设置，done/failed 清零） */
 let currentAgentRunId=0;
+/* ---------- ACP 外接智能体（acp.rs）前端分流 ----------
+ * 设置里选定 agent（dd-acp-agent）后，runGlobalPrompt 分流到 runAcpPrompt：
+ * runId 前端生成 → acp_session（幂等，项目切换即失效）→ acp_prompt；
+ * 事件经 agent-event 同通道进时间线，done 携带回灌信封走 applyAgentTerminal。 */
+let acpSessionId='',acpSessionAgent='',acpRun=0,acpStartMbt='';
+function acpAgentId(){try{return localStorage.getItem('dd-acp-agent')||'';}catch(_){return '';}}
+async function acpInvalidate(){
+  if(acpSessionId&&IS_TAURI){try{await window.__TAURI__.core.invoke('acp_close',{session:acpSessionId});}catch(_){ }}
+  acpSessionId='';acpSessionAgent='';
+}
+async function acpEnsureSession(runId){
+  const want=acpAgentId();
+  if(acpSessionId&&acpSessionAgent===want)return acpSessionId;
+  await acpInvalidate();
+  const r=await window.__TAURI__.core.invoke('acp_session',{agent:want,run:runId});
+  if(!r||!r.ok)throw String(r&&r.error||'acp_session_failed');
+  acpSessionId=r.session;acpSessionAgent=want;
+  return r.session;
+}
+async function runAcpPrompt(t){
+  agentBusy=true;$('gp-send')&&($('gp-send').disabled=true);
+  const runId=nextAgentRun();
+  acpRun=runId;
+  acpStartMbt=mbtCanonical(mbtText);
+  traceOpen(runId,t);
+  try{
+    const session=await acpEnsureSession(runId);
+    setStatus('agent','外部智能体执行中',true,'');
+    await window.__TAURI__.core.invoke('acp_prompt',{session,text:t,mbtB64:utf8ToB64(mbtCanonical(mbtText))});
+    // 事件流异步到达（assistant_delta/思考/工具/权限/done）——这里不等待
+  }catch(e){
+    agentBusy=false;$('gp-send')&&($('gp-send').disabled=false);acpRun=0;syncTraceCancelBtn();
+    traceFinalCard(document.getElementById('tl-run-'+runId),false,'外部智能体启动失败：'+String(e).slice(0,90));
+    setStatus('agent','ACP 启动失败',false,'');
+  }
+}
+function acpPermReply(optionId){
+  const box=$('acp-perm');const req=box.dataset.req?Number(box.dataset.req):0;
+  box.style.display='none';
+  if(!req||!acpSessionId)return;
+  if(optionId!=null)window.__TAURI__.core.invoke('acp_permission_reply',{session:acpSessionId,requestId:req,optionId}).catch(()=>{});
+}
+async function probeAcp(){
+  const want=acpAgentId();
+  const msg=$('acp-probe-msg');
+  if(!want){msg.textContent='先选择一个外部智能体';return;}
+  msg.textContent='握手中…（npx 首次拉包最长 90s）';
+  try{
+    const r=await window.__TAURI__.core.invoke('acp_probe',{agent:want});
+    msg.textContent=r.state==='verified'?'✓ 握手成功':'✗ 未通过：'+(r.state||'unknown');
+    renderAcpAgents();
+  }catch(e){msg.textContent='✗ '+String(e).slice(0,60);}
+}
+async function renderAcpAgents(){
+  const box=$('acp-list');if(!box)return;
+  let agents=[];
+  if(IS_TAURI){try{const r=await window.__TAURI__.core.invoke('acp_agents');agents=(r&&r.agents)||[];}catch(_){ }}
+  const cur=acpAgentId();
+  const row=(id,name,state,checked)=>`<label style="display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:8px;cursor:pointer;font-size:12px;${checked?'background:rgba(0,122,255,.1)':''}">
+    <input type="radio" name="acp-agent" value="${escAttr(id)}" ${checked?'checked':''} onchange="setAcpAgent('${escAttr(id)}')">
+    <span style="flex:1">${escHtml(name)}</span><span style="font-size:10px;color:var(--tx3)">${state}</span></label>`;
+  let html=row('','内置管线','默认',!cur);
+  for(const a of agents){
+    const cn={verified:'已验证',found:'已安装',missing:'未安装',grayed:''}[a.state]||a.state;
+    html+=row(a.id,a.name+(cn?`（${cn}）`:''),'',cur===a.id);
+  }
+  box.innerHTML=html;
+}
+function setAcpAgent(id){
+  try{localStorage.setItem('dd-acp-agent',id);}catch(_){ }
+  acpInvalidate();
+  renderAcpAgents();
+}
 /* 请求取消一次 agent run：Rust 置位取消标志，当前步骤结束后停止（已完成部分保留） */
 async function cancelAgentRun(){
   if(!agentBusy||!currentAgentRunId){toast(L('当前没有运行中的任务'));return;}
+  if(acpRun===currentAgentRunId){
+    try{
+      await window.__TAURI__.core.invoke('acp_cancel',{session:acpSessionId});
+      toast(L('已请求取消——当前步骤结束后停止，已完成部分保留'));
+    }catch(e){toast(L('取消请求失败：')+String(e).slice(0,60),'err');}
+    return;
+  }
   try{
     await window.__TAURI__.core.invoke('cancel_agent_run',{run:currentAgentRunId});
     toast(L('已请求取消——当前步骤结束后停止，已完成部分保留'));
@@ -3302,12 +3399,36 @@ function ensureTraceListener(){
       }
       return;
     }
+    if(p.type==='assistant_delta'){
+      // ACP 流式正文：直播行追加（与思考直播行同构）
+      const full=traceLiveLine(box,'tl-assist-live-'+p.run,'⌨ '+L('输出中…'));
+      traceDelta(full,p.text,box);
+      return;
+    }
+    if(p.type==='acp-permission'){
+      const o=$('acp-perm');
+      if(o){
+        o.dataset.req=String(p.request_id);
+        $('acp-perm-title').textContent=p.title||'外部智能体请求权限';
+        const opts=(p.options||[]).map(op=>`<button class="cmdk-item" onclick="acpPermReply('${escAttr(String(op.optionId||''))}')"><span>${escHtml(op.name||op.optionId||'')}</span><span class="kbd">${escHtml(op.kind||'')}</span></button>`).join('');
+        $('acp-perm-options').innerHTML=opts||'<div style="padding:8px 12px;color:var(--tx3);font-size:12px">无可用选项</div>';
+        o.style.display='flex';
+      }
+      return;
+    }
     if(p.type==='context_usage'){
       // 状态栏 ctx：agent.rs 每 10 步 + 预算触发时各发一次（前置缓存方案顺带兑现）
       sbCtx.est=p.est_tokens|0;sbCtx.budget=p.budget_tokens|0;syncSbRight();return;
     }
     if(p.type==='done'){
       collapseLiveLines(p.run);
+      if(p.run===acpRun){
+        acpRun=0;agentBusy=false;$('gp-send')&&($('gp-send').disabled=false);syncTraceCancelBtn();
+        if(p.mbt_b64){
+          // 外接 agent 的修改回灌：与内置终态同链路（AgentGate 整篇校验）
+          applyAgentTerminal({mbt_b64:p.mbt_b64,render:p.render,ops:[],revision:null},acpStartMbt).catch(()=>{});
+        }
+      }
       if(p.run===currentAgentRunId){currentAgentRunId=0;syncTraceCancelBtn();}
       if(p.stopReason==='cancelled'){
         // 用户主动取消：中性卡——不是异常，已完成部分已保留
@@ -3328,6 +3449,7 @@ function ensureTraceListener(){
     }
     if(p.type==='failed'){
       collapseLiveLines(p.run);
+      if(p.run===acpRun){acpRun=0;agentBusy=false;$('gp-send')&&($('gp-send').disabled=false);syncTraceCancelBtn();}
       if(p.run===currentAgentRunId){currentAgentRunId=0;syncTraceCancelBtn();}
       // 中途失败（LLM 断连/无响应等）同为异常终态：升级为红卡终态——
       // 原单行弱标志分不清「还在跑」与「已中断」；ops=0 如实说未提交任何操作
@@ -3555,6 +3677,8 @@ function newId(){return 'p'+Date.now().toString(36)+Math.floor(Math.random()*99)
 async function runGlobalPrompt(){
   const inp=$('gp-input');
   const t=inp.value.trim();if(!t)return;
+  // ACP 分流：设置了外部智能体即改道（在飞门共享）
+  if(IS_TAURI&&acpAgentId()&&!agentBusy){inp.value='';return runAcpPrompt(t);}
   // 在飞门：检查与置位之间不得有 await——中间夹 addBoard 的话，双触发窗口内
   // 两次都过检查 → 重复建板 + 并发 run（违反标志自身"不允许并发"的不变量）
   if(agentBusy){toast('上一条还在生成中…');return;}
@@ -5268,6 +5392,7 @@ async function exportSvg(){
 async function openProject(path){
   if(path&&path===filePath)return; // ?v= 重载会重复触发启动自开：同项目已打开则幂等跳过
   if(agentBusy){toast('Agent 正在生成，完成后再打开');return;}
+  acpInvalidate(); // 会话绑定项目：切换即失效（幂等，未开时 no-op）
   // 仅确有未保存更改（内容或源码草稿）时确认；确认框回车默认「继续编辑」（安全侧），返回 true=留下
   if(IS_TAURI&&anyDirty()){
     const stay=await confirmDiscard('打开 DDP','当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。');
@@ -5324,6 +5449,7 @@ async function openProject(path){
 async function newProject(){
   // 真正空白项目：无画板，显示 welcome 空态（模板卡 + Prompt 引导）
   if(agentBusy){toast('Agent 正在生成，完成后再新建');return;}
+  acpInvalidate();
   // 仅确有未保存更改（内容或源码草稿）时确认（回车默认「继续编辑」，返回 true=留下）
   if(IS_TAURI&&anyDirty()){
     const stay=await confirmDiscard('新建项目','当前文档有未保存的更改（含源码草稿），新建将丢弃这些更改。');
@@ -5624,6 +5750,7 @@ function refreshAppearanceControls(){
 function openSettings(){
   loadAgentConfig();if(!modelRegistry)loadModelRegistry();
   refreshAppearanceControls();
+  renderAcpAgents(); // 外部智能体单选（探测态秒回，完整握手按钮按需）
   $('agent-base-url').value=agentConfig.baseUrl||'';
   $('agent-api-key').value=agentConfig.apiKey||'';
   $('agent-model').value=agentConfig.model;

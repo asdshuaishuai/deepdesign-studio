@@ -1062,6 +1062,9 @@ impl<'a> EngineState<'a> {
         }
     }
 
+    /// 全文读取已被大纲/单板分层取代（前置缓存方案）；保留作终态回退路径的
+    /// 语义参考——若未来需要整文读，走 read_mbt_outline + artboard_section 组合。
+    #[allow(dead_code)]
     async fn read_mbt(&self) -> Value {
         match &self.mbt {
             // L0 整形：剥 ```mbt check 围栏块（引擎对节点声明的逐字重复，~40-50%）。
