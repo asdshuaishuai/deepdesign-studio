@@ -24,7 +24,7 @@ const NEW_ENTRIES={
   '前缀缓存':['プレフィックスキャッシュ','프리픽스 캐시','Prefix caching','Cache de préfixe'],
   '七语言界面':['7 言語 UI','7개 언어 UI','7-language UI','Interface en 7 langues'],
   /* ── 首页 · 书架（home 落地页改版）── */
-  '把想法变成能用的作品':['アイデアを 使える作品に','아이디어를 쓸 수 있는 작품으로','Turn ideas into working designs',"Transformez vos idées en œuvres utilisables"],
+  '灵光一闪，试试看！':['閃きを、試してみよう！','영감 한 번, 시험해 보세요!','A spark of inspiration — try it!','Un éclair d\'inspiration — essayez !'],
   '文档 · 原型 · 交互 · 规范':['ドキュメント · プロトタイプ · インタラクション · 仕様','문서 · 프로토타입 · 인터랙션 · 스펙','Docs · Prototypes · Interactions · Specs','Docs · Prototypes · Interactions · Specs'],
   '描述你要解决的问题。deepDesign 先写设计文档，再把它变成可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。':['解決すべき課題と対象ユーザーを描くと、deepDesign がまず設計ドキュメントを書き、インタラクティブなプロトタイプに変えます。全工程でエンジニアリングゲートが検証し、成果物は同一の .mbt.md に蓄積されます。','해결할 문제와 대상을 묘사하면 deepDesign이 먼저 설계 문서를 쓰고 인터랙티브 프로토타입으로 바꿉니다. 전 과정이 엔진 게이트로 검증되고 산출물은 같은 .mbt.md에 쌓입니다.','Describe the problem and audience. deepDesign writes the design doc first, then turns it into an interactive prototype — engine-gated throughout, landing in one .mbt.md.',"Décrivez le problème visé. deepDesign écrit d'abord le document de design, puis le transforme en prototype interactif — validé par des portes moteur à chaque étape, le tout dans un seul .mbt.md."],
   '一句话描述你的产品…（⏎ 生成）':['一文で製品を描写…（⏎ 生成）','한 문장으로 제품을 묘사…(⏎ 생성)','Describe your product in one line… (⏎ to generate)','Décrivez votre produit en une phrase… (⏎ pour générer)'],
@@ -41,6 +41,8 @@ const NEW_ENTRIES={
   '已从书架移除（文件未删除）':['ブックシェルフから除外しました（ファイルは未削除）','책장에서 제외되었습니다(파일 미삭제)','Removed from shelf (file kept)','Retiré de l\'étagère (fichier conservé)'],
   '从模板开始':['テンプレートから始める','템플릿으로 시작','Start from a template','Commencer par un modèle'],
   '拒绝':['拒否','거부','Deny','Refuser'],
+  /* ── Firelight 改名（标语/品牌）── */
+  '火光把一闪而过的灵感，变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。':['火光が一瞬のひらめきを、設計ドキュメントとインタラクティブなプロトタイプに変えます。全工程でエンジンゲートが検証し、成果物は同一の .mbt.md に。','火光将一闪而过的灵感变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。','Firelight turns fleeting sparks into design docs and interactive prototypes — engine-gated throughout, landing in one .mbt.md.','Firelight transforme les éclairs d\'inspiration en documents de design et prototypes interactifs — validé par les portes moteur, le tout dans un seul .mbt.md.'],
   /* ── Figma 双向桥（P3）── */
   '导出 Figma 包…':['Figma パッケージを書き出す…','Figma 패키지 내보내기…','Export Figma package…',"Exporter le paquet Figma…"],
   '导入 Figma 选区 JSON…':['Figma 選択範囲 JSON を読み込む…','Figma 선택 JSON 가져오기…','Import Figma selection JSON…',"Importer la sélection Figma (JSON)…"],
@@ -75,7 +77,7 @@ const NEW_ENTRIES={
   '选择一项以继续':['続行するには選択してください','계속하려면 선택하세요','Pick one to continue','Choisissez une option pour continuer'],
   '外部智能体的改动与你的画布编辑冲突——已保留你的编辑，agent 结果未回灌':['外部エージェントの変更がキャンバス編集と競合——編集を保持し、エージェントの結果は未適用','외부 에이전트 변경이 캔버스 편집과 충돌——편집을 유지하고 에이전트 결과는 미적용','External agent changes conflict with your canvas edits — your edits kept, agent result not applied',"Les modifications de l'agent externe entrent en conflit avec vos éditions de canevas — éditions conservées, résultat de l'agent non appliqué"],
   /* ── NoNDesign 骨架移植（Rail/命令面板/运行胶囊/状态栏）── */
-  '问 deepDesign，或运行一个命令…':['deepDesignに問うか、コマンドを実行…','deepDesign에게 물하거나 명령 실행…','Ask deepDesign, or run a command…',"Demandez à deepDesign ou lancez une commande…"],
+  '问 火光，或运行一个命令…':['火光に問うか、コマンドを実行…','火光에게 물하거나 명령 실행…','Ask Firelight, or run a command…',"Demandez à Firelight ou lancez une commande…"],
   'Agent 运行中 · 点击取消':['Agent 実行中 · クリックで取消','Agent 실행 중 · 클릭하여 취소','Agent running · click to cancel','Agent en cours · cliquer pour annuler'],
   '命令面板（⌘K）':['コマンドパレット（⌘K）','명령 팔레트（⌘K）','Command palette (⌘K)','Palette de commandes (⌘K)'],
   '切换深色 / 浅色模式':['ダーク/ライト切替','다크/라이트 전환','Toggle dark / light mode','Basculer sombre / clair'],

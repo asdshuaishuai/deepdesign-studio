@@ -35,6 +35,12 @@
   "Agent running · click to cancel",
   "Agent en cours · cliquer pour annuler"
  ],
+ "DDP 单文件加密": [
+  "DDP 単一ファイル暗号化",
+  "DDP 단일 파일 암호화",
+  "DDP single-file encryption",
+  "DDP mono-fichier chiffré"
+ ],
  "Figma 包已导出（{n} 板）→ {dir}": [
   "Figma パッケージ書き出し完了（{n} 板）→ {dir}",
   "Figma 패키지 내보내기 완료({n}개 보드) → {dir}",
@@ -172,6 +178,12 @@
   "한 문장으로 제품을 묘사…(⏎ 생성)",
   "Describe your product in one line… (⏎ to generate)",
   "Décrivez votre produit en une phrase… (⏎ pour générer)"
+ ],
+ "七语言界面": [
+  "7 言語 UI",
+  "7개 언어 UI",
+  "7-language UI",
+  "Interface en 7 langues"
  ],
  "上下文": [
   "コンテキスト",
@@ -316,6 +328,12 @@
   "보드 {id} 삭제? (⌘Z 실행 취소)",
   "Delete board {id}? (Undo with ⌘Z)",
   "Supprimer la planche {id} ? (⌘Z pour annuler)"
+ ],
+ "前缀缓存": [
+  "プレフィックスキャッシュ",
+  "프리픽스 캐시",
+  "Prefix caching",
+  "Cache de préfixe"
  ],
  "历史与本地作品都在这里": [
   "履歴とローカル作品はここに",
@@ -616,6 +634,12 @@
   "엔진 버전",
   "Engine version",
   "Version du moteur"
+ ],
+ "引擎门校验": [
+  "エンジンゲート検証",
+  "엔진 게이트 검증",
+  "Engine-gated",
+  "Portes moteur"
  ],
  "当前文档有未保存的更改（含源码草稿），打开新文件将丢弃这些更改。": [
   "未保存の変更（ソース草案を含む）があります。新しいファイルを開くと破棄されます。",
@@ -1097,11 +1121,11 @@
   "Pick one to continue",
   "Choisissez une option pour continuer"
  ],
- "问 deepDesign，或运行一个命令…": [
-  "deepDesignに問うか、コマンドを実行…",
-  "deepDesign에게 물하거나 명령 실행…",
-  "Ask deepDesign, or run a command…",
-  "Demandez à deepDesign ou lancez une commande…"
+ "问 火光，或运行一个命令…": [
+  "火光に問うか、コマンドを実行…",
+  "火光에게 물하거나 명령 실행…",
+  "Ask Firelight, or run a command…",
+  "Demandez à Firelight ou lancez une commande…"
  ],
  "闲置画板清扫：Agent run 前后自动清理空占位": [
   "アイドルアートボードの清掃：Agent run の前後で空きプレースホルダーを自動削除",
@@ -1145,29 +1169,17 @@
   " (using previously saved config)",
   " (configuration enregistrée utilisée)"
  ],
- "引擎门校验": [
-  "エンジンゲート検証",
-  "엔진 게이트 검증",
-  "Engine-gated",
-  "Portes moteur"
+ "灵光一闪，试试看！": [
+  "閃きを、試してみよう！",
+  "영감 한 번, 시험해 보세요!",
+  "A spark of inspiration — try it!",
+  "Un éclair d'inspiration — essayez !"
  ],
- "DDP 单文件加密": [
-  "DDP 単一ファイル暗号化",
-  "DDP 단일 파일 암호화",
-  "DDP single-file encryption",
-  "DDP mono-fichier chiffré"
- ],
- "前缀缓存": [
-  "プレフィックスキャッシュ",
-  "프리픽스 캐시",
-  "Prefix caching",
-  "Cache de préfixe"
- ],
- "七语言界面": [
-  "7 言語 UI",
-  "7개 언어 UI",
-  "7-language UI",
-  "Interface en 7 langues"
+ "火光把一闪而过的灵感，变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。": [
+  "火光が一瞬のひらめきを、設計ドキュメントとインタラクティブなプロトタイプに変えます。全工程でエンジンゲートが検証し、成果物は同一の .mbt.md に。",
+  "火光将一闪而过的灵感变成设计文档与可交互原型——全程引擎门校验，产物落在同一份 .mbt.md。",
+  "Firelight turns fleeting sparks into design docs and interactive prototypes — engine-gated throughout, landing in one .mbt.md.",
+  "Firelight transforme les éclairs d'inspiration en documents de design et prototypes interactifs — validé par les portes moteur, le tout dans un seul .mbt.md."
  ],
  "至少保留一个画板": [
   "少なくとも1つのボードを残してください",
