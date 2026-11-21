@@ -64,7 +64,7 @@ body[data-mode="dark"],body[data-theme="deep"],body[data-theme="glass"],body[dat
 }
 
 /* ---------- 顶栏 ---------- */
-.topbar{height:46px;display:flex;align-items:center;gap:6px;padding:0 14px 0 12px;background:rgba(255,255,255,.85);border-bottom:var(--bd);backdrop-filter:blur(20px);z-index:30;flex-shrink:0}
+.topbar{height:46px;display:flex;align-items:center;gap:6px;padding:0 14px 0 12px;background:rgba(255,251,243,.9);border-bottom:var(--bd);backdrop-filter:blur(20px);z-index:30;flex-shrink:0}
 .native .topbar{padding-left:84px}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;white-space:nowrap}
 .brand .logo{width:20px;height:20px;border-radius:5px;box-shadow:0 1px 4px rgba(15,23,42,.25);flex-shrink:0}
@@ -148,7 +148,7 @@ body[data-mode="dark"] .wbtn:hover{background:rgba(255,255,255,.09)}
 /* ---------- 主体 ---------- */
 .main{flex:1;display:flex;min-height:0}
 /* 左栏 */
-.left{width:252px;background:rgba(255,255,255,.92);border-right:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
+.left{width:252px;background:rgba(255,251,243,.92);border-right:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
 /* 模式 Rail（NoNDesign 骨架）：58px 图标列，背景/边框与左栏同族（各主题成组覆盖） */
 /* ================= 伪 mac 程序坞（Rail Dock 化） ================= */
 #rail{position:fixed;left:50%;transform:translateX(-50%);bottom:36px;z-index:45;
@@ -378,7 +378,7 @@ body:not(.design-active) #tail-fix{display:none!important}
 .ap-send:disabled{background:rgba(0,0,0,.1);color:var(--tx3)}
 
 /* ---------- 右栏 ---------- */
-.right{width:440px;background:rgba(255,255,255,.92);border-left:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
+.right{width:440px;background:rgba(255,251,243,.92);border-left:var(--bd);display:flex;flex-direction:column;flex-shrink:0;z-index:10}
 /* 右栏 Agent 交互模块（指令输入 + 轨迹同栏）：轨迹滚动、头部与输入条常驻。
    rpanel 默认整栏滚动——这里改成分区布局，输入条永远贴底不被长轨迹推走。 */
 #rp-track{padding:0;overflow:hidden;display:flex;flex-direction:column}
@@ -554,7 +554,7 @@ body.mode-doc #lp-toc{display:flex}
 .toc-empty{font-size:11px;color:var(--tx3);line-height:1.7;padding:10px 8px}
 
 /* ---------- 状态栏 ---------- */
-.statusbar{-webkit-font-smoothing:antialiased;height:27px;display:flex;align-items:center;gap:10px;padding:0 12px;background:rgba(255,255,255,.92);border-top:var(--bd);font-family:ui-monospace;font-size:10.5px;color:var(--tx2);flex-shrink:0;overflow:hidden;z-index:20}
+.statusbar{-webkit-font-smoothing:antialiased;height:27px;display:flex;align-items:center;gap:10px;padding:0 12px;background:rgba(255,251,243,.92);border-top:var(--bd);font-family:ui-monospace;font-size:10.5px;color:var(--tx2);flex-shrink:0;overflow:hidden;z-index:20}
 .statusbar .tag{font-size:8.5px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;flex-shrink:0}
 .statusbar .tag.h{background:rgba(40,167,69,.12);color:#1d6b41}
 .statusbar .tag.a{background:rgba(124,58,237,.12);color:#7c3aed}
@@ -741,12 +741,15 @@ body.mode-play .stage{justify-content:center;padding-top:36px}
 /* ================================================================
    THEMES
    ================================================================ */
-/* Mac（默认）— macOS Light */
+/* Mac（默认）— Firelight 暖白浅色（2026-11-21 用户决策：纯白 → 火光橙白；
+ * 暖奶油底 + 暖白面板 + 暖褐描边 + 火橙 accent；hero 渐变 acc→acc2 橙→金自动传导） */
 body[data-theme="mac"]{
-  --panel:#ffffff;--panel-line:rgba(0,0,0,.1);--panel-input:#ffffff;
-  --base:#f2f3f7;--cvs:#f2f3f7;--ink:#1c1c1e;
-  --tx:#1c1c1e;--tx2:#636366;--tx3:#686873;--acc-tx:#0066d6;
-  --acc:#007aff;--acc-h:#0066d6;--ok:#28a745;--purple:#9d4edd;
+  --panel:#FFFDF8;--panel-line:rgba(122,74,20,.14);--panel-input:#FFFEFB;
+  --base:#FAF4EA;--cvs:#FBF6ED;--ink:#2A2118;
+  --tx:#2A2118;--tx2:#6E5F4F;--tx3:#8A7A66;--acc-tx:#C2410C;
+  --acc:#EA580C;--acc-h:#C2410C;--ok:#28a745;--purple:#9d4edd;
+  --acc2:#F59E0B;
+  --bd:1px solid rgba(122,74,20,.14);
 }
 /* Deep 深色专业 */
 body[data-theme="deep"]{
@@ -825,15 +828,16 @@ body[data-theme="glass"] select option,
 body[data-mode="dark"][data-theme="glass"] select option{background:#251e52;color:var(--tx)}
 body[data-theme="glass"] .canvas-scroll{background-image:radial-gradient(circle,rgba(255,255,255,.08) 1px,transparent 1px)}
 
-/* Win11 Fluent — Windows 11 Mica 风（系统默认主题之一，Windows 上自动选中） */
+/* Win11 Fluent — Windows 11 Mica 风（系统默认主题之一，Windows 上自动选中；2026-11-21 火光橙白同 treatment） */
 body[data-theme="win11"]{
-  --panel:#FBFBFB;--panel-line:rgba(0,0,0,.08);--panel-input:#FFFFFF;
-  --base:#F3F3F3;--cvs:#F6F7F9;--ink:#1B1B1B;
-  --tx:#1B1B1B;--tx2:#5C5C5C;--tx3:#8A8A8A;--acc-tx:#0067C0;
-  --acc:#0067C0;--acc-h:#005BA1;--ok:#0F7B0F;--purple:#8B5CF6;
-  --bd:1px solid rgba(0,0,0,.07);
+  --panel:#FFFDF8;--panel-line:rgba(122,74,20,.12);--panel-input:#FFFEFB;
+  --base:#F8F2E9;--cvs:#FAF5EC;--ink:#2A2118;
+  --tx:#2A2118;--tx2:#6E5F4F;--tx3:#8A7A66;--acc-tx:#C2410C;
+  --acc:#EA580C;--acc-h:#C2410C;--ok:#0F7B0F;--purple:#8B5CF6;
+  --acc2:#F59E0B;
+  --bd:1px solid rgba(122,74,20,.12);
 }
-body[data-theme="win11"] .topbar,body[data-theme="win11"] .left,body[data-theme="win11"] #rail,body[data-theme="win11"] .right,body[data-theme="win11"] .statusbar{background:rgba(243,243,243,.96)}
+body[data-theme="win11"] .topbar,body[data-theme="win11"] .left,body[data-theme="win11"] #rail,body[data-theme="win11"] .right,body[data-theme="win11"] .statusbar{background:rgba(248,242,233,.96)}
 body[data-theme="win11"] .mode-seg{background:rgba(255,255,255,.72);border:1px solid rgba(0,0,0,.06)}
 body[data-theme="win11"] .mode-btn.on{background:#FFFFFF;color:#1B1B1B;box-shadow:0 1px 3px rgba(0,0,0,.14)}
 body[data-theme="win11"] .frame-chrome{background:#FBFBFB;border-color:rgba(0,0,0,.07)}
